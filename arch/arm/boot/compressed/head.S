@@ -1,10 +1,11 @@
 /*
- * 분석자 : Kernel 12차 A팀 (http://www.iamroot.org)
+ * IAMROOT Kernel 12차-A팀 (http://www.iamroot.org)
  * ===================================================
  * 시작일: 2015.07.11
  * 
- * 
- * 
+ * 주석 단축기 <F9>를 사용하는 방법:
+ *   - 홈디렉토리에 위치한 .vimrc 파일에 아래의 내용을 추가
+ *     map <F9> <ESC>I<CR><CR><UP>/-<BS>*<SPACE>IAMROOT-12A:<CR>------------<CR><CR>/<UP><SPACE>
  */
 
 /*
