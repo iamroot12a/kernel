@@ -1,4 +1,11 @@
 /*
+ * IAMROOT Kernel 12차-A팀 (http://www.iamroot.org)
+ * ===================================================
+ * 시작일: 2015.07.11
+ *
+ */
+
+/*
  *  arch/arm/include/asm/assembler.h
  *
  *  Copyright (C) 1996-2000 Russell King
@@ -313,6 +320,13 @@
  * This macro is intended for forcing the CPU into SVC mode at boot time.
  * you cannot return to the original mode.
  */
+
+/* IAMROOT-12A:
+ * ------------
+ * HYP_MODE: 0x1a, MODE_MASK:0x1f 
+ * 하이퍼 모드일 경우 바로 SVC 모드로 진입할 수 없다.
+ * 서비스 모드로 진입하기 전에 IRQ, FIQ를 mask 한다.
+ */
 .macro safe_svcmode_maskall reg:req
 #if __LINUX_ARM_ARCH__ >= 6 && !defined(CONFIG_CPU_V7M)
 	mrs	\reg , cpsr
@@ -322,17 +336,46 @@
 	orr	\reg , \reg , #PSR_I_BIT | PSR_F_BIT | SVC_MODE
 THUMB(	orr	\reg , \reg , #PSR_T_BIT	)
 	bne	1f
+
+/* IAMROOT-12A:
+ * ------------
+ * HYP_MODE로 진입이된 경우 SVC모드로 진입을 하기 위해...
+ * Abort bit를 set 하여 Abort 기능을 disable 하고
+ * lr 레지스터에 레이블 2위치를 기억,
+ * spsr 레지스터를 갱신,
+ * 하이퍼모드-모니터모드에서 사용하는 ELR 레지스터에 lr(14)값을 옮김,
+ * 하이퍼모드에서 리턴 --> 모드를 바꾸면서 점프함.
+ *       (spsr에 저장된 Svc 모드로 진입하게 됨.)
+ * 불행히도 하이퍼 모드에서 Svc 모드를 바꾸는 방법이 이렇게 복잡함.
+ */
 	orr	\reg, \reg, #PSR_A_BIT
 	adr	lr, BSYM(2f)
 	msr	spsr_cxsf, \reg
 	__MSR_ELR_HYP(14)
 	__ERET
+
+/* IAMROOT-12A:
+ * ------------
+ * cpsr_f: bit31~24 (flag fields)      
+ * cpsr_s: bit23~16 (status fields)
+ * cpsr_x: bit15~8  (extension fields)
+ *         ....... bit8:Abort bit(1)
+ * cpsr_c: bit7~0   (control fields)
+ *         bit7=IRQ(1), bit6=FIQ(1), bit5=T(1), bit4~0=MODE(5) 
+ */
+
 1:	msr	cpsr_c, \reg
 2:
 #else
 /*
  * workaround for possibly broken pre-v6 hardware
  * (akita, Sharp Zaurus C-1000, PXA270-based)
+ */
+
+/* IAMROOT-12A:
+ * ------------
+ * 하이퍼 모드를 지원하지 않는 ARM 아키텍처에서는 단순히 cpsr만 변경하여
+ * Svc모드로 진입.
  */
 	setmode	PSR_F_BIT | PSR_I_BIT | SVC_MODE, \reg
 #endif
