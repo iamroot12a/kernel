@@ -1,4 +1,13 @@
 /*
+ * 분석자 : Kernel 12차 A팀 (http://www.iamroot.org)
+ * ===================================================
+ * 시작일: 2015.07.11
+ * 
+ * 
+ * 
+ */
+
+/*
  *  linux/arch/arm/boot/compressed/head.S
  *
  *  Copyright (C) 1996-2002 Russell King
@@ -115,16 +124,61 @@
  */
 		.align
 		.arm				@ Always enter in ARM state
+
 start:
+
+/* IAMROOT-12A:
+ * ------------
+ * ELF 화일을 start 레이블을 함수로 인식할 수 있도록 한다.
+ * 참고: https://sourceware.org/binutils/docs/as/Type.html#Type
+ *	 http://bit.ly/1M1pyWY 
+ */
 		.type	start,#function
+
+/* IAMROOT-12A:
+ * ------------
+ * Russell King 말로 어느 오래된 부트로더 하나가 0x20번째 주소로 점프를 하는
+ * 관계로 커널은 호환성을 갖기위해 아무일도 하지않는 코드를 사용할 수 밖에
+ * 없었다고 함.
+ *
+ * 참고: www.simtec.co.uk/products/SWLINUX/files/booting_article.html
+ */
 		.rept	7
 		mov	r0, r0
 		.endr
+
+/* IAMROOT-12A:
+ * ------------
+ * ARM 매크로와 THUMB 매크로는 CONFIG_THUMB2_KERNEL 옵션에 따라 둘 중
+ * 하나로만 사용될 수 있다.
+ *
+ * ARM코드로 만들어진 부트로더가 동작중인 경우 커널도 ARM코드로 시작하는 것이
+ * 올바르기 때문에 커널 빌드를 ARM 코드로 해야 함. 만일 특수하게 만든 
+ * 부트로더가 THUMB2코드로 동작하고 커널로 넘어오게 된 경우를 고려하여
+ * 이 때는 커널 빌드 시 THUMB2 모드를 사용할 수 있게 해야 함.
+ *
+ * THUMB 코드는 2바이트이지만 THUMB2 코드는 4바이트임.
+ *
+ * b 1f -> 이 의미는 branch 1 forward라는 의미로 전진방향으로 1이라는
+ * 레이블을 찾아 이동하라는 의미임
+ *
+ * BSYM 매크로는 THUMB2 코드로 진행되는 경우 레이블 1: + 1을 가리킨다.
+ */
    ARM(		mov	r0, r0		)
    ARM(		b	1f		)
  THUMB(		adr	r12, BSYM(1f)	)
  THUMB(		bx	r12		)
 
+/* IAMROOT-12A:
+ * ------------
+ * start에 위치한 시작 코드:
+ *   -0x00~0x1f: 그냥 노는(?) 코드 
+ *   -0x20: brach code (b 1f)
+ *   -0x24: zImage magic number 
+ *   -0x28: zImage 시작 주소
+ *   -0x2c: zImage 끝 주소
+ *   -0x30: 엔디안 식별 코드
+ */ 
 		.word	_magic_sig	@ Magic numbers to help the loader
 		.word	_magic_start	@ absolute load/run zImage address
 		.word	_magic_end	@ zImage end address
@@ -132,8 +186,20 @@ start:
 
  THUMB(		.thumb			)
 1:
+
+/* IAMROOT-12A:
+ * ------------
+ * ARMv6 및 ARMv7 아키텍처가 BIG ENDIAN을 지원함.
+ * ARM_BE8은 BIG ENDIAN을 지원하는 경우 BIG ENDIAN 모드로 동작하게 함
+ * 참고로 라즈베리 파이 2는 ARMv7 이므로 BIG ENDIAN을 지원함
+ */
  ARM_BE8(	setend	be )			@ go BE8 if compiled for BE8
 		mrs	r9, cpsr
+
+/* IAMROOT-12A:
+ * ------------
+ * CONFIG_ARM_VIRT_EXT은 가상화 기술로 ARMv7 아키텍처가 지원함.
+ */
 #ifdef CONFIG_ARM_VIRT_EXT
 		bl	__hyp_stub_install	@ get into SVC mode, reversibly
 #endif
@@ -145,17 +211,33 @@ start:
 		 * FIQs/IRQs (numeric definitions from angel arm.h source).
 		 * We only do this if we were in user mode on entry.
 		 */
+
+/* IAMROOT-12A:
+ * ------------
+ * cpsr 레지스터를 읽어와서 bit0과 bit1이 모두 0인 경우는 usr 모드
+ * tst 명령으로 플래그를 판단하여 usr 모드가 아닌경우 not_angel 레이블로 이동
+ * 
+ * r0에 0x17을 갖고 소프트웨어 인터럽트 0x123456를 호출하면 엔젤 부트로더에
+ * 있는 루틴에서 Svc모드로 바꿀거라 예상됨. THUMB2 코드가 지원되는 경우
+ * swi 대신 THUMB2용 소프트웨어 인터럽트를 호출한다.
+ */
 		mrs	r2, cpsr		@ get current mode
 		tst	r2, #3			@ not user?
 		bne	not_angel
 		mov	r0, #0x17		@ angel_SWIreason_EnterSVC
  ARM(		swi	0x123456	)	@ angel_SWI_ARM
  THUMB(		svc	0xab		)	@ angel_SWI_THUMB
+
 not_angel:
+
+/* IAMROOT-12A:
+ * ------------
+ * 서비스 모드로 진입하기 위한 매크로
+ */
 		safe_svcmode_maskall r0
 		msr	spsr_cxsf, r9		@ Save the CPU boot mode in
-						@ SPSR
-		/*
+						@ SPSR		 
+		/* 
 		 * Note that some cache flushing and other stuff may
 		 * be needed here - is there an Angel SWI call for this?
 		 */
@@ -167,6 +249,14 @@ not_angel:
 
 		.text
 
+/* IAMROOT-12A:
+ * ------------
+ * CONFIG_AUTO_ZRELADDR 옵션이 사용될 경우 decompress된 커널을 위치할
+ *  영역을 자동계산한다.
+ *
+ * r4 = BASE_ADDR + 0x00008000(라즈베리파이의 #TEXT_OFFSET)
+ * Base address의 align은 128M 간격으로 설정됨.
+ */
 #ifdef CONFIG_AUTO_ZRELADDR
 		@ determine final kernel image address
 		mov	r4, pc
@@ -182,8 +272,21 @@ not_angel:
 		 * Given that r4 > &_end is most unfrequent, we add a rough
 		 * additional 1MB of room for a possible appended DTB.
 		 */
+
+/* IAMROOT-12A:
+ * ------------
+ * cmp r0(PC-압축된커널) - r4(ZRELADDR-압축이풀릴커널)
+ * r4보다 PC가 작은 경우 cc 조건이 동작함. 
+ * (압축된 커널이 상위메모리에 있고 압축 풀릴 커널위치가 하위메모리에 
+ * 위치하려는 경우 cc 조건이 포함된 코드 수행)
+ */
 		mov	r0, pc
 		cmp	r0, r4
+
+/* IAMROOT-12A:
+ * ------------
+ * r0에 LC0의 마지막 엔트리가 가리키는 값을 저장함.
+ */
 		ldrcc	r0, LC0+32
 		addcc	r0, r0, pc
 		cmpcc	r4, r0
@@ -539,6 +642,11 @@ not_relocated:	mov	r0, #0
 #else
 		b	__enter_kernel
 #endif
+
+/* IAMROOT-12A:
+ * .size <- .(현재) - LC0가 object의 크기로 정의됨. (for ELF)
+ * _end <- bss의 끝(bss영역은 compressed-zImage 바로 상위)
+ */
 
 		.align	2
 		.type	LC0, #object
