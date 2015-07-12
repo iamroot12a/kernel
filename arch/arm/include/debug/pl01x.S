@@ -1,3 +1,9 @@
+/*
+ * IAMROOT Kernel 12차-A팀 (http://www.iamroot.org)
+ * ===================================================
+ * 디버거 매크로를 사용하기 위해 정의된 파일(라즈베리파이).
+ */
+
 /* arch/arm/include/debug/pl01x.S
  *
  * Debugging macro include header
@@ -12,6 +18,16 @@
 */
 #include <linux/amba/serial.h>
 
+/* IAMROOT-12A:
+ * ------------
+ * 라즈베리파이: 
+ *   -CONFIG_DEBUG_UART_PHYS:	0x20201000
+ *   -CONFIG_DEBUG_UART_VIRT:	0xf0201000
+ *   -UART01x_DR:		0x00    데이터를 Rx/Tx용 레지스터 offset
+ *   -UART01x_FR:		0x18	플래그 레지스터 offset(Read only)
+ *   -UART01x_FR_TXFF:		0x20    TXFF 상태값	
+ *   -UART01x_FR_BUSY:		0x008   Busy 상태값
+ */
 #ifdef CONFIG_DEBUG_UART_PHYS
 		.macro	addruart, rp, rv, tmp
 		ldr	\rp, =CONFIG_DEBUG_UART_PHYS
