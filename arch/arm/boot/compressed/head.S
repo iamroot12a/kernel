@@ -5,7 +5,7 @@
  * 
  * 주석 단축기 <F9>를 사용하는 방법:
  *   - 홈디렉토리에 위치한 .vimrc 파일에 아래의 내용을 추가
- *     map <F9> <ESC>I<CR><CR><UP>/-<BS>*<SPACE>IAMROOT-12A:<CR>------------<CR><CR>/<UP><SPACE>
+ *     map <F9> <ESC>0i<CR><CR><UP>/-<BS>*<SPACE>IAMROOT-12A:<CR>------------<CR><CR>/<UP><SPACE>
  */
 
 /*
@@ -20,8 +20,12 @@
  */
 #include <linux/linkage.h>
 #include <asm/assembler.h>
-
-	.arch	armv7-a
+	
+/* IAMROOT-12A:
+ * ------------
+ * assembler에게 CPU 아키텍처가 armv7-a라고 인식시킨다. 
+ */
+.arch	armv7-a
 /*
  * Debugging stuff
  *
@@ -29,10 +33,27 @@
  * 100% relocatable.  Any attempt to do so will result in a crash.
  * Please select one of the following when turning on debugging.
  */
+
+/* IAMROOT-12A:
+ * ------------
+ * 임베디드 장치가 완전히 테스트되어 양산으로 들어갈 때엔 커널 사이즈와
+ * 속도를 위해 DEBUG 옵션을 disable해야 하는 것을 추천한다. 
+ */
 #ifdef DEBUG
 
+/* IAMROOT-12A:
+ * ------------
+ * ARM 하드웨어 디버거로 보통 하드웨어에 있는 JTAG 단자에 연결하여 디버깅을
+ * 할 수 있다. 물론 라즈베리파이에도 JTAG 단자가 준비되어 있다.
+ */
 #if defined(CONFIG_DEBUG_ICEDCC)
 
+/* IAMROOT-12A:
+ * ------------
+ * 라즈베리파이2의 경우 CONFIG_CPU_V7이 true로 정의되어 있다. 
+ * 일단 현프로젝트 분석에는 하드웨어 디버거 장비를 사용하지 않으므로
+ * 아래 하드웨어 디버거를 이용하는 코드는 분석을 건너뛴다.
+ */
 #if defined(CONFIG_CPU_V6) || defined(CONFIG_CPU_V6K) || defined(CONFIG_CPU_V7)
 		.macro	loadsp, rb, tmp
 		.endm
@@ -55,8 +76,30 @@
 
 #else
 
+/* IAMROOT-12A:
+ * ------------
+ * CONFIG_DEBUG_LL_INCLUDE는 Low Level Debugging을 할 수 있는 코드가 담긴 화일을
+ * 의미하며, 라즈베리파이의 경우 "debug/pl01x.S" 문자열이 담김.
+ *
+ * Low Level 디버깅은 대부분 UART 포트를 사용하여 printk등의 본격적인 디버깅 코드를 
+ * 사용할 수 없는 초기에 사용된다. 
+ * 물론 커널이 아직 초기화 되지 않아 일반적인 커널 함수를 사용할 수 있는 상태가
+ * 되면 printk등의 디버깅 코드를 사용할 수 있음.
+ *
+ * 라즈베리파이의 SoC 내부에 uart 인터페이스가 2개가 있고, 하나는 SoC 내부 통신
+ * 용도로 사용되어 외부로 사용할 수 없게 하였고, 나머지 하나만 사용자가 사용할 수
+ * 있게 하였다.
+ *
+ * 라즈베리파이가 사용하는 addruart, senduart, waituwart, busyuart의 매크로는
+ * 다음 화일에 정의되어 있음.
+ * (arch/arm/include/debug/pl01x.S)
+ */
 #include CONFIG_DEBUG_LL_INCLUDE
 
+/* IAMROOT-12A:
+ * ------------
+ * writeb 매크로 정의하여 uart 포트를 통해 바이트를 출력.
+ */
 		.macro	writeb,	ch, rb
 		senduart \ch, \rb
 		.endm
@@ -71,6 +114,12 @@
 #endif
 		.endm
 #else
+
+/* IAMROOT-12A:
+ * ------------
+ * loadsp 매크로는 uart 통신을 하기위해 uart 관련 레지스터드의 
+ * 물리 및 가상 BASE 주소를 알아온다. 
+ */
 		.macro	loadsp,	rb, tmp
 		addruart \rb, \tmp
 		.endm
@@ -78,17 +127,29 @@
 #endif
 #endif
 
+/* IAMROOT-12A:
+ * ------------
+ * kputc 매크로는 NULL로 끝나는 문자열을 출력한다.
+ */
 		.macro	kputc,val
 		mov	r0, \val
 		bl	putc
 		.endm
 
+/* IAMROOT-12A:
+ * ------------
+ * kphex 매크로는 16진수 형태로 요구한 길이 만큼 덤프한다.
+ */
 		.macro	kphex,val,len
 		mov	r0, \val
 		mov	r1, #\len
 		bl	phex
 		.endm
 
+/* IAMROOT-12A:
+ * ------------
+ * debug_reloc_start 매크로는 각종 정보를 출력한다.
+ */
 		.macro	debug_reloc_start
 #ifdef DEBUG
 		kputc	#'\n'
@@ -110,6 +171,12 @@
 #endif
 		.endm
 
+
+/* IAMROOT-12A:
+ * ------------
+ * debug_reloc_end 매크로는 커널의 끝 주소를 출력하고 
+ * 커널 시작 부분 256 바이트의 메모리를 덤프한다. 
+ */
 		.macro	debug_reloc_end
 #ifdef DEBUG
 		kphex	r5, 8		/* end of kernel */
@@ -119,9 +186,25 @@
 #endif
 		.endm
 
+/* IAMROOT-12A:
+ * ------------
+ * .start 섹션을 선언하고 이 안에 메모리를 할당할 수 있고 실행가능코드라 지정
+ */
+
 		.section ".start", #alloc, #execinstr
 /*
  * sort out different calling conventions
+ */
+
+/* IAMROOT-12A:
+ * ------------
+ * .align은 디폴트로 해당 아키텍처가 최적화된 바이트 단위로 코드와 데이터를
+ *  정렬하게 한다.
+ * ARM 32bit CPU들은 디폴트로 모두 4바이트이다. 64비트 CPU들은 8일까? 
+ *
+ * 코드와 데이터를 4바이트 단위로 정렬하여야 메모리로 부터 데이터를 읽을 때
+ * 별도의 추가 코드 없이 또는 instruction clock cycle이 가장 빠른 코드를
+ * 사용하게 할 수 있다.
  */
 		.align
 		.arm				@ Always enter in ARM state
@@ -233,7 +316,7 @@ not_angel:
 
 /* IAMROOT-12A:
  * ------------
- * 서비스 모드로 진입하기 위한 매크로
+ * 서비스 모드로 진입하기 위한 매크로 (arch/arm/include/asm/assembler.h)
  */
 		safe_svcmode_maskall r0
 		msr	spsr_cxsf, r9		@ Save the CPU boot mode in
