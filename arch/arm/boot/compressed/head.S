@@ -117,7 +117,7 @@
 
 /* IAMROOT-12A:
  * ------------
- * loadsp 매크로는 uart 통신을 하기위해 uart 관련 레지스터드의 
+ * loadsp 매크로는 uart 통신을 하기위해 uart 관련 레지스터의 
  * 물리 및 가상 BASE 주소를 알아온다. 
  */
 		.macro	loadsp,	rb, tmp
@@ -258,9 +258,9 @@ start:
  * start에 위치한 시작 코드:
  *   -0x00~0x1f: 그냥 노는(?) 코드 
  *   -0x20: brach code (b 1f)
- *   -0x24: zImage magic number 
- *   -0x28: zImage 시작 주소
- *   -0x2c: zImage 끝 주소
+ *   -0x24: zImage magic number (0x016f2818)
+ *   -0x28: zImage 시작 주소    (rp ex: 0x00000000)
+ *   -0x2c: zImage 끝 주소      (rp ex: 0x003cca28)
  *   -0x30: 엔디안 식별 코드
  */ 
 		.word	_magic_sig	@ Magic numbers to help the loader
@@ -335,8 +335,8 @@ not_angel:
 
 /* IAMROOT-12A:
  * ------------
- * CONFIG_AUTO_ZRELADDR 옵션이 사용될 경우 decompress된 커널을 위치할
- *  영역을 자동계산한다.
+ * CONFIG_AUTO_ZRELADDR 옵션이 사용될 경우 코드(head.o~압축된커널)가 
+ * 시작할 위치 영역을 자동계산한다.
  *
  * r4 = BASE_ADDR + 0x00008000(라즈베리파이의 #TEXT_OFFSET)
  * Base address의 align은 128M 간격으로 설정됨.
@@ -359,10 +359,17 @@ not_angel:
 
 /* IAMROOT-12A:
  * ------------
- * cmp r0(PC-압축된커널) - r4(ZRELADDR-압축이풀릴커널)
- * r4보다 PC가 작은 경우 cc 조건이 동작함. 
- * (압축된 커널이 상위메모리에 있고 압축 풀릴 커널위치가 하위메모리에 
- * 위치하려는 경우 cc 조건이 포함된 코드 수행)
+ *  if ro(pc) < r4(zreladdr) --> cc조건 동작
+ *  압축된 커널이 하위메모리에있고 압축 풀릴 커널위치가 상위메모리에
+ *  위치하려는 경우 재배치가 불필요하다고 판단한다.
+ *  그러나 뒷 부분 루틴에서 압축 풀릴 커널과 서로 영역이 겹치는지 다시 확인한다.
+ *
+ * r0에          <-  _end     - restart + 16K       + 1M 
+ * (라즈베리파이2: 0x003cca44 - 0x290   + 0x4000 + 0x100000 = 0x004d07b4)
+ * r0 += pc 
+ * (라즈베리파이2: 0x004d086c = r1(0x004d07b4) + pc(0x000000b8)
+ *
+ * if r4(zreladr) < r0 then zreladdr주소의 0번 비트를 set. 왜???
  */
 		mov	r0, pc
 		cmp	r0, r4
@@ -373,18 +380,63 @@ not_angel:
  */
 		ldrcc	r0, LC0+32
 		addcc	r0, r0, pc
+
+/* IAMROOT-12A:
+ * ------------
+ * r4는 압축된커널 시작위치(head.S)가 담기는 이 주소의 최하 1비트를 이용해서
+ * 캐시 설정 여부를 보관해두는 역활로 사용한다.
+ */
 		cmpcc	r4, r0
 		orrcc	r4, r4, #1		@ remember we skipped cache_on
+
+/* IAMROOT-12A:
+ * ------------
+ * 영역이 겹치는지 나중에 판단하지만 재배치가 필요치 않은 경우를 위해 캐시를
+ * 먼저 동작시켜 decompress 루틴으로 이동할 준비를 한다. 
+ */
 		blcs	cache_on
+
+/* IAMROOT-12A:
+ * ------------
+ * restart: 이 위치는 압축이 풀려지는 위치와 현재 압축된 커널의 공간이 중복
+ * 되는 경우 현재의 코드(압축된커널 + 재배치코드(restart-끝))를 이동시킨 후
+ * 다시 restart 이 위치로 점프된다. 
+ * 물론 이 곳으로 점프되기 전에 r4(decompress될 커널의 시작 주소) 레지스터가
+ * 그 이동된 offset(delta)만큼 다시 교정된다. r0에 현재 동작중인 LC0(재배치 
+ * 전 또는 재배치 후에 LC0의 주소는당연히 달라진다.)의 위치를 알아온다.
+ */
 
 restart:	adr	r0, LC0
 		ldmia	r0, {r1, r2, r3, r6, r10, r11, r12}
+
+/* IAMROOT-12A:
+ * ------------
+ * 스택을 설정한다. sp <- L_user_stack_end(stack + 4K)
+ */
+
 		ldr	sp, [r0, #28]
 
 		/*
 		 * We might be running at a different address.  We need
 		 * to fix up various pointers.
 		 */
+
+/* IAMROOT-12A:
+ * ------------
+ * r0에는 delta값이 담기는데, 처음 r0는 이 코드가 동작중일 때의 LC0 위치 값이고
+ * r1은 기존 vmlinux가 빌드될때 결정되었던 LC0 값이다. 
+ * 처음으로 restart 루틴에 진입했을 때 r0와 r1의 값은 동일하다.
+ * 그러나 나중에 재배치가 필요해 다시 이루틴에 재진입되면 LC0의 주소값이
+ * 바뀌었기 떄문에 서로의 차이가 발생한다. 이 차이값을 delta라고 한다.
+ * (라즈베리파이2: LC0=0x00000240, delta=0x00000918?)
+ *
+ * 재배치가 되어 delta가 발생하였으므로 그 차이만큼 아래 두 주소를 갱신한다.
+ * -r6 = _edata + delta
+ * -r10 = _input_data_end-4 + delta
+ *
+ *  _input_data_end-4 = 압축된 커널(piggy)의 마지막 어드레스를 의미함.
+ *                      데이터 내용은 압축된 커널의 길이.
+ */
 		sub	r0, r0, r1		@ calculate the delta offset
 		add	r6, r6, r0		@ _edata
 		add	r10, r10, r0		@ inflated kernel size location
@@ -394,19 +446,66 @@ restart:	adr	r0, LC0
 		 * decompressed kernel at the end of the compressed data
 		 * in little-endian form.
 		 */
+
+/* IAMROOT-12A:
+ * ------------
+ * 커널의 길이가 기록될 때 리틀엔디안으로 기록이되며 이를 엔디안과 관계 없이 알아온다.
+ * (r10(리틀엔디안으로 길이가 저장된 주소) -> r9(커널길이)
+ *
+ * 예) 길이=0x44332211 (리틀엔디안형식으로 기록된 저장소: 11 22 33 44)
+ *		0x00000011 <- 처음 바이트만 r9에 가져옮
+ *		0x00000022 <- 두번째 바이트를 lr에 가져옮
+ *		0x00002211 <- lr레지스터 내용을 8회 shift후 r9 레지스터와 or 연산
+ *		0x00000033 <- 세번째 바이트를 lr에 가져옮
+ *		0x00000044 <- 네번째 바이트를 r10에 가져옮
+ *		0x00332211 <- lr레지스터 내용을 16회 shift후 r9 레지스터와 or 연산
+ *		0x44332211 <- r10레지스터 내용을 24회 shift후 or r9 레지스터와 연산
+ *
+ * 만일 SoC가 리틀엔디안으로 구동되고 있는 경우 변환전과 변환후가 동일.
+ * 만일 SoC가 빅엔디안으로 구동되고 있는 경우 변환전과 변환후가 다름.
+ */
 		ldrb	r9, [r10, #0]
 		ldrb	lr, [r10, #1]
 		orr	r9, r9, lr, lsl #8
-		ldrb	lr, [r10, #2]
+		ldrb	lr, [r10, #2] 
 		ldrb	r10, [r10, #3]
 		orr	r9, r9, lr, lsl #16
 		orr	r9, r9, r10, lsl #24
 
+/* IAMROOT-12A:
+ * ------------
+ * CONFIG_ZBOOT_ROM: ROM이나 플래쉬에 있는 vmlinux를 RAM으로복사하지 않고
+ * 직접 구동하여 사용하려고 할 때 사용.
+ * (라즈베리파이는 각 패키징 업체가 준비해 놓은 설정을 사용하는데 특정
+ * 패키징을 사용하지 않고 다운로드한 라즈베리파이 원 소스의 기본 설정으로
+ * 빌드하였을 때 이 옵션은 사용하지 않는 것으로 되어 있음.
+ * 라즈베리안이라는 기본 패키징도 마찬가지로 이 옵션을 사용하지 않음)
+ */
+
 #ifndef CONFIG_ZBOOT_ROM
 		/* malloc space is above the relocated stack (64k max) */
+
+
+/* IAMROOT-12A:
+ * ------------
+ * RAM에서 구동하는 경우
+ * 기존에 설정한 스택 주소를 delta만큼 재조정
+ * r10에 64K의 버퍼 마지막을 저장(delta 재조정된 스택 + 64K)
+ */
+
 		add	sp, sp, r0
 		add	r10, sp, #0x10000
 #else
+
+
+/* IAMROOT-12A:
+ * ------------
+ * 부트롬 또는 플래쉬에서 vmlinux 코드를 직접 동작시켜 압축을 풀려고 할때는
+ * decompress할 곳이 주어져 고정된다. 그럼에도 누군가 이를 RAM에서 구동하게
+ * 할 수 있는데 이러한 경우에도 _edata (ELF에서 데이터의 섹션의 끝)을 참고한다.
+ * r10은 이미지의 끝을 의미하며 r6(_edata)의 값으로 지정한다.
+ */
+
 		/*
 		 * With ZBOOT_ROM the bss/stack is non relocatable,
 		 * but someone could still run this code from RAM,
@@ -436,6 +535,13 @@ restart:	adr	r0, LC0
  * dtb data will get relocated along with the kernel if necessary.
  */
 
+/* IAMROOT-12A:
+ * ------------
+ * DTB(Device Tree Blob)이 존재하는지 확인한다
+ * r6(_edata = _bss_start)가 가리키는 곳에 0xd00dfeed라는 DTB magic number)가 
+ * 있는지 확인하여 없으면 dtb_check_done으로 이동
+ */
+
 		ldr	lr, [r6, #0]
 #ifndef __ARMEB__
 		ldr	r1, =0xedfe0dd0		@ sig is 0xd00dfeed big endian
@@ -455,28 +561,82 @@ restart:	adr	r0, LC0
 		 * global variable.
 		*/
 
+/* IAMROOT-12A:
+ * ------------
+ * r5 <- DTB size를 저장 (fdt_header->dt_total_size(fdt_size))
+ */
+
 		/* Get the initial DTB size */
 		ldr	r5, [r6, #4]
 #ifndef __ARMEB__
+
+
+/* IAMROOT-12A:
+ * ------------
+ * 시스템이 빅엔디안으로 동작하는 경우 사이즈를 리틀엔디안으로 변환.
+ *
+ *         r5          A    B    C    D
+ *              ror    C    D    A    B
+ *              eor   A^C  B^D  C^A  D^B
+ *              bic   A^C   0   C^A  D^B
+ *              ror    D    A    B    C       
+ *              lsr    0   A^C   0   C^A
+ *         r5          D    C    B    A
+ */
+
 		/* convert to little endian */
 		eor	r1, r5, r5, ror #16
 		bic	r1, r1, #0x00ff0000
 		mov	r5, r5, ror #8
 		eor	r5, r5, r1, lsr #8
 #endif
+
+
+/* IAMROOT-12A:
+ * ------------
+ * DTB 사이즈를 50% 증가. (r5 += shift to right) 증가시킨다.
+ */
+
 		/* 50% DTB growth should be good enough */
 		add	r5, r5, r5, lsr #1
+
+/* IAMROOT-12A:
+ * ------------
+ * 사이즈를 64비트 align 하기위해 7바이트를 추가
+ * 이렇게 7바이트를 더해놔야 마지막 데이터를 안전하게(8바이트) 꺼낼 수 있다.
+ */
 		/* preserve 64-bit alignment */
 		add	r5, r5, #7
 		bic	r5, r5, #7
+
+/* IAMROOT-12A:
+ * ------------
+ * DTB사이즈가 32KB보다 작으면 32K로 설정, 1M보다 크면 1M로 제한한다.
+ */
+
 		/* clamp to 32KB min and 1MB max */
 		cmp	r5, #(1 << 15)
 		movlo	r5, #(1 << 15)
 		cmp	r5, #(1 << 20)
 		movhi	r5, #(1 << 20)
+
+/* IAMROOT-12A:
+ * ------------
+ * 스택을 임시적으로 DTB 데이터 작업 영역 위로 설정한다. 
+ */
 		/* temporarily relocate the stack past the DTB work space */
 		add	sp, sp, r5
 
+/* IAMROOT-12A:
+ * ------------
+ * stmfd = full descending = decrement before
+ * r8=atags/device tree pointer
+ * r6=_edata
+ * r5=dtb size
+ * int atags_to_fdt(void *atag_list, void *fdt, int total_space)
+ *
+ * TODO: atags_to_fdt 함수는 리로케이션 분석 후 예정.
+ */
 		stmfd	sp!, {r0-r3, ip, lr}
 		mov	r0, r8
 		mov	r1, r6
@@ -488,6 +648,14 @@ restart:	adr	r0, LC0
 		 * pointed by r8.  Try the typical 0x100 offset from start
 		 * of RAM and hope for the best.
 		 */
+/* IAMROOT-12A:
+ * ------------
+ * 만일 설정된 장소에서 ATAG를 발견하지 못하면 1이 리턴되는데, 
+ * 이 때 다시 한 번 시작램+0x100에서 ATAG 발견을 시도한다.
+ * 물론 리눅스는 ATAG를 시작램(물리메모리)+0x100에 위치하도록
+ * 추천함.
+ * r4=final kernel address 
+ */
 		cmp	r0, #1
 		sub	r0, r4, #TEXT_OFFSET
 		bic	r0, r0, #1
