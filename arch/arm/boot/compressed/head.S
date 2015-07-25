@@ -359,17 +359,17 @@ not_angel:
 
 /* IAMROOT-12A:
  * ------------
- *  if ro(pc) < r4(zreladdr) --> cc조건 동작
- *  압축된 커널이 하위메모리에있고 압축 풀릴 커널위치가 상위메모리에
- *  위치하려는 경우 재배치가 불필요하다고 판단한다.
- *  그러나 뒷 부분 루틴에서 압축 풀릴 커널과 서로 영역이 겹치는지 다시 확인한다.
+ * 목적: 앞으로 사용할 타겟(decompressed)커널 영역과 현재커널 영역이 겹치는지
+ * 우선 체크하여 겹치지않는 경우 캐시를 on한채로 restart:루틴으로 진입한다.
+ * 현재 pc위치가 decompressed 커널 시작 위치보다 높거나 밑으로 충분히 낮은 경우
+ * 서로 겹치지 않을거라 판단한다.
+ * 정확하게 양역이 겹치는지 체크는 뒷 부분 루틴에서 한 번 더 체크한다.
  *
  * r0에          <-  _end     - restart + 16K       + 1M 
  * (라즈베리파이2: 0x003cca44 - 0x290   + 0x4000 + 0x100000 = 0x004d07b4)
  * r0 += pc 
  * (라즈베리파이2: 0x004d086c = r1(0x004d07b4) + pc(0x000000b8)
  *
- * if r4(zreladr) < r0 then zreladdr주소의 0번 비트를 set. 왜???
  */
 		mov	r0, pc
 		cmp	r0, r4
@@ -377,33 +377,36 @@ not_angel:
 /* IAMROOT-12A:
  * ------------
  * r0에 LC0의 마지막 엔트리가 가리키는 값을 저장함.
+ * 만일 r0(pc) < r4(zreladdr)이면 영역이 겹치지 않는단고 판단한다.
+ * 반대로 pc가 r4보다 더 높은 주소에 위치하면영역이 겹친다고 판단한다.
+ *
  */
 		ldrcc	r0, LC0+32
 		addcc	r0, r0, pc
-
-/* IAMROOT-12A:
- * ------------
- * r4는 압축된커널 시작위치(head.S)가 담기는 이 주소의 최하 1비트를 이용해서
- * 캐시 설정 여부를 보관해두는 역활로 사용한다.
- */
 		cmpcc	r4, r0
-		orrcc	r4, r4, #1		@ remember we skipped cache_on
 
 /* IAMROOT-12A:
  * ------------
- * 영역이 겹치는지 나중에 판단하지만 재배치가 필요치 않은 경우를 위해 캐시를
- * 먼저 동작시켜 decompress 루틴으로 이동할 준비를 한다. 
+ * 영역이 겹친다고 판단되면 r4의 0번 비트에 1을 설정하고 겹치지 않는다고 판단하면
+ * 캐시를 on한다.
+ * r4는 압축된커널 시작위치(head.S)가 담기는 이 주소의 최하 1비트를 이용해서
+ * 캐시 설정 여부를 보관해두는 역활로 사용한다.(0=cache on, 1=cache off)
+ * 영역이 정말 겹치는지 추ㅜ 판단하지만 재배치가 필요치 않은 경우를 위해
+ * 캐시를 먼저 on시키고 restart 루틴을 거쳐 decompress 루틴으로 이동할 준비를
+ * 한다.
+ *
+ * (라즈베리파이2의 기본 설정은 r4보다 r0가 커서(겹쳐짐) r4의 캐시 비트를 1로
+ * 설정한채로 restart 루틴에 진입한다 -> 재배치 필요) 
  */
+		orrcc	r4, r4, #1		@ remember we skipped cache_on
 		blcs	cache_on
+
 
 /* IAMROOT-12A:
  * ------------
  * restart: 이 위치는 압축이 풀려지는 위치와 현재 압축된 커널의 공간이 중복
  * 되는 경우 현재의 코드(압축된커널 + 재배치코드(restart-끝))를 이동시킨 후
  * 다시 restart 이 위치로 점프된다. 
- * 물론 이 곳으로 점프되기 전에 r4(decompress될 커널의 시작 주소) 레지스터가
- * 그 이동된 offset(delta)만큼 다시 교정된다. r0에 현재 동작중인 LC0(재배치 
- * 전 또는 재배치 후에 LC0의 주소는당연히 달라진다.)의 위치를 알아온다.
  */
 
 restart:	adr	r0, LC0
@@ -423,14 +426,13 @@ restart:	adr	r0, LC0
 
 /* IAMROOT-12A:
  * ------------
- * r0에는 delta값이 담기는데, 처음 r0는 이 코드가 동작중일 때의 LC0 위치 값이고
- * r1은 기존 vmlinux가 빌드될때 결정되었던 LC0 값이다. 
- * 처음으로 restart 루틴에 진입했을 때 r0와 r1의 값은 동일하다.
- * 그러나 나중에 재배치가 필요해 다시 이루틴에 재진입되면 LC0의 주소값이
- * 바뀌었기 떄문에 서로의 차이가 발생한다. 이 차이값을 delta라고 한다.
- * (라즈베리파이2: LC0=0x00000240, delta=0x00000918?)
+ * 재배치가 이루어진 후 이곳으로 재진입하게 되면 기존 LC0 주소와 재배치되어 다시
+ * 한 번 주소가 변한 LC0 주소간에 차이가 발생하는데 이를 delta라고 하여 r0에
+ * 저장하며, 필요한 레지스터들의 주소에 더해 교정을 하는데 사용한다.
+ * 재진입한 경우가 아니면 차이가 없기 때문에 delta 값은 0이다.
+ * 처음 저장된 LC0(r1)주소는 zImage가 빌드될 때 결정되었던 LC0 주소값이다.
+ * 재배치가 된 경우 r6와 r10을 교정한다.
  *
- * 재배치가 되어 delta가 발생하였으므로 그 차이만큼 아래 두 주소를 갱신한다.
  * -r6 = _edata + delta
  * -r10 = _input_data_end-4 + delta
  *
@@ -670,6 +672,14 @@ restart:	adr	r0, LC0
 
 		mov	r8, r6			@ use the appended device tree
 
+/* IAMROOT-12A:
+ * ------------
+ * decompressed 커널이 사용해야 하는 bss의 사이즈를 r5에 로드
+ * (라즈베리파이2:0x000bd75c)
+ * r1에 kernel bss size - zImage 대부분(_edata - addr(wont_overwrite))을
+ * 구한 후 양수이면 r9에(target kernel size)에 그값을 더한다.
+ */
+
 		/*
 		 * Make sure that the DTB doesn't end up in the final
 		 * kernel's .bss area. To do so, we adjust the decompressed
@@ -681,6 +691,11 @@ restart:	adr	r0, LC0
 		sub	r1, r6, r1
 		subs	r1, r5, r1
 		addhi	r9, r9, r1
+
+/* IAMROOT-12A:
+ * ------------
+ * DTB 사이즈를 다시 r5에 로드한다.
+ */
 
 		/* Get the current DTB size */
 		ldr	r5, [r6, #4]
@@ -703,6 +718,26 @@ restart:	adr	r0, LC0
 dtb_check_done:
 #endif
 
+
+/* IAMROOT-12A:
+ * ------------
+ * 이 루틴은 현재 동작되는 이미지 영역과 final 커널의 경계 영역이 중복되는지 체크
+ *
+ * final kernel address 밑의 PTE 공간이 zImage의 상부와 겹치는지 확인하려고
+ * r10(end of this image + delta)에 16K를 더한다.
+ * r4(final kernel address)가 r10(end of this image + delta)보다
+ * 크거나 같으면 wont_overwrite(영역이 중복되지 않음)로 이동하라는
+ * 
+ * final kernel address가 현재 수행되는 이미지보다 충분히 위에 있어 중복되지
+ * 않다고 판단하였기에 이 경우 리로케이션이 필요 없다.
+ *
+ * finale kernel은 대부분 SDRAM의 물리 영역 처음 + offset(0x8000)에 위치한다.
+ * 그렇기에 final kernal 주소보다 더 아래에 zImage가 위치한 경우는 보통 플래쉬나
+ * ROM이 SDRAM 보다 물리메모리의 하위에 배치되었고 이주소에서 zImage가
+ * 직접 실행된 경우 이 조건을 만족시킨다. 상당 수의 임베디드 장치들은 zImage가
+ * SDRAM으로 옮겨지지 않고 이렇게 동작하여 wont_overwrite로 이동된다.
+ */
+
 /*
  * Check to see if we will overwrite ourselves.
  *   r4  = final kernel address (possibly with LSB set)
@@ -716,6 +751,24 @@ dtb_check_done:
 		add	r10, r10, #16384
 		cmp	r4, r10
 		bhs	wont_overwrite
+
+
+/* IAMROOT-12A:
+ * ------------
+ * r10 = r4(final kernel address) + r9(decompressed 커널의 사이즈)
+ * if r10 <= r9(wont_overwrite)인 경우 wont_overwrite로 이동하라는
+ * 
+ * decompressed될 커널의 끝 주소가 현재 동작중인 코드위치보다 아래에 있어
+ * 중복되지 않을 때 wont_overwrite로 이동.
+ *
+ * 이 케이스는 u-boot 같은 부트로더와 zImage가 SDRAM의 상부에 배치되고
+ * final kernael image가 SDRAM의 최하부에 배치되어 실행될 때 이러한 경우를
+ * 접하게 되며, SDRAM보다 높은 주소에 배치된 ROM이나 플래쉬에서 zImage가
+ * 직접 실행하게 되면 역시 이와 같은 조건으로 wont_overwrite로 이동된다.
+ * 역시 상당 수의 임베디드 장치들도 이렇게 재배치 없이 decompressed 루틴으로
+ * 진입하여 이용되곤 한다.
+ */
+
 		add	r10, r4, r9
 		adr	r9, wont_overwrite
 		cmp	r10, r9
@@ -733,8 +786,27 @@ dtb_check_done:
 		 * the relocation code added. This avoids overwriting
 		 * ourself when the offset is small.
 		 */
+
+/* IAMROOT-12A:
+ * ------------
+ * 이 루틴부터 리로케이션 시작
+ *
+ * restart부터 시작되는 리로케이션 관련 코드는 압축풀릴 커널의 끝을 기준으로
+ * 추가 계산된 리로케이션코드 크기에 256바이트 단위로 trim을 한 주소가
+ * 리로케이션 코드 영역이다.
+ *
+ * 라즈베리파이 예)
+ * r10 += 0x900 (0x928 - 0xc0 + 0x100) & 0xffffff00
+ * r10 &= 0xffffff00
+ */
+
 		add	r10, r10, #((reloc_code_end - restart + 256) & ~255)
 		bic	r10, r10, #255
+
+/* IAMROOT-12A:
+ * ------------
+ * r5에 restart의 위치 0xffffffe0 (뒤 5비트를 잘라냄) <- 0xc0
+ */
 
 		/* Get start of code we want to copy and align it down. */
 		adr	r5, restart
@@ -754,30 +826,74 @@ dtb_check_done:
 1:
 #endif
 
+/* IAMROOT-12A:
+ * ------------
+ * r9=사본 재배치 코드 주소의 끝을 계산한다.
+ * 0~4번 비트를 clear하는 이유는 코드를 복사할 때 32바이트씩 복사하기 위해
+ * 주소의 align을 32로 한다. 그리고 잘리는 바이트가 없도록 그 전에 31바이트를
+ * 미리 더해준다.
+ */
+
 		sub	r9, r6, r5		@ size to copy
 		add	r9, r9, #31		@ rounded up to a multiple
 		bic	r9, r9, #31		@ ... of 32 bytes
 		add	r6, r9, r5
 		add	r9, r9, r10
 
+/* IAMROOT-12A:
+ * ------------
+ * 복사할 주소의 상위 메모리로부터 하위로 32바이트 단위 Copy
+ * r6(원본 재배치 코드 주소의 끝)가 가리키는 주소의 값 바로 아래부터
+ * 8개의 레지스터에 로드
+ * r9(사본재배치 코드 주소의 끝)이 가리키는 주소 바로 아래부터 8개의
+ * 레지스터값을 기록될
+ * if r6 > r5(0xc0) 이면 반복
+ */
+
 1:		ldmdb	r6!, {r0 - r3, r10 - r12, lr}
 		cmp	r6, r5
 		stmdb	r9!, {r0 - r3, r10 - r12, lr}
 		bhi	1b
+
+/* IAMROOT-12A:
+ * ------------
+ * r6에는 복사된 곳 같에 간격 즉 offset이 담긴다.
+ * 이 offset을 이용하여 잠시 뒤 재배치된 restart 루틴으로 점프해야 할
+ * 때 사용된다.
+ */
 
 		/* Preserve offset to relocated code. */
 		sub	r6, r9, r6
 
 #ifndef CONFIG_ZBOOT_ROM
 		/* cache_clean_flush may use the stack, so relocate it */
+
+/* IAMROOT-12A:
+ * ------------
+ * 캐시 클린 플러쉬 루틴을 이용하려면 스택이 필요해서 재배치 코드의 위쪽으로
+ * 스택을 설정한다.
+ */
 		add	sp, sp, r6
 #endif
 
 		bl	cache_clean_flush
 
+/* IAMROOT-12A:
+ * ------------
+ * 리로케이트된 코드가 있는 곳의 restart:로 점프
+ */
+
 		adr	r0, BSYM(restart)
 		add	r0, r0, r6
 		mov	pc, r0
+
+/* IAMROOT-12A:
+ * ------------
+ * 압축된 커널 이미지를 포함하는 코드가 decompress된 커널과 중복되지
+ * 않았다고 판단되면 이 루틴으로 들어오게된다.
+ * 이 루틴 이하에서는 본격적으로 압축을 풀고 커널 시작(start_kernel)
+ * 으로 가기위한 준비를 한다.
+ */
 
 wont_overwrite:
 /*
@@ -793,9 +909,18 @@ wont_overwrite:
  *   r12 = GOT end
  *   sp  = stack pointer
  */
+
+/* IAMROOT-12A:
+ * ------------
+ * if (delta(리로케이션된적이 없는 경우는 0)) = 0 & (r5(dtb size) = 0)
+ */
 		orrs	r1, r0, r5
 		beq	not_relocated
 
+/* IAMROOT-12A:
+ * ------------
+ * GOT 영역을 알리는 시작과 끝에 delta를 더해 교정함.
+ */
 		add	r11, r11, r0
 		add	r12, r12, r0
 
@@ -805,8 +930,27 @@ wont_overwrite:
 		 * we need to fix up pointers into the BSS region.
 		 * Note that the stack pointer has already been fixed up.
 		 */
+
+/* IAMROOT-12A:
+ * ------------
+ * BSS 영역을 알리는 시작과 끝에 delta를 더해 교정함.
+ */
 		add	r2, r2, r0
 		add	r3, r3, r0
+
+/* IAMROOT-12A:
+ * ------------
+ * GOT 엔트리는 재배치가 일어나면 연결된 주소가 다 엉뚱한 곳을 가리키기 때문에
+ * 링크가 존재하는 모든 엔트리들은 delta 및 dtb size 만큼 더해서 교정해야 한다.
+ * 엔트리들은 PLT를 가리킬 수도 있고, 외부 함수를 가리킬 수 있다.
+ * 그러나 zImage는 외부함수가 연결될 가능성은 없고 내부에서 BSS 영역에 존재하는
+ * 관련 함수등이 있을거라 예상된다.
+ *
+ * r11(GOT start) 주소에서 GOT 엔트리를 읽어 r1에 대입
+ * r1(엔트리) += delta로 교정
+ * dtb size 만큼 추가로 교정할지 판단
+ * 4바이트 만큼 이동하여 다음 엔트리 주소가 마지막이 아니면 다시 레이블 1로 루프.
+ */
 
 		/*
 		 * Relocate all entries in the GOT table.
@@ -821,6 +965,11 @@ wont_overwrite:
 		cmp	r11, r12
 		blo	1b
 
+/* IAMROOT-12A:
+ * ------------
+ * BSS 영역을 알리는 시작과 끝에 DTB 사이즈만큼 추가 교정(delta는 이미 추가하였었음)
+ */
+
 		/* bump our bss pointers too */
 		add	r2, r2, r5
 		add	r3, r3, r5
@@ -831,6 +980,18 @@ wont_overwrite:
 		 * Relocate entries in the GOT table.  We only relocate
 		 * the entries that are outside the (relocated) BSS region.
 		 */
+
+/* IAMROOT-12A:
+ * ------------
+ * ROM또는 플래쉬에서 직접 수행되는 경우
+ * TODO: 언제 이 영역이 리로케이션 되었는지 확인 필요....
+ *
+ * r11(GOT start)주소에서 GOT엔트리를 읽어 r1에 대입
+ * if r1(엔트리) < r2(bss_start) ||
+ *    r3(_end) < r1(엔트리)
+ *       r1 += r0(delta)
+ */
+
 1:		ldr	r1, [r11, #0]		@ relocate entries in the GOT
 		cmp	r1, r2			@ entry < bss_start ||
 		cmphs	r3, r1			@ _end < entry
@@ -840,6 +1001,33 @@ wont_overwrite:
 		blo	1b
 #endif
 
+
+/* IAMROOT-12A:
+ * ------------
+ * BSS 영역 데이터를0x00으로 초기화 한다.
+ * (라즈베리파이2: BSS 공간이 0x1c개 만큼인데 일부 over해서 초기화 함
+ * 그래도 됨? -- 사실 16바이트 align을 기대하고 readelf로 분석을 해보니
+ * 해당 공간은 8바이트 align 상태여서 뭔가 맞지 않는다는느낌이다.
+ * 어쨋든 그 최대 파괴되는 일부 바이트가 위치한 공간은 스택 중 가장 아래에
+ * 위치한 공간이고 확실히 아직 스택을 많이 사용한 적이 없으므로 전혀 상관
+ * 없다고 함. 다나 Russel king이 우리들 코드 분석하는데 애 좀 먹도록 이 부분
+ * 주석도 없이 그냥 사용했다는 것이.....
+ * 캐시가 on된 상태에서 캐시라인을 충분히 사용하므로 4번의 Word를 연속 저장하여
+ * 성능을 높이려는 것은 충분히 이해가 가는데 왜 어찌 일부 초과한 상태라도 
+ * 이해 바란다는 주석이 없을까?
+ *
+ * 참고: .align
+ * default align은 32비트 시스템은 4바이트, 64비트 시스템은 8바이트
+ * .align 지시자는 인수의 해석을 시스템에 따라 달리한다.
+ * 어떤 시스템에서는 n 바이트 단위로 지정을 하고, 또 다른 시스템에서는
+ * 2^n 바이트 단위로 동작한다.
+ * - n 바이트 단위: 
+ *    a29k, hppa, m68k, sparc, Xtensa, Renesas / SuperH SH, i386 using ELF format
+ * - 2^n 바이트 단위: 
+ *    i386 using a.out (old format), arm, strong ARMv3
+ * 대문자로 표현된 ALIGN(8)과 같은 매크로는 8바이트를 의미.
+ */
+
 not_relocated:	mov	r0, #0
 1:		str	r0, [r2], #4		@ clear bss
 		str	r0, [r2], #4
@@ -848,6 +1036,12 @@ not_relocated:	mov	r0, #0
 		cmp	r2, r3
 		blo	1b
 
+/* IAMROOT-12A:
+ * ------------
+ * r4 레지스터의 0번 비트가 set되어 있지 않으면 cache_on을 호출
+ * r4 레지스터는 커널 시작 주소로 계속 사용되어야 하므로 하위 1비트를
+ * 다른 용도로 잠시 사용하였던 것을 없애기 위해 clear 해야 한다.
+ */
 		/*
 		 * Did we skip the cache setup earlier?
 		 * That is indicated by the LSB in r4.
@@ -864,13 +1058,25 @@ not_relocated:	mov	r0, #0
  *   r7  = architecture ID
  *   r8  = atags pointer
  */
+
+/* IAMROOT-12A:
+ * ------------
+ * decompress_kernel(kernel execution address, sp, sp+0x10000, architecture ID) 호출
+ */
 		mov	r0, r4
 		mov	r1, sp			@ malloc space above stack
 		add	r2, sp, #0x10000	@ 64k max
 		mov	r3, r7
 		bl	decompress_kernel
+
+/* IAMROOT-12A:
+ * ------------
+ * decompress가 끝났으면 커널 설정을 하러가기 전에 캐쉬를 클린 +플러쉬 + off 한다.
+ */
+
 		bl	cache_clean_flush
 		bl	cache_off
+
 		mov	r1, r7			@ restore architecture number
 		mov	r2, r8			@ restore atags pointer
 
@@ -892,6 +1098,13 @@ not_relocated:	mov	r0, #0
 		.align	2
 .L__hyp_reentry_vectors_offset:	.long	__hyp_reentry_vectors - .
 #else
+
+
+/* IAMROOT-12A:
+ * ------------
+ * 한 번 가면 다시 돌아올일 없음.
+ */
+
 		b	__enter_kernel
 #endif
 
@@ -912,6 +1125,11 @@ LC0:		.word	LC0			@ r1
 		.word	.L_user_stack_end	@ sp
 		.word	_end - restart + 16384 + 1024*1024
 		.size	LC0, . - LC0
+
+/* IAMROOT-12A:
+ * ------------
+ * RIskPC인 경우에만 사용.
+ */
 
 #ifdef CONFIG_ARCH_RPC
 		.globl	params
