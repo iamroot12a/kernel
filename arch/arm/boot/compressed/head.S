@@ -5,7 +5,7 @@
  * 
  * 주석 단축기 <F9>를 사용하는 방법:
  *   - 홈디렉토리에 위치한 .vimrc 파일에 아래의 내용을 추가
- *     map <F9> <ESC>0i<CR><CR><UP>/-<BS>*<SPACE>IAMROOT-12A:<CR>------------<CR><CR>/<UP><SPACE>
+ *     map <F9> <ESC>O<ESC>0i<CR><UP>/-<BS>*<SPACE>IAMROOT-12A:<CR>------------<CR><CR>/<UP><SPACE>
  */
 
 /*
@@ -247,6 +247,8 @@ start:
  * 레이블을 찾아 이동하라는 의미임
  *
  * BSYM 매크로는 THUMB2 코드로 진행되는 경우 레이블 1: + 1을 가리킨다.
+ * bx 명령어에서는 레이블 주소의 하위 비트(LSB)가 1이면 THUMB 모드로
+ * 전환하고 0이면 ARM 모드로 전환한다.
  */
    ARM(		mov	r0, r0		)
    ARM(		b	1f		)
@@ -426,6 +428,9 @@ restart:	adr	r0, LC0
 
 /* IAMROOT-12A:
  * ------------
+ * r0는 현재 실행되는 상태의 LC0의 주소 값이 담기고,
+ * r1은 처음 이미지가 만들어질 때 당시의 주소 값(0을 기준으로)이 담겨 있고
+ * 이 둘의 차이 값이 r0(delta) 값이 된다.
  * 재배치가 이루어진 후 이곳으로 재진입하게 되면 기존 LC0 주소와 재배치되어 다시
  * 한 번 주소가 변한 LC0 주소간에 차이가 발생하는데 이를 delta라고 하여 r0에
  * 저장하며, 필요한 레지스터들의 주소에 더해 교정을 하는데 사용한다.
@@ -452,6 +457,7 @@ restart:	adr	r0, LC0
 
 /* IAMROOT-12A:
  * ------------
+ * 커널 길이(decompress kernel)
  * 커널의 길이가 기록될 때 리틀엔디안으로 기록이되며 이를 엔디안과 관계 없이 알아온다.
  * (r10(리틀엔디안으로 길이가 저장된 주소) -> r9(커널길이)
  *
@@ -576,7 +582,8 @@ restart:	adr	r0, LC0
 
 /* IAMROOT-12A:
  * ------------
- * 시스템이 빅엔디안으로 동작하는 경우 사이즈를 리틀엔디안으로 변환.
+ * 시스템이 리틀엔디안으로 동작하는 경우 사이즈(기존 빅엔디안으로 저장된)를
+ * 리틀엔디안으로 변환.
  *
  *         r5          A    B    C    D
  *              ror    C    D    A    B
@@ -586,14 +593,12 @@ restart:	adr	r0, LC0
  *              lsr    0   A^C   0   C^A
  *         r5          D    C    B    A
  */
-
 		/* convert to little endian */
 		eor	r1, r5, r5, ror #16
 		bic	r1, r1, #0x00ff0000
 		mov	r5, r5, ror #8
 		eor	r5, r5, r1, lsr #8
 #endif
-
 
 /* IAMROOT-12A:
  * ------------
@@ -639,6 +644,7 @@ restart:	adr	r0, LC0
  * int atags_to_fdt(void *atag_list, void *fdt, int total_space)
  *
  * TODO: atags_to_fdt 함수는 리로케이션 분석 후 예정.
+ *
  */
 		stmfd	sp!, {r0-r3, ip, lr}
 		mov	r0, r8
@@ -732,7 +738,8 @@ dtb_check_done:
  * final kernel address가 현재 수행되는 이미지보다 충분히 위에 있어 중복되지
  * 않다고 판단하였기에 이 경우 리로케이션이 필요 없다.
  *
- * finale kernel은 대부분 SDRAM의 물리 영역 처음 + offset(0x8000)에 위치한다.
+ * final kernel은 대부분 SDRAM의 물리 영역 처음 + offset(0x8000 등)에 위치한다.
+ *                               TEXT_BASE + TEXT_OFFSEET : 시스템마다 다름.
  * 그렇기에 final kernal 주소보다 더 아래에 zImage가 위치한 경우는 보통 플래쉬나
  * ROM이 SDRAM 보다 물리메모리의 하위에 배치되었고 이주소에서 zImage가
  * 직접 실행된 경우 이 조건을 만족시킨다. 상당 수의 임베디드 장치들은 zImage가
@@ -796,6 +803,8 @@ dtb_check_done:
  * 추가 계산된 리로케이션코드 크기에 256바이트 단위로 trim을 한 주소가
  * 리로케이션 코드 영역이다.
  *
+ * 왜 빈 공간을 256바이트로 두었을까???
+ *
  * 라즈베리파이 예)
  * r10 += 0x900 (0x928 - 0xc0 + 0x100) & 0xffffff00
  * r10 &= 0xffffff00
@@ -843,7 +852,7 @@ dtb_check_done:
 
 /* IAMROOT-12A:
  * ------------
- * 복사할 주소의 상위 메모리로부터 하위로 32바이트 단위 Copy
+ * 복사할 주소의 상위 메모리로부터 하위로 32바이트 단위 Copy (for cache line)
  * r6(원본 재배치 코드 주소의 끝)가 가리키는 주소의 값 바로 아래부터
  * 8개의 레지스터에 로드
  * r9(사본재배치 코드 주소의 끝)이 가리키는 주소 바로 아래부터 8개의
@@ -858,7 +867,7 @@ dtb_check_done:
 
 /* IAMROOT-12A:
  * ------------
- * r6에는 복사된 곳 같에 간격 즉 offset이 담긴다.
+ * r6에는 offset이 담긴다.
  * 이 offset을 이용하여 잠시 뒤 재배치된 restart 루틴으로 점프해야 할
  * 때 사용된다.
  */
@@ -914,8 +923,8 @@ wont_overwrite:
 /* IAMROOT-12A:
  * ------------
  * if (delta = 0) & (r5(dtb size) = 0)
- * delta가 0이면서 dtb_size도 0이면 BSS 및 GOT 영역들의 위치가 바뀌지
- * 않으므로 리로케이션이 필요없는 경우다.
+ * delta가 0이면서 dtb_size도 0이면 BSS 및 GOT 영역들의 위치가 바뀔 필요가
+ * 없으므로 리로케이션 로직을 수행하지 않았던 경우이다.
  */
 		orrs	r1, r0, r5
 		beq	not_relocated
@@ -993,6 +1002,13 @@ wont_overwrite:
  * if r1(엔트리) < r2(bss_start) ||
  *    r3(_end) < r1(엔트리)
  *       r1 += r0(delta)
+ *
+ * 직역)
+ *		if r1 >= r2 then 
+ *		    if r3 < r1 then
+ *		       r1 += r0
+ *		else
+ *		    r1 += r0
  */
 
 1:		ldr	r1, [r11, #0]		@ relocate entries in the GOT
