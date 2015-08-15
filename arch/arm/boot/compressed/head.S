@@ -1250,6 +1250,15 @@ __armv3_mpu_cache_on:
 #define CB_BITS 0x0c
 #endif
 
+/* IAMROOT-12A:
+ * ------------
+ * r3=decompressed kernel-16K 부터 page direcotry의 시작
+ * r3의 align을 16K단위로 맞춘다.
+ *
+ * r9=DRAM 시작 주소(align 256KB)
+ */
+
+
 __setup_mmu:	sub	r3, r4, #16384		@ Page directory size
 		bic	r3, r3, #0xff		@ Align the pointer
 		bic	r3, r3, #0x3f00
@@ -1281,11 +1290,23 @@ __setup_mmu:	sub	r3, r4, #16384		@ Page directory size
  */
 		orr	r1, r6, #0x04		@ ensure B is set for this
 		orr	r1, r1, #3 << 10
+/* IAMROOT-12A:
+ * ------------
+ * 현재 실행되고 있는 위치의 하위 20비트를 제거하면 페이지테이블의 index가 된다.
+ * 이를 r1(short descriptor page table entry)에 추가
+ *
+ * r0(현위치에 대응하는 PTE) = r3(page directory 시작) + index(r2 * 4)
+ */
 		mov	r2, pc
 		mov	r2, r2, lsr #20
 		orr	r1, r1, r2, lsl #20
 		add	r0, r3, r2, lsl #2
 		str	r1, [r0], #4
+/* IAMROOT-12A:
+ * ------------
+ * 1M를 증가시켜 한 번 더한다. (총 2M까지면 충분하다고 판단)
+ */
+
 		add	r1, r1, #1048576
 		str	r1, [r0]
 		mov	pc, lr
