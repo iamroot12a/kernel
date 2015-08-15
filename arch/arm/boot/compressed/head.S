@@ -12,7 +12,8 @@
  *     이벽산-lbyeoksan@gmail.com
  *     junghaesung - jhs01291@gmail.com
  *     한대근 - dev.daegeunhan@gmail.com
- *     koodongsoo - cloudevops@naver.com
+ *     koodongsoo - cloudevops@naver.compressed
+ *     유계성 - gsryu99@gmail.com 
  */
 
 /*
