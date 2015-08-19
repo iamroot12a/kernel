@@ -5,14 +5,14 @@
  * 
  * 주석 단축기 <F9>를 사용하는 방법:
  *   - 홈디렉토리에 위치한 .vimrc 파일에 아래의 내용을 추가
- *     map <F9> <ESC>O<ESC>0i<CR><UP>/-<BS>*<SPACE>IAMROOT-12A:<CR>------------<CR><CR>/<UP><SPACE>
+ *     map <F9> <ESC>O<ESC>0i<CR><CR><UP>/-<BS>*<SPACE>IAMROOT-12A:<CR>------------<CR><CR>/<UP><SPACE>
  *
  * 참여자:
- *     문영일-jakeisname@gmail.com
- *     이벽산-lbyeoksan@gmail.com
- *     junghaesung - jhs01291@gmail.com
+ *     문영일 - jakeisname@gmail.com
+ *     이벽산 - lbyeoksan@gmail.com
+ *     정해성 - jhs01291@gmail.com
  *     한대근 - dev.daegeunhan@gmail.com
- *     koodongsoo - cloudevops@naver.compressed
+ *     구동수 - cloudevops@naver.comp
  *     유계성 - gsryu99@gmail.com 
  *     전성윤 - roland.korea@gmail.com
  *     김관호 - junku80@gmail.com
@@ -1252,12 +1252,15 @@ __armv3_mpu_cache_on:
 
 /* IAMROOT-12A:
  * ------------
+ * 16KB의 페이지 테이블을 초기화하는데 이 영역은 relocation 및 decompressed
+ * 루틴에서 잠시 이용하므로 물리메모리 변환을 1단계로만 만들며,
+ * 페이지를 1M 단위로 4G 전체 메모리에 대응하는 섹션 엔트리(총 4096개)로
+ * 구성한다. 진짜 커널 셋업 루틴에서는 2단계 이상의 페이지 테이블을 사용하여
+ * 구성한다.
+ *
  * r3=decompressed kernel-16K 부터 page direcotry의 시작
  * r3의 align을 16K단위로 맞춘다.
- *
- * r9=DRAM 시작 주소(align 256KB)
  */
-
 
 __setup_mmu:	sub	r3, r4, #16384		@ Page directory size
 		bic	r3, r3, #0xff		@ Align the pointer
@@ -1266,13 +1269,37 @@ __setup_mmu:	sub	r3, r4, #16384		@ Page directory size
  * Initialise the page tables, turning on the cacheable and bufferable
  * bits for the RAM area only.
  */
+
+/* IAMROOT-12A:
+ * ------------
+ * r0=r3(페이지 디렉토리 시작) 부터 시작하는 카운터로 초기화할 엔트리를 
+ * 가리키며 페이지 디렉토리의 끝을 만날때까지 4바이트 단위로 증가시킨다.
+ *
+ * r9=DRAM 시작 주소(align 256KB:18비트 쉬프트)
+ * r10=resonable DRAM(256M) 영역의 끝(r9 + 256M)
+ */
 		mov	r0, r3
 		mov	r9, r0, lsr #18
 		mov	r9, r9, lsl #18		@ start of RAM
 		add	r10, r9, #0x10000000	@ a reasonable RAM size
+
+/* IAMROOT-12A:
+ * ------------
+ * r1=엔트리 값으로 처음에 XN | Sectioni | AP=full access로 시작한다.
+ * r2=페이지 디렉토리의 끝(시작 + 16KB)
+ */
+
 		mov	r1, #0x12		@ XN|U + section mapping
 		orr	r1, r1, #3 << 10	@ AP=11
 		add	r2, r3, #16384
+
+/* IAMROOT-12A:
+ * ------------
+ * 엔트리가 RAM 영역에 대응하면 r1 += full access | C | B | !XN | Section으로,
+ * 그 외 영역인 경우 r1 += full access | XN | Section으로 기록
+ * r1을 1M씩 증가시킨 후 page directory의 끝을 만날때까지 반복한다.
+ */
+
 1:		cmp	r1, r9			@ if virt > start of RAM
 		cmphs	r10, r1			@   && end of RAM > virt
 		bic	r1, r1, #0x1c		@ clear XN|U + C + B
@@ -1292,6 +1319,10 @@ __setup_mmu:	sub	r3, r4, #16384		@ Page directory size
 		orr	r1, r1, #3 << 10
 /* IAMROOT-12A:
  * ------------
+ * 플래쉬에서 시작한 경우 플래쉬에 대응하는 페이지 테이블을 !XN | B를 하여
+ * 2칸(2MB) 기록한다. DRAM에서 시작한 경우에는 그냥 2번 겹쳐 기록 하게 
+ * 되는데 겹쳐 기록해도 무방하므로 상관없다.
+ *
  * 현재 실행되고 있는 위치의 하위 20비트를 제거하면 페이지테이블의 index가 된다.
  * 이를 r1(short descriptor page table entry)에 추가
  *
@@ -1345,11 +1376,23 @@ __armv4_mmu_cache_on:
 #endif
 		mov	pc, r12
 
+/* IAMROOT-12A:
+ * ------------
+ * ARMv7에서 사용하는 캐시 on 루틴이다.
+ */
+
+
 __armv7_mmu_cache_on:
 		mov	r12, lr
 #ifdef CONFIG_MMU
 		mrc	p15, 0, r11, c0, c1, 4	@ read ID_MMFR0
 		tst	r11, #0xf		@ VMSA
+/* IAMROOT-12A:
+ * ------------
+ * 라즈베리파이2 SoC는 Write-Back 캐시 기능이 지원된다.
+ * r6=0xe(C | B | !XN)
+ */
+
 		movne	r6, #CB_BITS | 0x02	@ !XN
 		blne	__setup_mmu
 		mov	r0, #0
@@ -1428,6 +1471,12 @@ __common_mmu_cache_on:
  *  r12 = corrupted
  */
 
+/* IAMROOT-12A:
+ * ------------
+ * r3에 block offset을 주고 이 레이블로 점프하면 동작하고 있는 CPU 
+ * 아키텍처를 찾아 해당 캐시 함수를 호출하게된다.
+ */
+
 call_cache_fn:	adr	r12, proc_types
 #ifdef CONFIG_CPU_CP15
 		mrc	p15, 0, r9, c0, c0	@ get processor ID
@@ -1458,6 +1507,13 @@ call_cache_fn:	adr	r12, proc_types
  * methods.  Writeback caches _must_ have the flush method
  * defined.
  */
+
+/* IAMROOT-12A:
+ * ------------
+ * CPU 아키텍처 별로 캐시 관련 명령을 찾아갈 수 있는 구조체를 담고있다.
+ * 5개의 멤버로 구성되며 하나의 엔트리는 20 바이트이다.
+ */
+
 		.align	2
 		.type	proc_types,#object
 proc_types:
@@ -1586,6 +1642,10 @@ proc_types:
 		W(b)	__armv4_mmu_cache_off
 		W(b)	__armv6_mmu_cache_flush
 
+/* IAMROOT-12A:
+ * ------------
+ * 라즈베리 파이2의 아키텍처는 ARMv7
+ */
 		.word	0x000f0000		@ new CPU Id
 		.word	0x000f0000
 		W(b)	__armv7_mmu_cache_on
