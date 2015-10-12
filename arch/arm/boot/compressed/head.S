@@ -417,7 +417,7 @@ not_angel:
  * 되는 경우 현재의 코드(압축된커널 + 재배치코드(restart-끝))를 이동시킨 후
  * 다시 restart 이 위치로 점프된다. 
  */
-
+		
 restart:	adr	r0, LC0
 		ldmia	r0, {r1, r2, r3, r6, r10, r11, r12}
 
@@ -1178,6 +1178,17 @@ params:		ldr	r0, =0x10000100		@ params_phys for RPC
  * This routine must preserve:
  *  r4, r7, r8
  */
+
+
+/* IAMROOT-12A:
+ * ------------
+ * align 5: 32byte align - 32바이트 align을 한 이유?
+ * r3 <- #8번을 넣은 이유는 객체의 멤버가 8byte에 있는 곳을 가리키는데
+ * 그 객체의 8바이트 위치에는 해당 아키텍처의 cache_on 함수의 포인터가 
+ * 담겨 있다.
+ */
+
+		
 		.align	5
 cache_on:	mov	r3, #8			@ cache_on function
 		b	call_cache_fn
@@ -1244,6 +1255,12 @@ __armv3_mpu_cache_on:
 		mcr	p15, 0, r0, c7, c0, 0	@ invalidate whole cache v3
 		mov	pc, lr
 
+/* IAMROOT-12A:
+ * ------------
+ * 라즈베리파이는 d-cache가 write-back까지 지원함.
+ * (CB_BITS는 0c)
+ */
+
 #ifdef CONFIG_CPU_DCACHE_WRITETHROUGH
 #define CB_BITS 0x08
 #else
@@ -1259,7 +1276,9 @@ __armv3_mpu_cache_on:
  * 구성한다.
  *
  * r3=decompressed kernel-16K 부터 page direcotry의 시작
- * r3의 align을 16K단위로 맞춘다.
+ * r3의 align을 16K단위로 맞춘다. (14 bits)
+ * (인스트럭션을 구성하는 immediate의 길이가 제한되어 있어 2번에 나누어 처리,
+ *  bic r3, r3, #3fff 를 하려는 목적)    
  */
 
 __setup_mmu:	sub	r3, r4, #16384		@ Page directory size
@@ -1286,7 +1305,11 @@ __setup_mmu:	sub	r3, r4, #16384		@ Page directory size
 /* IAMROOT-12A:
  * ------------
  * r1=엔트리 값으로 처음에 XN | Sectioni | AP=full access로 시작한다.
+ *    (0xc12)
  * r2=페이지 디렉토리의 끝(시작 + 16KB)
+ *
+ * U: Uncache로 추정(0)
+ * AP(11): full access - read/write
  */
 
 		mov	r1, #0x12		@ XN|U + section mapping
@@ -1298,6 +1321,7 @@ __setup_mmu:	sub	r3, r4, #16384		@ Page directory size
  * 엔트리가 RAM 영역에 대응하면 r1 += full access | C | B | !XN | Section으로,
  * 그 외 영역인 경우 r1 += full access | XN | Section으로 기록
  * r1을 1M씩 증가시킨 후 page directory의 끝을 만날때까지 반복한다.
+ * (256M 영역내: 0xc0e, 영역외: 0xc12)
  */
 
 1:		cmp	r1, r9			@ if virt > start of RAM
@@ -1315,6 +1339,13 @@ __setup_mmu:	sub	r3, r4, #16384		@ Page directory size
  * so there is no map overlap problem for up to 1 MB compressed kernel.
  * If the execution is in RAM then we would only be duplicating the above.
  */
+
+
+/* IAMROOT-12A:
+ * ------------
+ * r1 값은 0xc0e (full access | C | B | section)
+ */
+
 		orr	r1, r6, #0x04		@ ensure B is set for this
 		orr	r1, r1, #3 << 10
 /* IAMROOT-12A:
@@ -1379,6 +1410,7 @@ __armv4_mmu_cache_on:
 /* IAMROOT-12A:
  * ------------
  * ARMv7에서 사용하는 캐시 on 루틴이다.
+ * ID_MMFR0.vmsa를 읽어온다. (MMU가 있는지 확인해서 있는경우 mmu를 동작시키기 위함)
  */
 
 
@@ -1390,14 +1422,33 @@ __armv7_mmu_cache_on:
 /* IAMROOT-12A:
  * ------------
  * 라즈베리파이2 SoC는 Write-Back 캐시 기능이 지원된다.
- * r6=0xe(C | B | !XN)
+ * r6=페이지 속성으로 라즈베리파이2의 경우 0xe(!XN(0) | C | B | SECTION) 
  */
 
 		movne	r6, #CB_BITS | 0x02	@ !XN
 		blne	__setup_mmu
 		mov	r0, #0
+
+/* IAMROOT-12A:
+ * ------------
+ * c7/0, c10/4 DSB
+ * TODO: r0에 0을 집어넣는 이유는 무엇인가?
+ *       아마 out-of-order execution으로 인한 오류를 막기 위해 reg. dependecy를 
+ *       사용하여 in-order exe. 하기 위함...??
+ */
 		mcr	p15, 0, r0, c7, c10, 4	@ drain write buffer
-		tst	r11, #0xf		@ VMSA
+		tst	r11, #0xf		@ vmsa
+
+/* IAMROOT-12A:
+ * ------------
+ * TLBIALL - cp15, c8/0, c7/0 - tlb는 invalidate만 존재.
+ * RAO: Read As One
+ * SBOP: Should Be One Preserved
+ * RAO/SBOP <- 앞쪽은 read 뒤쪽이 write option 
+ * CP15EN: barrier 명령들이 동작되게 한다. reset시 default로 1로 설정되어 있음.
+ * A: unaligned access fault를 지원하기 위한 mask
+ * U: unaligned access 를 지원하려면 1. (armv7에서는 항상 1)
+ */
 		mcrne	p15, 0, r0, c8, c7, 0	@ flush I,D TLBs
 #endif
 		mrc	p15, 0, r0, c1, c0, 0	@ read control reg
@@ -1409,17 +1460,54 @@ __armv7_mmu_cache_on:
 						@ (needed for ARM1176)
 #ifdef CONFIG_MMU
  ARM_BE8(	orr	r0, r0, #1 << 25 )	@ big-endian page tables
+
+
+/* IAMROOT-12A:
+ * ------------
+ * VMSA(MMU)를 지원하지 않는 경우 뒤 명령 3개는 동작하지 않음.
+ * 위 tst 명령이 계속 유효.
+ */
+
 		mrcne   p15, 0, r6, c2, c0, 2   @ read ttb control reg
 		orrne	r0, r0, #1		@ MMU enabled
+
+/* IAMROOT-12A:
+ * ------------
+ * DOMAIN0만 client(01)로 설정
+ */
 		movne	r1, #0xfffffffd		@ domain 0 = client
+
+/* IAMROOT-12A:
+ * ------------
+ * TTBCR.N의 두 비트만 클리어하는 것이 오류?  (N=3bit)
+ */
 		bic     r6, r6, #1 << 31        @ 32-bit translation system
 		bic     r6, r6, #3 << 0         @ use only ttbr0
+
+/* IAMROOT-12A:
+ * ------------
+ * r3(start page table) -> TTBR0
+ * r1(domain...) -> DACR
+ * r6(32bit, N) -> TTBCR
+ */
 		mcrne	p15, 0, r3, c2, c0, 0	@ load page table pointer
 		mcrne	p15, 0, r1, c3, c0, 0	@ load domain access control
 		mcrne   p15, 0, r6, c2, c0, 2   @ load ttb control
 #endif
+
 		mcr	p15, 0, r0, c7, c5, 4	@ ISB
+
+/* IAMROOT-12A:
+ * ------------
+ * r0(시스템 관련 비트들) -> SCTLR
+ * 여기서 MMU를 켬. (캐시 기능 on)
+ */
 		mcr	p15, 0, r0, c1, c0, 0	@ load control register
+
+/* IAMROOT-12A:
+ * ------------
+ * SCTLR을 다시 읽는 이유?? 
+ */
 		mrc	p15, 0, r0, c1, c0, 0	@ and read it back
 		mov	r0, #0
 		mcr	p15, 0, r0, c7, c5, 4	@ ISB
@@ -1473,8 +1561,14 @@ __common_mmu_cache_on:
 
 /* IAMROOT-12A:
  * ------------
- * r3에 block offset을 주고 이 레이블로 점프하면 동작하고 있는 CPU 
+ * r3에 offset을 주고 이 레이블로 점프하면 동작하고 있는 CPU 
  * 아키텍처를 찾아 해당 캐시 함수를 호출하게된다.
+ * (r3에 #8-cache_on, #12-cache_off, #16-cache_flush가 들어갈 수 있다.)
+ *
+ * r12: proc_types 레이블의 주소를 알아온다. (proc_type별 데이터가 담긴 객체)
+ * r9: MIDR 값을 가져온다.
+ * r1: architecture code
+ * r2: architecture mask
  */
 
 call_cache_fn:	adr	r12, proc_types
@@ -1512,6 +1606,14 @@ call_cache_fn:	adr	r12, proc_types
  * ------------
  * CPU 아키텍처 별로 캐시 관련 명령을 찾아갈 수 있는 구조체를 담고있다.
  * 5개의 멤버로 구성되며 하나의 엔트리는 20 바이트이다.
+ *
+ * 1st entry: architecture code (MIDR)
+ * 2nd entry: architercure mask
+ * 3rd entry: mmu_cache_on
+ * 4th entry: mmu_cache_off
+ * 5th entry: mmu_cache_flush
+ *
+ * mov pc, lr & nop로 되어 있는 엔트리들은 해당 함수가 없어서 그냥 복귀한다.
  */
 
 		.align	2
@@ -1715,6 +1817,11 @@ __armv4_mmu_cache_off:
 #endif
 		mov	pc, lr
 
+/* IAMROOT-12A:
+ * ------------
+ * r0 <- SCTLR
+ * 캐시 비트와 MMU 비트를 clear
+ */
 __armv7_mmu_cache_off:
 		mrc	p15, 0, r0, c1, c0
 #ifdef CONFIG_MMU
@@ -1725,6 +1832,11 @@ __armv7_mmu_cache_off:
 		mcr	p15, 0, r0, c1, c0	@ turn MMU and cache off
 		mov	r12, lr
 		bl	__armv7_mmu_cache_flush
+
+/* IAMROOT-12A:
+ * ------------
+ * invalidate TLB, invalidate BTC, DSB, ISB 
+ */
 		mov	r0, #0
 #ifdef CONFIG_MMU
 		mcr	p15, 0, r0, c8, c7, 0	@ invalidate whole TLB
