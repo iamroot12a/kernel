@@ -1906,52 +1906,183 @@ __armv7_mmu_cache_flush:
 		mcr	p15, 0, r10, c7, c14, 0	@ clean+invalidate D
 		b	iflush
 hierarchical:
+
+/* IAMROOT-12A:
+ * ------------
+ * 왜 처음부터 DMB를 실행하는지??
+ */
 		mcr	p15, 0, r10, c7, c10, 5	@ DMB
+
+/* IAMROOT-12A:
+ * ------------
+ * 일단 r0~r7, r9-r11 레지스터들을 백업하고 루틴이 완료된 후 다시 회복한다.
+ */
 		stmfd	sp!, {r0-r7, r9-r11}
 		mrc	p15, 1, r0, c0, c0, 1	@ read clidr
 		ands	r3, r0, #0x7000000	@ extract loc from clidr
+
+/* IAMROOT-12A:
+ * ------------
+ * r3: loc * 2
+ * r3 값을 24비트 만큼 쉬프트하지 않고 23비트 쉬프트 한 것은 읽어 들인 loc에 x2를
+ * 하여 비교(r1값과 비교)하기 위함.
+ * 라즈베리파이2: loc=2, 따라서 r3=4
+ */
+
 		mov	r3, r3, lsr #23		@ left align loc bit field
 		beq	finished		@ if loc is 0, then no need to clean
+
+/* IAMROOT-12A:
+ * ------------
+ * r10: 캐시 레벨 카운터 (0부터, 2, 4.... 증가)
+ *      r10이 2씩 증가되는 이유는 CSSELR의 bit0가 다른 목적(data, inst cache type)으로 
+ *      사용되고 캐시레벨이 bit1~bit3까지 지정되므로 2를 곱해서 카운터를 증가하면
+ *      코드 사용을 절약할 수 있다.
+ *      라즈베리파이는 0(L1)과 2(L2)까지 설정되고 4(L3)가 되면서 조건에 부합되지 않아
+ *      loop1 종료..
+ *      for (r10 = 0; r10 < r3; r10+=2)
+ *      {
+ *      }
+ *
+ * r1: 캐시타입(3bits) 0=no cache
+ *                     1=instrunction cache only
+ *                     2=data cache only
+ *                     3=seperate inst & data cache
+ *                     4=unified cache (inst + data)
+ *                     5~7=reserved
+ */
 		mov	r10, #0			@ start clean at cache level 0
 loop1:
+
+/* IAMROOT-12A:
+ * ------------
+ * r2: 해당 캐시레벨의 타입을 가져오기 위해 3bit씩 위치를 곱한다.
+ *     0, 3, 6, 9, ...씩 증가
+ */
 		add	r2, r10, r10, lsr #1	@ work out 3x current cache level
 		mov	r1, r0, lsr r2		@ extract cache type bits from clidr
 		and	r1, r1, #7		@ mask of the bits for current cache only
 		cmp	r1, #2			@ see what cache we have at this level
+
+/* IAMROOT-12A:
+ * ------------
+ * instruction cache only type인 경우 skil --> instruction cache는 다른 루틴에서
+ * 한방에 정리(invalidate)
+ */
 		blt	skip			@ skip if no cache, or just i-cache
+
+/* IAMROOT-12A:
+ * ------------
+ * CSSELR의 bit0은 항상 0 <- data cache만 조작하기 때문...
+ *          bit1~bit3: 선택할 cache level (0부터 6까지)
+ */
 		mcr	p15, 2, r10, c0, c0, 0	@ select current cache level in cssr
 		mcr	p15, 0, r10, c7, c5, 4	@ isb to sych the new cssr&csidr
+
+/* IAMROOT-12A:
+ * ------------
+ * r1: CCSIDR에 선택된 캐시의 정보가 담김.
+ * WT, WB, RA, WA, LineSize, Associativity, Numsets
+ * r2: 6 = 2 (raspberry data cheche line size = 16 words) + 4
+ */
 		mrc	p15, 1, r1, c0, c0, 0	@ read the new csidr
 		and	r2, r1, #7		@ extract the length of the cache lines
 		add	r2, r2, #4		@ add 4 (line length offset)
+
+/* IAMROOT-12A:
+ * ------------
+ * r4: loop2용 max Associativity(way-1) 
+ */
 		ldr	r4, =0x3ff
 		ands	r4, r4, r1, lsr #3	@ find maximum number on the way size
+
+/* IAMROOT-12A:
+ * ------------
+ * r5: clz: MSB(최상위 비트)부터 시작하여 비트가 0인 갯수를 알아낸다.
+ *      0b 00000000 00000000 00000000 00000011 -> 30
+ */
 		clz	r5, r4			@ find bit position of way size increment
+
+/* IAMROOT-12A:
+ * ------------
+ * r7: loop2용 NumSets(index-1) 카운터
+ * for (r7 = Max NumSets(r1에서 추출) ; r7 < 0; r7--)
+ * 라즈베리파이2: r7은 0x1ff, 0x1fe, ......, 0까지 루프 수행(-1이면 루프2 탈출)
+ */
 		ldr	r7, =0x7fff
 		ands	r7, r7, r1, lsr #13	@ extract max number of the index size
 loop2:
+
+/* IAMROOT-12A:
+ * ------------
+ * r9: loop3용 way 카운터를 사용하여 0까지 루프를 돈다.
+ * for (r9 = r4; r9 < 0; r9--)
+ * 라즈베리파이2: r9는 3, 2, 1, 0까지 루프 수행(-1이면 루프3 탈출)
+ */
 		mov	r9, r4			@ create working copy of max way size
 loop3:
+
+/* IAMROOT-12A:
+ * ------------
+ * r11: DCCISW 캐시 삭제 명령을 수행하기 위해 필요한 Set/Way 및 캐시 레벨값이
+ *      정렬되어 들어감.
+ *      Set와 Way 값은 좌측 적당한(?) 위치에 쉬프트되어 배치된다.
+ */
+
  ARM(		orr	r11, r10, r9, lsl r5	) @ factor way and cache number into r11
  ARM(		orr	r11, r11, r7, lsl r2	) @ factor index number into r11
  THUMB(		lsl	r6, r9, r5		)
  THUMB(		orr	r11, r10, r6		) @ factor way and cache number into r11
  THUMB(		lsl	r6, r7, r2		)
  THUMB(		orr	r11, r11, r6		) @ factor index number into r11
+
+/* IAMROOT-12A:
+ * ------------
+ * DCCISW(Data Cache Clean & Invalidate by Set/Way)를 사용하여
+ * 캐시 한 라인을 삭제.
+ */
+
 		mcr	p15, 0, r11, c7, c14, 2	@ clean & invalidate by set/way
 		subs	r9, r9, #1		@ decrement the way
 		bge	loop3
 		subs	r7, r7, #1		@ decrement the index
 		bge	loop2
 skip:
+
+/* IAMROOT-12A:
+ * ------------
+ * 캐시 카운터는 2씩 증가 
+ * r3: 라즈베리파이2는 4(L2 x 2)
+ */
 		add	r10, r10, #2		@ increment cache number
 		cmp	r3, r10
 		bgt	loop1
 finished:
+
+/* IAMROOT-12A:
+ * ------------
+ * 레지스터 원복
+ */
 		ldmfd	sp!, {r0-r7, r9-r11}
+
+/* IAMROOT-12A:
+ * ------------
+ * 캐시레벨을 다시 0(L1)으로 설정됨.
+ * 왜 할까요??
+ *    1) 현재 armv7 아키텍처에서는 instruction cache가 따로 되어 있는 경우는
+ *       L1만 있기 때문에 루프를 돌리지 않는 것으로 추측. 
+ *    2) 그냥 원복을 위해서...
+ */
 		mov	r10, #0			@ swith back to cache level 0
 		mcr	p15, 2, r10, c0, c0, 0	@ select current cache level in cssr
 iflush:
+
+/* IAMROOT-12A:
+ * ------------
+ * instruction cache는 한 방에 삭제함.
+ * 라즈베리파이2: L1 instruction cache
+ * r10 내용과는 관계 없고 dependency를 통해 in-order 목적만 있음.
+ */
 		mcr	p15, 0, r10, c7, c10, 4	@ DSB
 		mcr	p15, 0, r10, c7, c5, 0	@ invalidate I+BTB
 		mcr	p15, 0, r10, c7, c10, 4	@ DSB
