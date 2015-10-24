@@ -422,6 +422,10 @@ int fdt_open_into(const void *fdt, void *buf, int bufsize)
 	const char *fdtend = fdtstart + fdt_totalsize(fdt);
 	char *tmp;
 
+/* IAMROOT-12A:
+ * ------------
+ * DTB 헤더(_edata)에 매직넘버가 존재하지 않으면 함수 리턴(에러)
+ */
 	FDT_CHECK_HEADER(fdt);
 
 	mem_rsv_size = (fdt_num_mem_rsv(fdt)+1)

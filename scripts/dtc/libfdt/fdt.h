@@ -3,6 +3,11 @@
 
 #ifndef __ASSEMBLY__
 
+/* IAMROOT-12A:
+ * ------------
+ * DTB의 첫 시작 부분으로 40바이트.
+ */
+
 struct fdt_header {
 	uint32_t magic;			 /* magic word FDT_MAGIC */
 	uint32_t totalsize;		 /* total size of DT block */
@@ -27,10 +32,21 @@ struct fdt_reserve_entry {
 	uint64_t size;
 };
 
+/* IAMROOT-12A:
+ * ------------
+ * tag=1, name=가변으로 align 단위는 4byte
+ *             시작이 0x00 또는 '\'의 경우 루트노드임.
+ */
+
 struct fdt_node_header {
 	uint32_t tag;
 	char name[0];
 };
+
+/* IAMROOT-12A:
+ * ------------
+ * tag=3, len=데이터길이, nameoff=스트링블럭offset, data=가변으로 align단위는 4byte
+ */
 
 struct fdt_property {
 	uint32_t tag;
