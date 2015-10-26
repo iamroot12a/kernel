@@ -560,6 +560,10 @@ restart:	adr	r0, LC0
 		cmp	lr, r1
 		bne	dtb_check_done		@ not found
 
+/* IAMROOT-12A:
+ * ------------
+ * 아래 옵션은 가지고 있는 APPENDED_DTB에 ATAGS를 추가 할 수 있다. 
+ */
 #ifdef CONFIG_ARM_ATAG_DTB_COMPAT
 		/*
 		 * OK... Let's do some funky business here.
