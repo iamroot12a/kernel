@@ -105,11 +105,47 @@ static void merge_fdt_bootargs(void *fdt, const char *fdt_cmdline)
  *    = 1 -> bad ATAG (may retry with another possible ATAG pointer)
  *    < 0 -> error from libfdt
  */
+
+
+/* IAMROOT-12A:
+ * ------------
+ * struct tag {
+	struct tag_header hdr;
+	union {
+		struct tag_core     core;
+		struct tag_mem32    mem;
+		struct tag_videotext    videotext;
+		struct tag_ramdisk  ramdisk;
+		struct tag_initrd   initrd;
+		struct tag_serialnr serialnr;
+		struct tag_revision revision;
+		struct tag_videolfb videolfb;
+		struct tag_cmdline  cmdline;
+
+		struct tag_acorn    acorn;
+		struct tag_memclk   memclk;
+	} u;
+};
+
+ */
+
+/* IAMROOT-12A:
+ * ------------
+ * atag_list: 1st-atag or DTB 포인터, 2nd-시작RAM+0x100
+ * fdt: _edata
+ */
+
+
 int atags_to_fdt(void *atag_list, void *fdt, int total_space)
 {
 	struct tag *atag = atag_list;
 	/* In the case of 64 bits memory size, need to reserve 2 cells for
 	 * address and size for each bank */
+
+/* IAMROOT-12A:
+ * ------------
+ * 64비트 시스템의 경우 한 개 뱅크당 주소와 사이즈((2 + 2) x sizeof(int32))
+ */
 	uint32_t mem_reg_property[2 * 2 * NR_BANKS];
 	int memcount = 0;
 	int ret, memsize;
@@ -118,10 +154,19 @@ int atags_to_fdt(void *atag_list, void *fdt, int total_space)
 	if ((u32)atag_list & 0x3)
 		return 1;
 
+/* IAMROOT-12A:
+ * ------------
+ * atag/DTB 포인터에서 DTB 매직넘버를 발견하면 이미 DTB가 존재하는 것으로 파악이되어
+ * ATAG를 컨버전할 필요 없으므로 성공으로 리턴 
+ */
 	/* if we get a DTB here we're done already */
 	if (*(u32 *)atag_list == fdt32_to_cpu(FDT_MAGIC))
 	       return 0;
 
+/* IAMROOT-12A:
+ * ------------
+ * 처음에 오는 태크가 ATAG_CORE가 아니거나 사이즈가 맞지않으면 실패(1)로 리턴
+ */
 	/* validate the ATAG */
 	if (atag->hdr.tag != ATAG_CORE ||
 	    (atag->hdr.size != tag_size(tag_core) &&
@@ -133,6 +178,16 @@ int atags_to_fdt(void *atag_list, void *fdt, int total_space)
 	if (ret < 0)
 		return ret;
 
+/* IAMROOT-12A:
+ * ------------
+ * atag_list는 atag 개채의 묶음.
+ * for_each_tag()를 수행 시 atag에 하나의 ATAG를 가리키는 포인터가 담김
+ * 태그는 3개(ATAG_CMDLINE, ATAG_MEM, ATAG_INITRD2)만 디바이스트리로 컨버전
+ *    - ATAG_CMDLINE(cmdline) ---> DTB:/chosen 노드 -> bootargs 프로퍼티
+ *    - ATAG_MEM(u.mem.start & u.mem.size x N뱅크) ---> DTB:/memory 노드 -> reg 프로퍼티
+ *    - ATAG_INITRD2(u.initrd.start & u.initrd.size) ---> DTB:/chosen 노드 -> linux,initrd-start
+ *                                                   ---> DTB:/chosen 노드 -> linux,initrd-end
+ */
 	for_each_tag(atag, atag_list) {
 		if (atag->hdr.tag == ATAG_CMDLINE) {
 			/* Append the ATAGS command line to the device tree
@@ -154,6 +209,11 @@ int atags_to_fdt(void *atag_list, void *fdt, int total_space)
 				continue;
 			memsize = get_cell_size(fdt);
 
+/* IAMROOT-12A:
+ * ------------
+ * memsize=2인 경우 64비트
+ * ATAG_MEM은 여러 개가 존재할 수 있다.
+ */
 			if (memsize == 2) {
 				/* if memsize is 2, that means that
 				 * each data needs 2 cells of 32 bits,
@@ -188,4 +248,4 @@ int atags_to_fdt(void *atag_list, void *fdt, int total_space)
 	}
 
 	return fdt_pack(fdt);
-}
+}c
