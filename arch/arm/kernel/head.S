@@ -34,11 +34,25 @@
  * the least significant 16 bits to be 0x8000, but we could probably
  * relax this restriction to KERNEL_RAM_VADDR >= PAGE_OFFSET + 0x4000.
  */
+
+/* IAMROOT-12A:
+ * ------------
+ * 컴파일 시 KERNEL_RAM_VADDR의 하위 16비트가 0x8000이 아니면 에러 발생.
+ * 라즈베리파이2: PAGE_OFFSET = CONFIG_PAGE_OFFSET = 0x8000_0000
+ *                TEXT_OFFSET = 0x8000
+ *                KERNEL_RAM_VADDR = 0x8000_8000
+ */
 #define KERNEL_RAM_VADDR	(PAGE_OFFSET + TEXT_OFFSET)
 #if (KERNEL_RAM_VADDR & 0xffff) != 0x8000
 #error KERNEL_RAM_VADDR must start at 0xXXXX8000
 #endif
 
+/* IAMROOT-12A:
+ * ------------
+ * CONFIG_ARM_LPAE를 지원하는 칩셋에서 40bit 어드레스를 지원한다.
+ * 페이지 테이블 사이즈가 0x5000을 요구한다.
+ * 라즈베리파이2: PG_DIR_SIZE = 0x4000
+ */
 #ifdef CONFIG_ARM_LPAE
 	/* LPAE requires an additional page for the PGD */
 #define PG_DIR_SIZE	0x5000
@@ -48,9 +62,19 @@
 #define PMD_ORDER	2
 #endif
 
+/* IAMROOT-12A:
+ * ------------
+ * swapper_pg_dir: 페이지테이블의 위치는 커널가상주소 - 페이지테이블 사이즈
+ */
 	.globl	swapper_pg_dir
 	.equ	swapper_pg_dir, KERNEL_RAM_VADDR - PG_DIR_SIZE
 
+/* IAMROOT-12A:
+ * ------------
+ *  pgtbl   r4(0x8000_9000), r8(0x2000_0000)  
+ *          add r4, r8, #0x8000
+ *          sub r4, r4, #0x4000
+ */
 	.macro	pgtbl, rd, phys
 	add	\rd, \phys, #TEXT_OFFSET
 	sub	\rd, \rd, #PG_DIR_SIZE
@@ -74,10 +98,28 @@
  * crap here - that's what the boot loader (or in extreme, well justified
  * circumstances, zImage) is for.
  */
+
+/* IAMROOT-12A:
+ * ------------
+ * .arm: 컴파일러에게 THUMB가 아닌 ARM 코드(32bit) 시작을 알림.
+ *       실제 instruction은 없음.
+ */
+
 	.arm
 
+/* IAMROOT-12A:
+ * ------------
+ * __HEAD: .head.text 섹션을 선언
+ * ENTRY(stext): lable, globl, align 등이 포함된 매크로 기억. 
+ */
 	__HEAD
 ENTRY(stext)
+
+/* IAMROOT-12A:
+ * ------------
+ * ARM_BE8(): ARM 빅엔디안이 지원되면 설정을하여 빌드할 수도 있음.
+ * setend be: 빅엔디안으로 CPU가 동작.  (cpsr BE 비트를 1로 설정)
+ */
  ARM_BE8(setend	be )			@ ensure we are in BE8 mode
 
  THUMB(	adr	r9, BSYM(1f)	)	@ Kernel is always entered in ARM.
@@ -88,13 +130,26 @@ ENTRY(stext)
 #ifdef CONFIG_ARM_VIRT_EXT
 	bl	__hyp_stub_install
 #endif
+
+
+/* IAMROOT-12A:
+ * ------------
+ * normal & hyper mode에서 svc 모드로 진입할 수 있게 한다.
+ * fiq & irq bit를 disable한다(인터럽트를 허용하지 않도록)
+ */
 	@ ensure svc mode and all interrupts masked
 	safe_svcmode_maskall r9
 
+/* IAMROOT-12A:
+ * ------------
+ * get MIDR: 프로세서 id를 읽어온다.
+ * __lookup_processor_type 함수를 다녀오면 r5에 해당 프로세서의 
+ * 구조체 물리주소를 담아온다.
+ */
 	mrc	p15, 0, r9, c0, c0		@ get processor id
 	bl	__lookup_processor_type		@ r5=procinfo r9=cpuid
 	movs	r10, r5				@ invalid processor (r5=0)?
- THUMB( it	eq )		@ force fixup-able long branch encoding
+ THUMB( it	eq )				@ force fixup-able long branch encoding
 	beq	__error_p			@ yes, error 'p'
 
 #ifdef CONFIG_ARM_LPAE
@@ -106,11 +161,25 @@ ENTRY(stext)
 #endif
 
 #ifndef CONFIG_XIP_KERNEL
+/* IAMROOT-12A:
+ * ------------
+ * r4: 레이블 2f가 가리키는 주소의 값(빌드시 가상주소) 
+ * r8: 레이블 2f+4가 가리키는 주소의 값(PAGE_OFFSET: 0x8000_0000)
+ *
+ * r4(offset): 물리주소 - 가상주소를 뺀다
+ * r8: phys_offset 적용된 물리 시작주소(0x0000_0000)
+ */
 	adr	r3, 2f
 	ldmia	r3, {r4, r8}
 	sub	r4, r3, r4			@ (PHYS_OFFSET - PAGE_OFFSET)
 	add	r8, r8, r4			@ PHYS_OFFSET
 #else
+
+/* IAMROOT-12A:
+ * ------------
+ * XIP 커널에서는 코드가 ROM(or Nor flash)에서 동작하므로 adr 방식으로 물리램 주소를
+ * 알아올 수 없어서 직접 PLAT_PHYS_OFFSET에 값을 읽어와서 대입
+ */
 	ldr	r8, =PLAT_PHYS_OFFSET		@ always constant in this case
 #endif
 
@@ -118,7 +187,18 @@ ENTRY(stext)
 	 * r1 = machine no, r2 = atags or dtb,
 	 * r8 = phys_offset, r9 = cpuid, r10 = procinfo
 	 */
+
+/* IAMROOT-12A:
+ * ------------
+ * tag또는 dtb가 유효한지 확인한다. 유효하지 않으면 r2=0
+ */
 	bl	__vet_atags
+
+/* IAMROOT-12A:
+ * ------------
+ * SMP(Multi core)코드가 UP(Uni core)에서 동작시 치환해주는 루틴 
+ * CONFIG_SMP_ON_UP: SMP 커널이 UP(Uni core)에서 동작할 수 있도록 지원하는 설정
+ */
 #ifdef CONFIG_SMP_ON_UP
 	bl	__fixup_smp
 #endif
@@ -484,10 +564,34 @@ ENDPROC(__turn_mmu_on)
 #ifdef CONFIG_SMP_ON_UP
 	__HEAD
 __fixup_smp:
+
+/* IAMROOT-12A:
+ * ------------
+ * UP 판단 1)
+ * 0x000f000: armv7
+ * tst는 and 연산 후 상태 반영, teq는 xor 연산 후 상태 반영
+ * MIDR을 읽어서 MIDR.architecture가 f가 아니면(armv7이 아니면) UP에서
+ * 동작한 것이라고 판단하여 __fixup_smp_on_up으로 jump
+ *
+ * Implementer[31..24]:		0x41	=ARM
+ * Variant[23..20]:		0x0	=Major revision number
+ * Architecture[19..16]:	0xf	=ARMv7
+ * Primary part number[15..4]:	0xc07	=Cortex-A7 MPCore part number
+ * Revision[3..0]:		0x3	=Minor revision number
+ */
 	and	r3, r9, #0x000f0000	@ architecture version
 	teq	r3, #0x000f0000		@ CPU ID supported?
 	bne	__fixup_smp_on_up	@ no, assume UP
 
+/* IAMROOT-12A:
+ * ------------
+ * UP 판단 2)
+ * 여기서부터 armv7
+ *
+ * variant, Architecture, Revision 비트를 clear 
+ * Implementer=0x41, primary part number=0xb02 이면 11MPCore로 판단한다.
+ * 이 프로세서는 MP 프로세서 이므로 루틴을 더 이상 실행하지 않고 종료.
+ */
 	bic	r3, r9, #0x00ff0000
 	bic	r3, r3, #0x0000000f	@ mask 0xff00fff0
 	mov	r4, #0x41000000
@@ -496,11 +600,23 @@ __fixup_smp:
 	teq	r3, r4			@ ARM 11MPCore?
 	reteq	lr			@ yes, assume SMP
 
+/* IAMROOT-12A:
+ * ------------
+ * UP 판단 3)
+ * MPIDR[31]=Multiprocess Extensions이 있는 경우 항상 1
+ * MIPDR[30]=UP인경우 1, MP인경우 0
+ */
 	mrc	p15, 0, r0, c0, c0, 5	@ read MPIDR
 	and	r0, r0, #0xc0000000	@ multiprocessing extensions and
 	teq	r0, #0x80000000		@ not part of a uniprocessor system?
 	bne    __fixup_smp_on_up	@ no, assume UP
 
+/* IAMROOT-12A:
+ * ------------
+ * UP 판단 4)
+ * r3가 r4(0x4100c090)와 비교하여 동일하지 않으면 리턴.
+ * Cortex-A9의 경우 UP로 만든적이 있다.
+ */
 	@ Core indicates it is SMP. Check for Aegis SOC where a single
 	@ Cortex-A9 CPU is present but SMP operations fault.
 	mov	r4, #0x41000000
@@ -509,18 +625,39 @@ __fixup_smp:
 	teq	r3, r4			@ Check for ARM Cortex-A9
 	retne	lr			@ Not ARM Cortex-A9,
 
+/* IAMROOT-12A:
+ * ------------
+ * UP 판단 5)
+ * 여기서부터 ARM Cortex-A9이라고 판단됨.
+ * CBAR에서 IO장치의 base 주소를 얻어온다.(TRM 참고)
+ * IO 기본 주소는 CBAR[31..15]=bit31~bit15, CBAR[7..0]=bit39~bit32
+ * IO 기본 주소가 0이면 UP로 인식
+ */
 	@ If a future SoC *does* use 0x0 as the PERIPH_BASE, then the
 	@ below address check will need to be #ifdef'd or equivalent
 	@ for the Aegis platform.
 	mrc	p15, 4, r0, c15, c0	@ get SCU base address
 	teq	r0, #0x0		@ '0' on actual UP A9 hardware
 	beq	__fixup_smp_on_up	@ So its an A9 UP
+
+/* IAMROOT-12A:
+ * ------------
+ * UP 판단 6)
+ * IO 기본 주소 + 4의 위치에서 SCU 설정값을 읽어온다. 
+ * 여기서 CPU 갯수를 읽어와서 0(UP)이 아닌 경우(MP) 리턴 
+ */
 	ldr	r0, [r0, #4]		@ read SCU Config
 ARM_BE8(rev	r0, r0)			@ byteswap if big endian
 	and	r0, r0, #0x3		@ number of CPUs
 	teq	r0, #0x0		@ is 1?
 	retne	lr
 
+/* IAMROOT-12A:
+ * ------------
+ * r3: offset
+ * r4: __smpalt_begin
+ * r5: __smpalt_end 
+ */
 __fixup_smp_on_up:
 	adr	r0, 1f
 	ldmia	r0, {r3 - r5}
@@ -543,6 +680,32 @@ smp_on_up:
 	.popsection
 #endif
 
+/* IAMROOT-12A:
+ * ------------
+ * SMP 코드 자리에 UP코드를 복사하는 주 로직.
+ * ALT_SMP()와 ALT_UP는 붙어 다닌다.
+ * ALT_SMP와 ALT_UP에 들어가는 명령(instruction)은 항상 4바이트 이다.
+ *
+ * #define ALT_SMP(instr...)    \
+ * 9998:   instr
+ *
+ * #define ALT_UP(instr...)			\
+ *	.pushsection ".alt.smp.init", "a";	\
+ *	.long   9998b;				\
+ *	instr;					\
+ *	.popsection
+ *
+ * ALT_SMP는 실제 코드섹션 영역에 그대로 저장되고,
+ * ALT_UP는 .alt.smp.init 섹션에 4바이트씩 두 번 push되는데 
+ * 처음 word는 ALT_SMP의 명령주소를 가리키고 있고
+ * (나중에 치환할 주소를 알아내기 위함), 두 번째 word는 UP 코드가 있다.
+ *
+ * 아래 로직은 r4 -> r5가 될 때까지 루프를 돌며,
+ * r4: 처음에 __smpalt_begin으로 시작해서 __smpalt_end로 카운트하는 변수
+ * r0: ALT_SMP에 있는 instr 주소 
+ * r6: ALT_UP에 있는 instr 값
+ * r6를 r0+r3(offset) 위치에 저장
+ */
 	.text
 __do_fixup_smp_on_up:
 	cmp	r4, r5

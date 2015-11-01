@@ -44,16 +44,33 @@
  *  r2 either valid atags pointer, valid dtb pointer, or zero
  *  r5, r6 corrupted
  */
+
+
+/* IAMROOT-12A:
+ * ------------
+ * align 체크
+ */
 __vet_atags:
 	tst	r2, #0x3			@ aligned?
 	bne	1f
 
+/* IAMROOT-12A:
+ * ------------
+ * dfb가 맞으면 종료.
+ */
 	ldr	r5, [r2, #0]
 #ifdef CONFIG_OF_FLATTREE
 	ldr	r6, =OF_DT_MAGIC		@ is it a DTB?
 	cmp	r5, r6
 	beq	2f
 #endif
+
+/* IAMROOT-12A:
+ * ------------
+ * ATAG_CORE가 처음에 오는지 사이즈 및 ATAG_CORE 태그코드 매치 확인
+ * ATAG_CORE_SIZE: 5
+ * ATAG_CORE: 0x54410001
+ */
 	cmp	r5, #ATAG_CORE_SIZE		@ is first tag ATAG_CORE?
 	cmpne	r5, #ATAG_CORE_SIZE_EMPTY
 	bne	1f
@@ -63,6 +80,11 @@ __vet_atags:
 	bne	1f
 
 2:	ret	lr				@ atag/dtb pointer is ok
+
+/* IAMROOT-12A:
+ * ------------
+ * r2=0을 담고 리턴(에러)
+ */
 
 1:	mov	r2, #0
 	ret	lr
@@ -149,6 +171,27 @@ ENDPROC(lookup_processor_type)
  *	r5 = proc_info pointer in physical address space
  *	r9 = cpuid (preserved)
  */
+
+/* IAMROOT-12A:
+ * ------------
+ * 해당 프로세서에 적합한 구조체의 주소가 r5에 담겨온다.
+ *
+ * r4: 컴파일시 가상 주소
+ * r5: __proc_info_begin
+ * r6: __proc_info_end
+ * r3: offset(물리주소 - 가상주소) - 라즈베리파이2: 0x8000_0000
+ *
+ * .init.proc.info 섹션에 ARM CPU 중 빌드시 사용한 아키텍처에 관련된 프로세스
+ * 정보가 모두 모여 있음.(라즈베리파이2: ARMv7 관련된 것만 약 500여 바이트)
+ *
+ * arch/arm/mm/proc-v7.S 화일에 라즈베리파이2가 사용하는 프로세스 구조가 담겨 있음.
+ *                       (__v7_ca7mp_proc_info: 위치)
+ *
+ * 아래에 arch/arm/kernel/vmlinux.lds 화일에서 관련된 부분:
+ *	.init.proc.info : { 
+ *	. = ALIGN(4); __proc_info_begin = .; *(.proc.info.init) __proc_info_end = .;
+ *	}
+ */
 __lookup_processor_type:
 	adr	r3, __lookup_processor_type_data
 	ldmia	r3, {r4 - r6}
@@ -168,6 +211,11 @@ ENDPROC(__lookup_processor_type)
 
 /*
  * Look in <asm/procinfo.h> for information about the __proc_info structure.
+ */
+
+/* IAMROOT-12A:
+ * ------------
+ * 12바이트의 프로세서 위치 정보를 담고 있는 객체
  */
 	.align	2
 	.type	__lookup_processor_type_data, %object

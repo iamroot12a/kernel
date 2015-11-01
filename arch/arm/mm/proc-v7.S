@@ -531,6 +531,12 @@ __v7_cr7mp_proc_info:
 	__v7_proc __v7_cr7mp_setup
 	.size	__v7_cr7mp_proc_info, . - __v7_cr7mp_proc_info
 
+/* IAMROOT-12A:
+ * ------------
+ * 라즈베리파이2가 사용하는 ARM Cortex-A7 processor
+ * 비교할 ID: 0x410f_c070
+ * 마스크   : 0xff0f_fff0
+ */
 	/*
 	 * ARM Ltd. Cortex A7 processor.
 	 */
