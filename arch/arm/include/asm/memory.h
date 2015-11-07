@@ -191,6 +191,24 @@ extern const void *__pv_table_begin, *__pv_table_end;
 	((((unsigned long)(kaddr) - PAGE_OFFSET) >> PAGE_SHIFT) + \
 	 PHYS_PFN_OFFSET)
 
+/* IAMROOT-12A:
+ * ------------
+ * __pv_stub() 매크로를 사용(add or sub)하는 곳의 주소를 .pv_table 섹션에 푸쉬한다.
+ * 첫줄의 @ 와 함수명은 어떤 이유로 존재???
+ *
+ * instr: add와 sum을 사용
+ * %0, %1, %2: to, from, type 순서로 인수 전달
+ *
+ * call: __pv_stub(x, t, "add", __PV_BITS_31_24);
+ *  ->   1: add t, x, __PV_BITS_31_24
+ *
+ * "=r", "r", "I" 사용법은???
+ *
+ * .pushsection -> 현재 섹션을 컴파일러가 보관(push)하고 첫 번째 인수의 섹션 사용을 
+ *                 컴파일러에게 설정 지시
+ * .popsection ->  push했던 섹션 다시 복구(pop)
+ */
+
 #define __pv_stub(from,to,instr,type)			\
 	__asm__("@ __pv_stub\n"				\
 	"1:	" instr "	%0, %1, %2\n"		\
@@ -220,6 +238,19 @@ extern const void *__pv_table_begin, *__pv_table_end;
 	: "r" (x), "I" (__PV_BITS_31_24)		\
 	: "cc")
 
+/* IAMROOT-12A:
+ * ------------
+ * pv_table에 해당 __pv_stub() 함수가 사용된 주소를 push한다.
+ * pv_table은 
+ *
+ * __PV_BITS_31_24: 31번 비트부터 24번 비트까지라는 의미가 있다.
+ *          0b10000001_00000000_00000000_00000000 (0x8100_0000)
+ *
+ * 물리주소 = 가상 주소 + pv_offset
+ *
+ * 라즈베리파이2의 경우 pv_offset: 0x8000_0000
+ */
+
 static inline phys_addr_t __virt_to_phys(unsigned long x)
 {
 	phys_addr_t t;
@@ -232,6 +263,11 @@ static inline phys_addr_t __virt_to_phys(unsigned long x)
 	}
 	return t;
 }
+
+/* IAMROOT-12A:
+ * ------------
+ * 가상주소 = 물리주소 - pv_offset
+ */
 
 static inline unsigned long __phys_to_virt(phys_addr_t x)
 {

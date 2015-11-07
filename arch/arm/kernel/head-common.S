@@ -48,7 +48,7 @@
 
 /* IAMROOT-12A:
  * ------------
- * align 체크
+ * 체크1) align 체크하여 align되어 있지 않으면 에러로 점프.
  */
 __vet_atags:
 	tst	r2, #0x3			@ aligned?
@@ -56,7 +56,7 @@ __vet_atags:
 
 /* IAMROOT-12A:
  * ------------
- * dfb가 맞으면 종료.
+ * 체크2) dtb magic number가 검출되면 정상이라 판단하고 리턴.
  */
 	ldr	r5, [r2, #0]
 #ifdef CONFIG_OF_FLATTREE
@@ -67,7 +67,8 @@ __vet_atags:
 
 /* IAMROOT-12A:
  * ------------
- * ATAG_CORE가 처음에 오는지 사이즈 및 ATAG_CORE 태그코드 매치 확인
+ * 체크3) ATAG_CORE가 처음에 오는지 사이즈 및 ATAG_CORE 태그코드 매치 확인하여
+ *        맞으면 ATAG가 맞다고 판단하고 리턴.
  * ATAG_CORE_SIZE: 5
  * ATAG_CORE: 0x54410001
  */

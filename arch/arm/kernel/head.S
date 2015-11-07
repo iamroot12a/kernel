@@ -11,6 +11,24 @@
  *
  *  Kernel startup code for all 32-bit CPUs
  */
+
+/*
+ * 참여자:
+ *     문영일 - jakeisname@gmail.com
+ *     이벽산 - lbyeoksan@gmail.com
+ *     한대근 - dev.daegeunhan@gmail.com
+ *     구동수 - cloudevops@naver.comp
+ *     유계성 - gsryu99@gmail.com 
+ *     전성윤 - roland.korea@gmail.com
+ *     김관호 - junku80@gmail.com
+ *     최영민 - jiggly2k@gmail.com
+ *     서태원 - eilly68@gmail.com
+ *     한상종 - sjhan00000@gmail.com
+ *     김형일 - khi8660@naver.com
+ *     김종철 - 
+ *     김상덕 - 
+ */
+
 #include <linux/linkage.h>
 #include <linux/init.h>
 
@@ -166,8 +184,8 @@ ENTRY(stext)
  * r4: 레이블 2f가 가리키는 주소의 값(빌드시 가상주소) 
  * r8: 레이블 2f+4가 가리키는 주소의 값(PAGE_OFFSET: 0x8000_0000)
  *
- * r4(offset): 물리주소 - 가상주소를 뺀다
- * r8: phys_offset 적용된 물리 시작주소(0x0000_0000)
+ * r4(phys_offset): 물리주소 - 가상주소를 뺀다
+ * r8: 적용된 물리 시작주소(0x0000_0000)
  */
 	adr	r3, 2f
 	ldmia	r3, {r4, r8}
@@ -190,7 +208,7 @@ ENTRY(stext)
 
 /* IAMROOT-12A:
  * ------------
- * tag또는 dtb가 유효한지 확인한다. 유효하지 않으면 r2=0
+ * atag또는 dtb가 유효한지 확인한다. 유효하지 않으면 r2=0
  */
 	bl	__vet_atags
 
@@ -202,6 +220,16 @@ ENTRY(stext)
 #ifdef CONFIG_SMP_ON_UP
 	bl	__fixup_smp
 #endif
+
+/* IAMROOT-12A:
+ * ------------
+ * 커널 빌드 시 설정된 물리메모리의 시작위치가 실제 커널 구동 시 물리메모리의 
+ * 시작위치가 서로 다를 수 있기 때문에 pv_offset를 다시 갱신하고 가상메모리와
+ * 물리메모리의 주소 변환 함수를 사용하는 코드를 patch하기 위해 필요한 루틴 
+ * - 디바이스트리 등의 사용으로 빌드된 커널을 재사용하고 메모리 주소 위치만
+ *   달라진 시스템에서 구동하기 위해 사용된다.
+ */
+
 #ifdef CONFIG_ARM_PATCH_PHYS_VIRT
 	bl	__fixup_pv_table
 #endif
@@ -746,19 +774,49 @@ ENDPROC(fixup_smp)
  * can be expressed by an immediate shifter operand. The stub instruction
  * has a form of '(add|sub) rd, rn, #imm'.
  */
+
+/* IAMROOT-12A:
+ * ------------
+ *  __HEAD -> .head.text 섹션 
+ *
+ * r3: offset (물리주소 - 가상주소)
+ * r4: pv_table의 시작 물리 주소
+ * r5: pv_table의 끝 물리 주소
+ * r6: __pv_phys_pfn_offset(라벨) 변수의 주소 
+ * r7: __pv_offset 변수의(라벨) 주소
+ * r8: 계산되어진 물리 시작 주소 (phys_offset)
+ */
 	__HEAD
 __fixup_pv_table:
 	adr	r0, 1f
 	ldmia	r0, {r3-r7}
+
+/* IAMROOT-12A:
+ * ------------
+ * mvn: 오퍼랜드 값을 비트단위로 not을 수행. 
+ *      ip -> 0xffff_ffff
+ */
 	mvn	ip, #0
 	subs	r3, r0, r3	@ PHYS_OFFSET - PAGE_OFFSET
 	add	r4, r4, r3	@ adjust table start address
 	add	r5, r5, r3	@ adjust table end address
 	add	r6, r6, r3	@ adjust __pv_phys_pfn_offset address
 	add	r7, r7, r3	@ adjust __pv_offset address
+
+/* IAMROOT-12A:
+ * ------------
+ * r0: phys_offset(0x0000_0000) --(pfn)--> 0
+ * 물리주소를 12비트 우측으로 쉬프트하면 페이지 번호를 얻을 수 있다.
+ */
 	mov	r0, r8, lsr #PAGE_SHIFT	@ convert to PFN
 	str	r0, [r6]	@ save computed PHYS_OFFSET to __pv_phys_pfn_offset
 	strcc	ip, [r7, #HIGH_OFFSET]	@ save to __pv_offset high bits
+
+/* IAMROOT-12A:
+ * ------------
+ * teq로 비교를 하는데 r3의 하위 24비트 align이 되어 있는지 확인.
+ * (r6는 align 비교를 위해 잠시 사용하고 버리는 용도)
+ */
 	mov	r6, r3, lsr #24	@ constant for add/sub instructions
 	teq	r3, r6, lsl #24 @ must be 16MiB aligned
 THUMB(	it	ne		@ cross section branch )
@@ -767,6 +825,9 @@ THUMB(	it	ne		@ cross section branch )
 	b	__fixup_a_pv_table
 ENDPROC(__fixup_pv_table)
 
+/* IAMROOT-12A:
+ * ------------
+ */
 	.align
 1:	.long	.
 	.long	__pv_table_begin
@@ -858,6 +919,17 @@ ENTRY(fixup_pv_table)
 	ldmfd	sp!, {r4 - r7, pc}
 ENDPROC(fixup_pv_table)
 
+/* IAMROOT-12A:
+ * ------------
+ * __pv_offset의 경우 2개의 워드를 사용한다. 
+ * quad: 다른 soc에서는 quad word가 8바이트,
+ *       ARM에서는 동일하게 8바이트.
+ *
+ * __pv_offset+#LOW_OFFSET에 교정된 pv_offset를 저장한다.
+ * __pv_offset+#HIGH_OFFSET에 0xffff_ffff로 채운다.
+ *
+ *   #HIGH_OFFSET는 빅엔디안에서 #0이며 리틀엔디안에서는 #4
+ *   #LOW_OFFSET는  빅엔디안에서 #4이며 리틀엔디안에서는 #0
 	.data
 	.globl	__pv_phys_pfn_offset
 	.type	__pv_phys_pfn_offset, %object
