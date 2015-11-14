@@ -25,7 +25,7 @@
  *     서태원 - eilly68@gmail.com
  *     한상종 - sjhan00000@gmail.com
  *     김형일 - khi8660@naver.com
- *     김종철 - 
+ *     김종철 - jongchul.kim@gmail.com
  *     김상덕 - 
  */
 
@@ -784,7 +784,7 @@ ENDPROC(fixup_smp)
  * r5: pv_table의 끝 물리 주소
  * r6: __pv_phys_pfn_offset(라벨) 변수의 주소 
  * r7: __pv_offset 변수의(라벨) 주소
- * r8: 계산되어진 물리 시작 주소 (phys_offset)
+ * r8: 물리 시작 주소로 이 함수 호출 전에 계산됨. (phys_offset)
  */
 	__HEAD
 __fixup_pv_table:
@@ -795,6 +795,8 @@ __fixup_pv_table:
  * ------------
  * mvn: 오퍼랜드 값을 비트단위로 not을 수행. 
  *      ip -> 0xffff_ffff
+ *
+ * r4~r7의 가상 주소에 offset를 적용해 물리주소로 변경한다.
  */
 	mvn	ip, #0
 	subs	r3, r0, r3	@ PHYS_OFFSET - PAGE_OFFSET
@@ -805,11 +807,24 @@ __fixup_pv_table:
 
 /* IAMROOT-12A:
  * ------------
- * r0: phys_offset(0x0000_0000) --(pfn)--> 0
- * 물리주소를 12비트 우측으로 쉬프트하면 페이지 번호를 얻을 수 있다.
+ * r0:__pv_phys_pfn_offset(0x0) <----(pfn)------ r8:phys_offset(0x0000_0000)
+ *     물리주소를 12비트 우측으로 쉬프트하면 페이지 번호를 얻을 수 있다.
+ *
+ * 결국 __pv_phys_pfn_offset에는 교정된 물리메모리의 pfn값이 들어가고,
+ *		(라즈베리파이2:  0x0)
+ *      __pv_offset에는 물리-가상 주소 즉 offset 값이 들어간다.
+ *              이 값은 물리 <--> 가상 주소 변환에 offset으로 사용된다.
+ *		(라즈베리파이2:  0x0000_0000_8000_0000)
  */
 	mov	r0, r8, lsr #PAGE_SHIFT	@ convert to PFN
 	str	r0, [r6]	@ save computed PHYS_OFFSET to __pv_phys_pfn_offset
+
+/* IAMROOT-12A:
+ * ------------
+ * PHYS_OFFSET - PAGE_OFFSET의 결과가 음수가 아닌 경우 아래 명령 수행
+ *   이 때에는 0xffff_ffff(음수의미)를 __pv_offset+#HIGHMEM에 저장 
+ * 라즈베리파이2: strcc가 실행되지 않아 __pv_offset+#HIGHMEM에 기본 값 0.
+ */
 	strcc	ip, [r7, #HIGH_OFFSET]	@ save to __pv_offset high bits
 
 /* IAMROOT-12A:
@@ -827,6 +842,16 @@ ENDPROC(__fixup_pv_table)
 
 /* IAMROOT-12A:
  * ------------
+ *  아래 구조는 빌드 시에 결정되며 순서대로 다음과 같다.
+ *  .:                     빌드 시 주소(커널 가상주소로 시작. 0x8000_xxxx)
+ *  __pv_table_begin:      __pv_table 시작 주소(kernel/vmlinux.lds.S 참고)
+ *  __pv_table_end:        __pv_table 끝 주소 
+ *  __pv_phys_pfn_offset:  이 소스 100여줄 밑에 __pv_phys_pfn_offset 데이터 주소 
+ *  __pv_offset:                     "          __pv_offset 데이터 주소
+ *
+ *  __pv_table은 .init.pv_table 섹션에 위치하고 
+ *               커널 C 소스에서 __pv_stub() 함수를 사용한 경우 그 함수 사용
+ *               위치가 담긴다.
  */
 	.align
 1:	.long	.
@@ -837,12 +862,34 @@ ENDPROC(__fixup_pv_table)
 
 	.text
 __fixup_a_pv_table:
+
+/* IAMROOT-12A:
+ * ------------
+ * r6: pv_offset 변수의 물리 주소
+ */
 	adr	r0, 3f
 	ldr	r6, [r0]
 	add	r6, r6, r3
+/* IAMROOT-12A:
+ * ------------
+ * r0(0x0000_0000) <- pv_offset + #HIGH_OFFSET 
+ * r6(0x8000_0000) <- pv_offset + #LOW_OFFSET
+ */
 	ldr	r0, [r6, #HIGH_OFFSET]	@ pv_offset high word
 	ldr	r6, [r6, #LOW_OFFSET]	@ pv_offset low word
+
+/* IAMROOT-12A:
+ * ------------
+ * r6 <- add 또는 sub 인스트럭션의 immediate 영역(8비트)만을 수정하기 위해
+ *       r6를 24비트 쉬프트한다. (라즈베리파이2: 0x0000_0080)  
+ */
 	mov	r6, r6, lsr #24
+
+/* IAMROOT-12A:
+ * ------------
+ * compare: r0(__pv_offset+#HIGH_OFFSET) <-> 0xffff_ffff  (cmp r0, #-1)
+ * r0: 라즈베리파이2의 경우 moveq가 수행되지 않아 0인채로 있음.
+ */
 	cmn	r0, #1
 #ifdef CONFIG_THUMB2_KERNEL
 	moveq	r0, #0x200000	@ set bit 21, mov to mvn instruction
@@ -878,12 +925,26 @@ ARM_BE8(rev16	ip, ip)
 	bcc	1b
 	bx	lr
 #else
+
+/* IAMROOT-12A:
+ * ------------
+ * 라즈베리파이2은 32비트형 물리주소를 사용하므로 아래 루틴의 동작 조건에
+ * 부합되지 않으므로 pass.
+ */
 #ifdef CONFIG_CPU_ENDIAN_BE8
 	moveq	r0, #0x00004000	@ set bit 22, mov to mvn instruction
 #else
 	moveq	r0, #0x400000	@ set bit 22, mov to mvn instruction
 #endif
 	b	2f
+
+/* IAMROOT-12A:
+ * ------------
+ * r7: pv_table에서 읽어온 엔트리에는 add, sub 및 mov 등의 명령을 가리키는
+ *     주소가 담겨있다.
+ * ip: add, sub 및 mov 등의 명령을 가져오는데 r7에는 가상 주소가 담겨있으므로
+ *     pv_offset를 적용하여 물리 주소로 변경한다.
+ */
 1:	ldr	ip, [r7, r3]
 #ifdef CONFIG_CPU_ENDIAN_BE8
 	@ in BE8, we load data in BE, but instructions still in LE
@@ -893,20 +954,61 @@ ARM_BE8(rev16	ip, ip)
 	biceq	ip, ip, #0x00004000 @ clear bit 22
 	orreq	ip, ip, r0      @ mask in offset bits 7-0
 #else
+
+/* IAMROOT-12A:
+ * ------------
+ * add 및 sub 명령의 immediate 부분을 클리어
+ */
 	bic	ip, ip, #0x000000ff
+
+/* IAMROOT-12A:
+ * ------------
+ * 명령에서 rotate 필드를 체크하여 0이 아닌 경우, 즉 물리 메모리가 32비트를 사용하는
+ * 경우 immediate 부분만 갱신
+ */
 	tst	ip, #0xf00	@ check the rotation field
 	orrne	ip, ip, r6	@ mask in offset bits 31-24
+
+/* IAMROOT-12A:
+ * ------------
+ * 로테이션 필드가 0이 되는 조건: 
+ *    - 물리메모리가 64비트 사용하면서 __virt_to_phys()를 사용한 경우
+ *      mov 명령을 사용하고, __PV_BITS_7_0을 사용하게 되어 로테이트 필드가 0이 됨.
+ *    - 라즈베리파이2: 물리메모리가 32비트로 설정되어 동작하므로 이 경우 수행되지 않음
+ * bit22의 opcode는 mov(0) / mvn(1) 
+ * 먼저 bit22를 클리어하여 mov 상태로 바꾸고, r0(mov/mvn을 결정)를 더한다.
+ */
 	biceq	ip, ip, #0x400000	@ clear bit 22
 	orreq	ip, ip, r0	@ mask in offset bits 7-0
 #endif
+
+/* IAMROOT-12A:
+ * ------------
+ * ip 값(명령+rotate+immediate)이 결정되었으므로 코드 영역을 ip로 바꿔치기 함.
+ */
 	str	ip, [r7, r3]
+
+/* IAMROOT-12A:
+ * ------------
+ * 루프(__pv_table_end)의 끝?
+ */
 2:	cmp	r4, r5
+
+/* IAMROOT-12A:
+ * ------------
+ * pv_table에서 주소를 가져오고 카운터는 4를 증가.
+ */
 	ldrcc	r7, [r4], #4	@ use branch for delay slot
 	bcc	1b
 	ret	lr
 #endif
 ENDPROC(__fixup_a_pv_table)
 
+/* IAMROOT-12A:
+ * ------------
+ * 이 아래의 값도 빌드 시에 결정되며 소스 코드 중 몇 줄 밑에 있는 
+ * __pv_offset 데이터 위치를 가리키는 주소를 담고 있다.
+ */
 	.align
 3:	.long __pv_offset
 
@@ -922,14 +1024,19 @@ ENDPROC(fixup_pv_table)
 /* IAMROOT-12A:
  * ------------
  * __pv_offset의 경우 2개의 워드를 사용한다. 
- * quad: 다른 soc에서는 quad word가 8바이트,
- *       ARM에서는 동일하게 8바이트.
+ * quad: ARM이 아닌 아키텍처에서는 워드가 2바이트 따라서 quad word가 8바이트,
+ *       ARM에서는 워드가 4바이트지만 quad 타입은 위와 동일하게 8바이트.
  *
  * __pv_offset+#LOW_OFFSET에 교정된 pv_offset를 저장한다.
  * __pv_offset+#HIGH_OFFSET에 0xffff_ffff로 채운다.
  *
  *   #HIGH_OFFSET는 빅엔디안에서 #0이며 리틀엔디안에서는 #4
  *   #LOW_OFFSET는  빅엔디안에서 #4이며 리틀엔디안에서는 #0
+ *
+ * 라즈베리파이2: 빌드 시 모든 값이 0이 담기고, 
+ *                실제 수행 후 __pv_phys_pfn_offset = 0x0000_0000
+ *                             __pv_offset = 0xffff_ffff_0000_0000
+ */
 	.data
 	.globl	__pv_phys_pfn_offset
 	.type	__pv_phys_pfn_offset, %object

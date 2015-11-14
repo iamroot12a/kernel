@@ -12,6 +12,16 @@
 #include <asm/pgtable.h>
 #endif
 	
+/* IAMROOT-12A:
+ * ------------
+ * PROC_INFO 매크로에서 사용된 .proc.info.init 섹션에는 프로세스 정보가 담겨있다.
+ * 라즈베리파이2의 경우 armv7 아키텍처를 사용하여 빌드하면 관련된 여러 개의
+ * armv7 프로세서 정보들이 모이게된다.
+ *
+ * 라즈베리파이2의 경우 ARM Cortex-A7 아키텍처를 사용하므로 __v7_ca7mp_proc_info 
+ * 구조체를 참고하여야 한다.
+ * 관련화일: mm/proc-v7.S
+ */
 #define PROC_INFO							\
 	. = ALIGN(4);							\
 	VMLINUX_SYMBOL(__proc_info_begin) = .;				\
@@ -28,6 +38,11 @@
 	*(.hyp.idmap.text)						\
 	VMLINUX_SYMBOL(__hyp_idmap_text_end) = .;
 
+/* IAMROOT-12A:
+ * ------------
+ * CONFIG_HOTPLUG_CPU: how swap이 지원되는 시스템에 따라 아래 두 매크로가
+ * enable/disable 교차된다.
+ */
 #ifdef CONFIG_HOTPLUG_CPU
 #define ARM_CPU_DISCARD(x)
 #define ARM_CPU_KEEP(x)		x
@@ -117,6 +132,16 @@ SECTIONS
 			*(.glue_7t)
 		. = ALIGN(4);
 		*(.got)			/* Global offset table		*/
+/* IAMROOT-12A:
+ * ------------
+ * PROC_INFO 매크로에서 사용된 프로세스 정보들은 일반적으로 .proc.info.init 섹션에
+ * 모두 모였다가 .init.proc.info에 다시 합쳐지며 커널 초기화 후 더 이상 사용할 
+ * 필요가 없어서 버리게 된다.
+ *
+ * 그러나 ARM_CPU_KEEP() 매크로는 cpu hot swap을 지원하는 커널용(CONFIG_HOTPLUG_CPU)으로
+ * 빌드된 경우 프로세스 정보를 계속 사용하게 하기 위해 프로세스 정보를 버리지 않도록
+ * 저장 위치를 지워지지 않는 커널 코드 영역 즉 .text 섹션의 마지막에 빌드한다.
+ */
 			ARM_CPU_KEEP(PROC_INFO)
 	}
 
@@ -185,6 +210,15 @@ SECTIONS
 	.exit.text : {
 		ARM_EXIT_KEEP(EXIT_TEXT)
 	}
+
+/* IAMROOT-12A:
+ * ------------
+ * 라즈베리2 빌드세트는 CONFIG_HOTPLUG_CPU 옵션을 사용하여 빌드하지 않았으므로
+ *	프로세서 정보는 ARM_CPU_KEEP() 매크로가 사용된 위치에 저장되지 않고
+ *			ARM_CPU_DISCARD() 매크로가 사용된 위치에서 저장됨.
+ *
+ * .init 영역은 메모리 절약을 위해 커널이 한 번 초기화 때 사용 후 버려지는 영역.
+ */
 	.init.proc.info : {
 		ARM_CPU_DISCARD(PROC_INFO)
 	}
@@ -198,6 +232,15 @@ SECTIONS
 		*(.taglist.init)
 		__tagtable_end = .;
 	}
+
+/* IAMROOT-12A:
+ * ------------
+ * ALT_UP() 매크로를 사용할 때 마다 .alt.smp.init 섹션에 ALT_SMP() 매크로에서
+ * 사용하는 명령의 주소 4바이트와 ALT_UP() 매크로에서 인수로 사용된 명령
+ * 4바이트 총 8바이트가 담긴다. 
+ *
+ * ALT_SMP()사용 후 항상 ALT_UP()이 뒤 따른다.
+ */
 #ifdef CONFIG_SMP_ON_UP
 	.init.smpalt : {
 		__smpalt_begin = .;
@@ -205,6 +248,14 @@ SECTIONS
 		__smpalt_end = .;
 	}
 #endif
+
+/* IAMROOT-12A:
+ * ------------
+ * __pv_stub() 매크로를 사용할 때 마다 pv_table 섹션에 __pv_stub() 매크로에서
+ * 사용하는 add or sub 명령의 주소가 담긴다.
+ *
+ * __pv_stub() 매크로는 __virt_to_phys() 및 __phys_to_virt() 인라인 함수에서 사용된다.
+ */
 	.init.pv_table : {
 		__pv_table_begin = .;
 		*(.pv_table)

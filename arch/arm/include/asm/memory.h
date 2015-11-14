@@ -165,12 +165,35 @@
  * PFN 0 == physical address 0.
  */
 #if defined(__virt_to_phys)
+
+/* IAMROOT-12A:
+ * ------------
+ * 메모리 Case 1.
+ * ------------
+ * 별도 제작한 __virt_to_phys 매크로 사용 시
+ *
+ * 이 헤더 화일(asm/memory.h)에서 기본 제공하는 __virt_to_phys() 인라인함수를
+ * 사용하지 않을 때 __virt_to_phys 매크로를 정의하여 사용하는 경우에 아래 3줄의
+ * 설정을 사용한다. 
+ *
+ * 아직 ARM 기본 빌드에서는 별도로 정의하여 사용하는 시스템이 없음.
+ */
+
 #define PHYS_OFFSET	PLAT_PHYS_OFFSET
 #define PHYS_PFN_OFFSET	((unsigned long)(PHYS_OFFSET >> PAGE_SHIFT))
 
 #define virt_to_pfn(kaddr) (__pa(kaddr) >> PAGE_SHIFT)
 
 #elif defined(CONFIG_ARM_PATCH_PHYS_VIRT)
+
+/* IAMROOT-12A:
+ * ------------
+ * 메모리 Case 2.
+ * ------------
+ * 물리 시작 주소를 찾아 패치(pv_table)하는 경우 사용
+ *
+ * 라즈베리2는 이 옵션을 사용
+ */
 
 /*
  * Constants used to force the right instruction encodings and shifts
@@ -255,6 +278,10 @@ static inline phys_addr_t __virt_to_phys(unsigned long x)
 {
 	phys_addr_t t;
 
+/* IAMROOT-12A:
+ * ------------
+ * LPAE인 경우 물리주소를 64bit 타입 사용
+ */
 	if (sizeof(phys_addr_t) == 4) {
 		__pv_stub(x, t, "add", __PV_BITS_31_24);
 	} else {
@@ -284,6 +311,14 @@ static inline unsigned long __phys_to_virt(phys_addr_t x)
 }
 
 #else
+
+/* IAMROOT-12A:
+ * ------------
+ * 메모리 Case 3.
+ * ------------
+ * 물리 시작 주소를 찾아 패치(pv_table)하지 않는 경우 사용
+ * (DTB 등 사용전에는 물리 시작 주소가 빌드 시 결정됨)
+ */
 
 #define PHYS_OFFSET	PLAT_PHYS_OFFSET
 #define PHYS_PFN_OFFSET	((unsigned long)(PHYS_OFFSET >> PAGE_SHIFT))

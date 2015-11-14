@@ -12,10 +12,21 @@
  */
 #include <asm/assembler.h>
 
+/* IAMROOT-12A:
+ * ------------
+ * ATAG_CORE_SIZE는 공통헤더(2개 word) + ATAG_CORE(3개 word) = 5. 
+ * (바이트로 변환 시 20바이트)
+ */
 #define ATAG_CORE 0x54410001
 #define ATAG_CORE_SIZE ((2*4 + 3*4) >> 2)
 #define ATAG_CORE_SIZE_EMPTY ((2*4) >> 2)
 
+/* IAMROOT-12A:
+ * ------------
+ * 디바이스 트리르 알리는 매직넘버.
+ * 바이너리 디바이스 트리는 빅엔디안형태로 사용되므로
+ * 아키첵처 엔디안에 따라 변환하여 인식을 하여야 한다.
+ */
 #ifdef CONFIG_CPU_BIG_ENDIAN
 #define OF_DT_MAGIC 0xd00dfeed
 #else

@@ -156,6 +156,10 @@ typedef unsigned __bitwise__ gfp_t;
 typedef unsigned __bitwise__ fmode_t;
 typedef unsigned __bitwise__ oom_flags_t;
 
+/* IAMROOT-12A:
+ * ------------
+ * ARCH_PHYS_ADDR_T_64BIT: LPAE인 경우도 물리주소를 64bit 타입 사용
+ */
 #ifdef CONFIG_PHYS_ADDR_T_64BIT
 typedef u64 phys_addr_t;
 #else
