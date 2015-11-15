@@ -248,4 +248,4 @@ int atags_to_fdt(void *atag_list, void *fdt, int total_space)
 	}
 
 	return fdt_pack(fdt);
-}c
+}

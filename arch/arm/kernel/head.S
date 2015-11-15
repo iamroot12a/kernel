@@ -831,6 +831,10 @@ __fixup_pv_table:
  * ------------
  * teq로 비교를 하는데 r3의 하위 24비트 align이 되어 있는지 확인.
  * (r6는 align 비교를 위해 잠시 사용하고 버리는 용도)
+ * 실제로 MSB 8bit를 사용하여 add, sub등의 명령에서 오퍼랜드 부분의 
+ * immediate 필드의 8비트만을 변경하므로 반드시 align 되어 있어야 한다.
+ * 결국 가상 주소와 물리 주소의 변환은 MSB 8bit만 이루어져야 하므로
+ * 24비트 align을 체크해야 한다.
  */
 	mov	r6, r3, lsr #24	@ constant for add/sub instructions
 	teq	r3, r6, lsl #24 @ must be 16MiB aligned
@@ -1028,14 +1032,14 @@ ENDPROC(fixup_pv_table)
  *       ARM에서는 워드가 4바이트지만 quad 타입은 위와 동일하게 8바이트.
  *
  * __pv_offset+#LOW_OFFSET에 교정된 pv_offset를 저장한다.
- * __pv_offset+#HIGH_OFFSET에 0xffff_ffff로 채운다.
+ * __pv_offset+#HIGH_OFFSET에 0x0000_0000로 채운다.
  *
  *   #HIGH_OFFSET는 빅엔디안에서 #0이며 리틀엔디안에서는 #4
  *   #LOW_OFFSET는  빅엔디안에서 #4이며 리틀엔디안에서는 #0
  *
  * 라즈베리파이2: 빌드 시 모든 값이 0이 담기고, 
  *                실제 수행 후 __pv_phys_pfn_offset = 0x0000_0000
- *                             __pv_offset = 0xffff_ffff_0000_0000
+ *                             __pv_offset = 0x0000_0000_8000_0000
  */
 	.data
 	.globl	__pv_phys_pfn_offset
