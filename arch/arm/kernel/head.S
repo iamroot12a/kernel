@@ -824,6 +824,9 @@ __fixup_pv_table:
  * PHYS_OFFSET - PAGE_OFFSET의 결과가 음수가 아닌 경우 아래 명령 수행
  *   이 때에는 0xffff_ffff(음수의미)를 __pv_offset+#HIGHMEM에 저장 
  * 라즈베리파이2: strcc가 실행되지 않아 __pv_offset+#HIGHMEM에 기본 값 0.
+ *
+ * 물리 RAM 주소가 커널시작가상주소보다 같거나 큰 경우에만
+ *	pv_offset+#HIGH_OFFSET에-1(0xffff_ffff)을 저장
  */
 	strcc	ip, [r7, #HIGH_OFFSET]	@ save to __pv_offset high bits
 
@@ -932,8 +935,19 @@ ARM_BE8(rev16	ip, ip)
 
 /* IAMROOT-12A:
  * ------------
- * 라즈베리파이2은 32비트형 물리주소를 사용하므로 아래 루틴의 동작 조건에
+ * 라즈베리파이2는 32비트형 물리주소를 사용하므로 아래 루틴의 동작 조건에
  * 부합되지 않으므로 pass.
+ *
+ * 정확히 표현하자면,
+ * 커널 시작 가상 주소가 물리 주소보다 작거나 같은 경우에 아래 코드가 실행되며
+ * ARM 32bit with LPAE (36bit)를 위해 사용되는 코드로 결국 LPAE를 사용할 때
+ * 사용하기 위한 코드이다. 따라서 64비트 주소의 pv_offset를 사용한다.
+ *
+ * ARM은 32비트 -> 64비트로 프로세서가 이전하는 타이밍에 임시로 LPAE를
+ * 지원하였는데 32비트 x86 시스템에서 4G 이상 물리메모리를 지원하기 위해
+ * 나온 기법과 동일하다. x86은 아직도 이 옵션을 사용하는 PC가 많이 있지만
+ * ARM에서는 대용량 메모리를 32비트 ARM에서 지원할 목적으로 LPAE가 나왔지만
+ * 나온지 2년도 안된 사이에 64비트로 옮겨갔다.(apple 따라서~~)
  */
 #ifdef CONFIG_CPU_ENDIAN_BE8
 	moveq	r0, #0x00004000	@ set bit 22, mov to mvn instruction
@@ -944,9 +958,9 @@ ARM_BE8(rev16	ip, ip)
 
 /* IAMROOT-12A:
  * ------------
- * r7: pv_table에서 읽어온 엔트리에는 add, sub 및 mov 등의 명령을 가리키는
+ * r7: pv_table에서 읽어온 엔트리에는 add(s), sub 및 mov 등의 명령을 가리키는
  *     주소가 담겨있다.
- * ip: add, sub 및 mov 등의 명령을 가져오는데 r7에는 가상 주소가 담겨있으므로
+ * ip: add(s), sub 및 mov 등의 명령을 가져오는데 r7에는 가상 주소가 담겨있으므로
  *     pv_offset를 적용하여 물리 주소로 변경한다.
  */
 1:	ldr	ip, [r7, r3]
@@ -968,7 +982,7 @@ ARM_BE8(rev16	ip, ip)
 /* IAMROOT-12A:
  * ------------
  * 명령에서 rotate 필드를 체크하여 0이 아닌 경우, 즉 물리 메모리가 32비트를 사용하는
- * 경우 immediate 부분만 갱신
+ * 경우 immediate 부분만 갱신.
  */
 	tst	ip, #0xf00	@ check the rotation field
 	orrne	ip, ip, r6	@ mask in offset bits 31-24
@@ -976,11 +990,23 @@ ARM_BE8(rev16	ip, ip)
 /* IAMROOT-12A:
  * ------------
  * 로테이션 필드가 0이 되는 조건: 
- *    - 물리메모리가 64비트 사용하면서 __virt_to_phys()를 사용한 경우
- *      mov 명령을 사용하고, __PV_BITS_7_0을 사용하게 되어 로테이트 필드가 0이 됨.
+ *    - 물리메모리가 64비트 시스템이면서 __virt_to_phys()를 사용한 경우,
+ *    - __pv_stub_mov_hi() 매크로를 호출하고, 
+ *    - 내부에서 mov 명령을 사용하여 __PV_BITS_7_0을 대입하여 로테이트 필드가 0이 됨.
  *    - 라즈베리파이2: 물리메모리가 32비트로 설정되어 동작하므로 이 경우 수행되지 않음
  * bit22의 opcode는 mov(0) / mvn(1) 
  * 먼저 bit22를 클리어하여 mov 상태로 바꾸고, r0(mov/mvn을 결정)를 더한다.
+ *
+ * 가상주소를 물리주소로 리턴하는 경우 64비트(LPAE) 물리주소를 사용하면
+ * 단순히 가상주소에 양수의 offset를 더하는 경우 4G의 영역을 초과한다. 
+ * 따라서 물리주소의 결과값의 상위 word에 -1(mvn #0)을 둔 상태에서 adds를 하게되면
+ * 정확한 물리주소가 리턴된다.
+ *
+ * 반대로 물리주소를 가상주소로 변환하는 경우 물리주소 크기와 관계 없이 리턴되는 값은
+ * 언제나 32비트의 가상주소이므로 미리 -1을 두고 연산할 필요가 없어진다.
+ *
+ * 물론 32비트 물리주소의 경우에도 가상주소와 물리주소의 양방향 변환 시 빌림처리등이
+ * 필요 없어서 단순히 더하는 것으로 정확한 연산이 이루어진다.
  */
 	biceq	ip, ip, #0x400000	@ clear bit 22
 	orreq	ip, ip, r0	@ mask in offset bits 7-0
