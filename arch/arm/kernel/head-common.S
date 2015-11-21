@@ -113,8 +113,23 @@ ENDPROC(__vet_atags)
  */
 	__INIT
 __mmap_switched:
+
+/* IAMROOT-12A:
+ * ------------
+ * r4: __data_loc     <- 커널 데이터 섹션 시작 가상주소 
+ * r5: _sdata         <- 위와 동일하지만 XIP 커널의 경우 RAM영역으로 바뀜
+ *                       라즈베리파이2: 0x8000_8000
+ * r6: __bss_start    <- .bss 섹션 시작
+ * r7: _end           <- .bss 섹션 끝
+ */
 	adr	r3, __mmap_switched_data
 
+/* IAMROOT-12A:
+ * ------------
+ * __data_loc 와 _sdata의 주소가 다른 경우 데이터 섹션을 _sdata 주소로 옮긴다.
+ * 즉, XIP 커널이 동작중인 경우 데이터 영역을 kernel space의 시작부분 + TEXT_OFFSET
+ * 위치로 옮긴다. (data영역만 ROM -> RAM으로 옮긴다)
+ */
 	ldmia	r3!, {r4, r5, r6, r7}
 	cmp	r4, r5				@ Copy data segment if needed
 1:	cmpne	r5, r6
@@ -122,11 +137,20 @@ __mmap_switched:
 	strne	fp, [r5], #4
 	bne	1b
 
+/* IAMROOT-12A:
+ * ------------
+ * .bss 영역을 0으로 초기화한다.
+ */
 	mov	fp, #0				@ Clear BSS (and zero fp)
 1:	cmp	r6, r7
 	strcc	fp, [r6],#4
 	bcc	1b
 
+/* IAMROOT-12A:
+ * ------------
+ * start_kernel로 점프하기 전에 몇 개의 레지스터를 __mmap_switched_data 
+ * 스트럭쳐의 일부에 저장한다.
+ */
  ARM(	ldmia	r3, {r4, r5, r6, r7, sp})
  THUMB(	ldmia	r3, {r4, r5, r6, r7}	)
  THUMB(	ldr	sp, [r3, #16]		)

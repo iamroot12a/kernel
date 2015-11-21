@@ -281,6 +281,14 @@ SECTIONS
 	PERCPU_SECTION(L1_CACHE_BYTES)
 #endif
 
+/* IAMROOT-12A:
+ * ------------
+ * XIP커널의 경우 __data_loc는 현재 ROM 코드의 가상 주소를 가리키지만
+ *               _data/_sdata의 경우는 가상커널주소(PAGE_OFFSET)+TEXT_OFFSET를
+ *               가리킨다. (라즈베리파이2: 0x8000_8000)
+ *
+ * XIP 커널이 아닌 경우는 둘 다 현재 코드의 주소를 가리킨다.
+ */
 #ifdef CONFIG_XIP_KERNEL
 	__data_loc = ALIGN(4);		/* location in binary */
 	. = PAGE_OFFSET + TEXT_OFFSET;

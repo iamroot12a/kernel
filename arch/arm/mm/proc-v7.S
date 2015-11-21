@@ -253,7 +253,15 @@ __v7_ca15mp_setup:
 __v7_b15mp_setup:
 __v7_ca17mp_setup:
 	mov	r10, #0
+
 1:
+/* IAMROOT-12A:
+ * ------------
+ * read ACTLR.SMP 하여 0으로 되어 있으면 1로 다시 바꾼다.
+ * Enables coherent requests to the processor: 0=disable, 1=enable
+ *
+ * r10: CPU마다 다르며, __v7_ca7mp_setup의 경우 0.
+ */
 #ifdef CONFIG_SMP
 	ALT_SMP(mrc	p15, 0, r0, c1, c0, 1)
 	ALT_UP(mov	r0, #(1 << 6))		@ fake it for UP
@@ -319,11 +327,20 @@ __v7_pj4b_setup:
 #endif /* CONFIG_CPU_PJ4B */
 
 __v7_setup:
+
+/* IAMROOT-12A:
+ * ------------
+ * 스택용도와 비슷하게 현재 레지스터들을 백업한다. 
+ */
 	adr	r12, __v7_setup_stack		@ the local stack
 	stmia	r12, {r0-r5, r7, r9, r11, lr}
 	bl      v7_flush_dcache_louis
 	ldmia	r12, {r0-r5, r7, r9, r11, lr}
 
+/* IAMROOT-12A:
+ * ------------
+ * 아래 ERRATA 루틴들을 적용하기 위해 확인목적으로 read MIDR 한다.
+ */
 	mrc	p15, 0, r0, c0, c0, 0		@ read main ID register
 	and	r10, r0, #0xff000000		@ ARM?
 	teq	r10, #0x41000000
@@ -406,10 +423,34 @@ __v7_setup:
 	mcrle	p15, 0, r10, c1, c0, 1		@ write aux control register
 #endif
 
+/* IAMROOT-12A:
+ * ------------
+ * invalidate all i-cache to PoU (ICIALLU)
+ */
 4:	mov	r10, #0
 	mcr	p15, 0, r10, c7, c5, 0		@ I+BTB cache invalidate
+
+/* IAMROOT-12A:
+ * ------------
+ *  invalidate TLB cache all (TLBIALL)
+ */
 #ifdef CONFIG_MMU
 	mcr	p15, 0, r10, c8, c7, 0		@ invalidate I + D TLBs
+
+/* IAMROOT-12A:
+ * ------------
+ * ../mm/proc-v7-2level.S 
+ * (.macro	v7_ttb_setup, zero, ttbr0, ttbr1, tmp)
+ *                            zero: TTBCR에서 사용할 0값이 담겨 있어야 한다.
+ *                            ttbr0 |= TTB_RGN_WBWA|TTB_S -> 기록하지 않음.
+ *                            ttbr1 |= TTB_RGN_WBWA|TTB_S -> 실제기록까지함.
+ *                            tmp: 사용하지 않는다.
+ *
+ * r10: 0
+ * r4, r8: 페이지테이블 물리주소 |= TTB_RGN_WBWA|TTB_S
+ * r5: 0x34 (PRRR)
+ * r6: 0x38 (NMRR)
+ */
 	v7_ttb_setup r10, r4, r8, r5		@ TTBCR, TTBRx setup
 	ldr	r5, =PRRR			@ PRRR
 	ldr	r6, =NMRR			@ NMRR
@@ -418,10 +459,24 @@ __v7_setup:
 #endif
 	dsb					@ Complete invalidations
 #ifndef CONFIG_ARM_THUMBEE
+
+/* IAMROOT-12A:
+ * ------------
+ * read ID_PFR0.ThumbEE[15..12]: 12번비트가 1이면 ThumbEE가 지원됨.
+ *
+ * teq: ThumbEE 비트가 1인 경우 z flag가 1이 된다. (xor)
+ * bne: 0이 아니면(ThumbEE가 없으면) jump 
+ */
+
 	mrc	p15, 0, r0, c0, c1, 0		@ read ID_PFR0 for ThumbEE
 	and	r0, r0, #(0xf << 12)		@ ThumbEE enabled field
 	teq	r0, #(1 << 12)			@ check if ThumbEE is present
 	bne	1f
+
+/* IAMROOT-12A:
+ * ------------
+ * ThumbEE 관련 생략..
+ */
 	mov	r5, #0
 	mcr	p14, 6, r5, c1, c0, 0		@ Initialize TEEHBR to 0
 	mrc	p14, 6, r0, c0, c0, 0		@ load TEECR
@@ -536,6 +591,8 @@ __v7_cr7mp_proc_info:
  * 라즈베리파이2가 사용하는 ARM Cortex-A7 processor
  * 비교할 ID: 0x410f_c070
  * 마스크   : 0xff0f_fff0
+ *
+ * __v7_ca7mp_setup은 이 구조체의 initfunc에 주소가 저장됨..
  */
 	/*
 	 * ARM Ltd. Cortex A7 processor.

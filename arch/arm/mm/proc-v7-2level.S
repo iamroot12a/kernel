@@ -144,6 +144,14 @@ ENDPROC(cpu_v7_set_pte_ext)
 	 * Macro for setting up the TTBRx and TTBCR registers.
 	 * - \ttb0 and \ttb1 updated with the corresponding flags.
 	 */
+
+/* IAMROOT-12A:
+ * ------------
+ * - TTBCR zero(0)
+ * - SMP: ttbr0 |= (TTB_RGN_WBWA|TTB_S)
+ *        ttbr1 |= (TTB_RGN_WBWA|TTB_S) 한 후 -> write TTBR1
+ */
+
 	.macro	v7_ttb_setup, zero, ttbr0, ttbr1, tmp
 	mcr	p15, 0, \zero, c2, c0, 2	@ TTB control register
 	ALT_SMP(orr	\ttbr0, \ttbr0, #TTB_FLAGS_SMP)

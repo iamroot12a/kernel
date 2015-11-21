@@ -82,14 +82,16 @@
 
 /* IAMROOT-12A:
  * ------------
- * swapper_pg_dir: 페이지테이블의 위치는 커널가상주소 - 페이지테이블 사이즈
+ * swapper_pg_dir: 페이지테이블의 위치는 커널가상주소 - 페이지테이블 사이즈 
+ * 라즈베리파이2: 0x8000_4000
  */
 	.globl	swapper_pg_dir
 	.equ	swapper_pg_dir, KERNEL_RAM_VADDR - PG_DIR_SIZE
 
 /* IAMROOT-12A:
  * ------------
- *  pgtbl   r4(0x8000_9000), r8(0x2000_0000)  
+ *  pgtbl매크로는 물리메모리 주소로 페이지테이블의 위치를 계산.
+ *  pgtbl   rd=r4(0x0000_4000), phys=r8(0x0000_0000)  
  *          add r4, r8, #0x8000
  *          sub r4, r4, #0x4000
  */
@@ -242,6 +244,16 @@ ENTRY(stext)
 	 * above.  On return, the CPU will be ready for the MMU to be
 	 * turned on, and r0 will hold the CPU control register value.
 	 */
+
+/* IAMROOT-12A:
+ * ------------
+ * mmu가 켜진 후 실행될 가상 주소를 미리 r13에 담아두고
+ * #PROCINFO_INITFUNC이 가리키는 해당 프로세서의 초기화 루틴을 수행한다.
+ * 그런 후 __enable_mmu의 루틴을 실행하고 ret r13에 의해 가상 주소로 
+ * 직접 jump 한다.
+ *
+ * ../mm/proc-v7.S
+ */
 	ldr	r13, =__mmap_switched		@ address to jump to after
 						@ mmu has been enabled
 	adr	lr, BSYM(1f)			@ return (PIC) address
@@ -269,11 +281,22 @@ ENDPROC(stext)
  *  r4 = page table (see ARCH_PGD_SHIFT in asm/memory.h)
  */
 __create_page_tables:
+
+/* IAMROOT-12A:
+ * ------------
+ * 라즈베리파이2: r4=0x0000_4000, r8=0x0000_0000
+ */
 	pgtbl	r4, r8				@ page table address
 
 	/*
 	 * Clear the swapper page table
 	 */
+
+/* IAMROOT-12A:
+ * ------------
+ * 페이지테이블을 0으로 초기화한다.
+ * 라즈베리파이2: 0x0000_4000 ~ 0x0000_07ff까지를 0으로 초기화.
+ */
 	mov	r0, r4
 	mov	r3, #0
 	add	r6, r0, #PG_DIR_SIZE
@@ -312,12 +335,38 @@ __create_page_tables:
 #endif
 #endif
 
+/* IAMROOT-12A:
+ * ------------
+ * 해당 프로세서에 설정한 mm_mmuflags정보 가져오기
+ *
+ * r10: 프로세서타입에 따른 정보.
+ *      라즈베리파이2: __v7_ca7mp_proc_info 라벨
+ * #PROCINFO_MM_MMUFLAGS는 위 프로세스 구조체 멤버 중 mm_mmuflags의 위치(8)
+ * r7: PMD_TYPE_SECT     |   <- 섹션타입
+ *     PMD_SECT_AP_WRITE |   <- write
+ *     PMD_SECT_AP_READ  |   <- read
+ *     PMD_SECT_AF       |   <- 
+ *     PMD_FLAGS_SMP         <- SMP
+ */
 	ldr	r7, [r10, #PROCINFO_MM_MMUFLAGS] @ mm_mmuflags
 
 	/*
 	 * Create identity mapping to cater for __enable_mmu.
 	 * This identity mapping will be removed by paging_init().
 	 */
+
+
+/* IAMROOT-12A:
+ * ------------
+ * __turn_mmu_on 함수의 매핑(1:1 VA=PA(identity mapping))
+ *
+ * __turn_mmu_on ~ __turn_mmu_on_end에는 mmu를 켜서 가상주소의 커널로
+ * 넘어가는 코드가 담겨있는데 mmu를 켜기 전에 가상주소와 물리메모리의
+ * 주소가 같은 1:1 매핑(identity mapping)을 한다. CPU가 가상 커널 주소로
+ * 리턴(jump)하기 전까지는 물리메모리의 위치에 해당하는 가상주소가
+ * 동작중이므로 완전히 커널이 위치한 가상주소로 스위칭되기 전까지 1-2개의
+ * 섹션이 필요하여 매핑한다.
+ */
 	adr	r0, __turn_mmu_on_loc
 	ldmia	r0, {r3, r5, r6}
 	sub	r0, r0, r3			@ virt->phys offset
@@ -326,7 +375,17 @@ __create_page_tables:
 	mov	r5, r5, lsr #SECTION_SHIFT
 	mov	r6, r6, lsr #SECTION_SHIFT
 
+/* IAMROOT-12A:
+ * ------------
+ * __turn_mmu_on이 시작하는 섹션(31..20비트)과 위에서 읽은 
+ * mm_mmuflags(19..0비트)를 orr 시켜 계산된 테이블 엔트리에 저장한다.
+ */
 1:	orr	r3, r7, r5, lsl #SECTION_SHIFT	@ flags + kernel base
+
+/* IAMROOT-12A:
+ * ------------
+ * 페이지테이블+r5(__turn_mmu_on~__turn_mmu_on_end의 1M 단위의 인덱스*4) <- r3
+ */
 	str	r3, [r4, r5, lsl #PMD_ORDER]	@ identity mapping
 	cmp	r5, r6
 	addlo	r5, r5, #1			@ next section
@@ -335,6 +394,21 @@ __create_page_tables:
 	/*
 	 * Map our RAM from the start to the end of the kernel .bss section.
 	 */
+
+/* IAMROOT-12A:
+ * ------------
+ * 커널영역에 대한 페이지 테이블 매핑
+ *
+ * r0: 페이지테이블 시작
+ *     저장할 페이지 테이블 엔트리 주소로 4(8)바이트씩 증가하는 카운터 
+ *     r4(물리페이지테이블주소) + 가상커널주소의 섹션 인덱스 값*4
+ *     라즈베리파이2: 처음 값은 0x0000_6000 부터 시작
+ * r6: 페이지테이블 끝
+ *     1) 매핑할 커널의 마지막(.bss 섹션) 가상주소-1
+ *     2) 기존 r6에 대응하는 페이지 테이블 엔트리 주소로 바꿈.
+ * r3: 기록할 섹션엔트리 값
+ *     = r8:phys_offset (물리메모리주소) + r7:mm_mmuflags
+ */
 	add	r0, r4, #PAGE_OFFSET >> (SECTION_SHIFT - PMD_ORDER)
 	ldr	r6, =(_end - 1)
 	orr	r3, r8, r7
@@ -367,13 +441,39 @@ __create_page_tables:
 	 * Then map boot params address in r2 if specified.
 	 * We map 2 sections in case the ATAGs/DTB crosses a section boundary.
 	 */
+
+/* IAMROOT-12A:
+ * ------------
+ * ATAG/DTB 영역에 대해 2개의 섹션으로 매핑한다.
+ *
+ * r0: r2(ATAG/DTB)주소의 섹션인덱스 -> 다시 주소로
+ * r3: 대상에 대해 수정할 페이지테이블주소
+ *     1) r0주소에 대한 가상 주소값 계산
+ *        r3 = r0(ATAG/DTB 1M align된 주소) - r8(phys_offset) + PAGE_OFFSET
+ *     2) 페이지 테이블 주소로 계산
+ *        r4(물리페이지테이블주소) + r3(r0의 가상 주소)의 섹션 인덱스의 offset 
+ * r6: 엔트리 값
+ *     r7(mm_mmuflags) + r0(r2주소의 섹션인덱스)
+ */
 	mov	r0, r2, lsr #SECTION_SHIFT
 	movs	r0, r0, lsl #SECTION_SHIFT
+
+/* IAMROOT-12A:
+ * ------------
+ * r0가 0이되는 케이스(ATAG나 DTB가 주어지지 않은 경우)는 
+ * 아래의 매핑을 수행하지 않는다.
+ */
 	subne	r3, r0, r8
 	addne	r3, r3, #PAGE_OFFSET
 	addne	r3, r4, r3, lsr #(SECTION_SHIFT - PMD_ORDER)
 	orrne	r6, r7, r0
 	strne	r6, [r3], #1 << PMD_ORDER
+
+/* IAMROOT-12A:
+ * ------------
+ * DTB는 최대 1M이며, 최대 2개의 섹션이 필요 할 수 있으므로
+ * 1M 증가하여 한번 더 매핑한다.
+ */
 	addne	r6, r6, #1 << SECTION_SHIFT
 	strne	r6, [r3]
 
