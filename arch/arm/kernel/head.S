@@ -249,10 +249,14 @@ ENTRY(stext)
  * ------------
  * mmu가 켜진 후 실행될 가상 주소를 미리 r13에 담아두고
  * #PROCINFO_INITFUNC이 가리키는 해당 프로세서의 초기화 루틴을 수행한다.
+ *    -라즈베리파이2: __v7_ca7mp_setup:
  * 그런 후 __enable_mmu의 루틴을 실행하고 ret r13에 의해 가상 주소로 
  * 직접 jump 한다.
  *
- * ../mm/proc-v7.S
+ * ../mm/proc-v7.S 
+ *
+ * __enable_mmu를 수행후 처음으로 가상커널 주소의 __mmap_switched로 이동한다.
+ * 기존에 사용해왔던 adr로 접근하지 않고 ldr로 접근함.
  */
 	ldr	r13, =__mmap_switched		@ address to jump to after
 						@ mmu has been enabled
@@ -633,6 +637,13 @@ __secondary_data:
  *  r9  = processor ID
  *  r13 = *virtual* address to jump to upon completion
  */
+
+/* IAMROOT-12A:
+ * ------------
+ * SCTLR의 비트를 조작.
+ *    -CRA: alignment abort. <- 0
+ */
+
 __enable_mmu:
 #if defined(CONFIG_ALIGNMENT_TRAP) && __LINUX_ARM_ARCH__ < 6
 	orr	r0, r0, #CR_A
@@ -648,6 +659,12 @@ __enable_mmu:
 #ifdef CONFIG_CPU_ICACHE_DISABLE
 	bic	r0, r0, #CR_I
 #endif
+
+/* IAMROOT-12A:
+ * ------------
+ * 아래의 코드는 ARMv7에서는 deprecated되어 무시되지만 하위 호환성을 위해
+ * 도메인 설정을 한다.
+ */
 #ifndef CONFIG_ARM_LPAE
 	mov	r5, #(domain_val(DOMAIN_USER, DOMAIN_MANAGER) | \
 		      domain_val(DOMAIN_KERNEL, DOMAIN_MANAGER) | \
@@ -673,6 +690,18 @@ ENDPROC(__enable_mmu)
  *
  * other registers depend on the function called upon completion
  */
+
+/* IAMROOT-12A:
+ * ------------
+ * .idmap 영역은 1:1 identity mapping 영역이라하여 별도의 섹션에 저장.
+ * MMU를 켜는 순간에 다음으로 수행되는 명령들이 가상주소를 얻기 위해
+ * TLB를 통해 페이지 테이블에 접근하게 되는데 이 가상주소에 대응하는
+ * 매핑이 페이지 테이블에 있어야 한다.
+ *
+ * r0: write SCTLR
+ * r3: read IDR	
+ */
+
 	.align	5
 	.pushsection	.idmap.text, "ax"
 ENTRY(__turn_mmu_on)

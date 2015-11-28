@@ -4001,6 +4001,16 @@ out_restore:
 	raw_local_irq_restore(flags);
 }
 
+/* IAMROOT-12A:
+ * ------------
+ * lockdep이란 무엇인가?
+ * -> lock dependency의 약자로 커널이 deadlock과 같은 상황을 발견하고
+ * 해지시키기 위해 관리하는 자료구조인 것 같음.
+ * ???: 정확한 용도는 후에 채우기로 함
+ *
+ * lockdep에 관한 내용은 Documentation/locking/lockdep_design.txt에
+ * 자세히 나와있다.
+ */
 void lockdep_init(void)
 {
 	int i;
@@ -4011,14 +4021,35 @@ void lockdep_init(void)
 	 * call lockdep_init() from the start_kernel() itself,
 	 * and we want to initialize the hashes only once:
 	 */
+
+/* IAMROOT-12A:
+ * ------------
+ * lockdep_initialized는 lockdep_init() 함수가 초기화되었음을 의미한다.
+ * 따라서 lockdep_initialized가 true(1)일 경우에는 초기화 코드를 수행하지
+ * 않는다.
+ */
 	if (lockdep_initialized)
 		return;
 
+/* IAMROOT-12A:
+ * ------------
+ * lockdep에 사용될 class마다 hash table을 만든다.
+ * lockdep에 사용되는 class는 4096개(CLASSHASH_SIZE)이다.
+ */
 	for (i = 0; i < CLASSHASH_SIZE; i++)
 		INIT_LIST_HEAD(classhash_table + i);
 
+/* IAMROOT-12A:
+ * ------------
+ * CHAINHASH_SIZE는 32768이다.
+ */
 	for (i = 0; i < CHAINHASH_SIZE; i++)
 		INIT_LIST_HEAD(chainhash_table + i);
+
+/* IAMROOT-12A:
+ * ------------
+ * ???: classhash_table과 chainhash_table 간의 관계는?
+ */
 
 	lockdep_initialized = 1;
 }

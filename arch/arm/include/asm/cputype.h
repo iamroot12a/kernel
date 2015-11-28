@@ -205,6 +205,30 @@ static inline unsigned int __attribute_const__ read_cpuid_tcmstatus(void)
 
 static inline unsigned int __attribute_const__ read_cpuid_mpidr(void)
 {
+/* IAMROOT-12A:
+ * ------------
+ * __attribute_const__: __attribute__((__const__))
+ *                      (파라미터로 넘어오지 않은)global memory에 접근할 수 없다.
+ *                      따라서 side effect가 생기지 않는다.
+ *                      참고: https://lwn.net/Articles/285332/
+ *                      반면 pure function은 global memory에 접근은 가능하나
+ *                      read만 가능하고 write는 불가능하다.
+ *                      pure function도 side effect가 없다.
+ */
+
+/* IAMROOT-12A:
+ * ------------
+ *  return read_cupid(CPUID_MPIDR);은 다음과 같이 치환된다.
+ *
+	return ({								\
+		unsigned int __val;					\
+		asm("mrc	p15, 0, %0, c0, c0, 5"	\
+		    : "=r" (__val)					\
+		    :							\
+		    : "cc");						\
+		__val;							\
+	});
+ */
 	return read_cpuid(CPUID_MPIDR);
 }
 

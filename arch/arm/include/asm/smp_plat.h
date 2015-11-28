@@ -19,6 +19,11 @@ static inline bool is_smp(void)
 #ifndef CONFIG_SMP
 	return false;
 #elif defined(CONFIG_SMP_ON_UP)
+/* IAMROOT-12A:
+ * ------------
+ * fixup_smp 루틴에 의해 실제 SMP 상에서 실행될 때 true가 되고
+ * up에서 실행될 때에는 false가 된다.
+ */
 	extern unsigned int smp_on_up;
 	return !!smp_on_up;
 #else

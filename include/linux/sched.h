@@ -2689,6 +2689,11 @@ static inline void threadgroup_unlock(struct task_struct *tsk) {}
 
 #ifndef __HAVE_THREAD_FUNCTIONS
 
+
+/* IAMROOT-12A:
+ * ------------
+ * task_struct의 stack이라는 member가 thread_union을 가리키는 듯하다.
+ */
 #define task_thread_info(task)	((struct thread_info *)(task)->stack)
 #define task_stack_page(task)	((task)->stack)
 
@@ -2709,9 +2714,35 @@ static inline void setup_thread_stack(struct task_struct *p, struct task_struct 
  */
 static inline unsigned long *end_of_stack(struct task_struct *p)
 {
+/* IAMROOT-12A:
+ * ------------
+ * task가 가지고 있는 kernel stack의 마지막 주소를 리턴한다.
+ * task는 kernel stack과 user stack를 각각 하나씩 가진다.
+ * kernel stack은 kernel이 자신의 코드를 수행할 때 사용하는 코드이다.
+ * 예를 들어, user application이 요청한 시스템 콜을 수행할 때 kernel
+ * stack이 사용될 수 있다.
+ * kernel stack 참고: https://kldp.org/node/73308
+ */
 #ifdef CONFIG_STACK_GROWSUP
 	return (unsigned long *)((unsigned long)task_thread_info(p) + THREAD_SIZE) - 1;
 #else
+
+/* IAMROOT-12A:
+ * ------------
+ * kernel stack과 thread_info는 thread_union에 다음과 같이 존재한다.
+ *
+ * Memory View:
+ * High  ----------------------------
+ *      |        kernel stack        |
+ *      |                            |
+ *      |            ...             |
+ *      |                            |
+ *      |                            |
+ *      |     end of kernel stack    |
+ *       ----------------------------   <- task_thread_info(p) + 1
+ *      |         thread_info        |
+ *  Low  ----------------------------   <- thread_union 또는 thread_info
+ */
 	return (unsigned long *)(task_thread_info(p) + 1);
 #endif
 }

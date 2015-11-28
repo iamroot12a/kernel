@@ -118,7 +118,8 @@ __mmap_switched:
  * ------------
  * r4: __data_loc     <- 커널 데이터 섹션 시작 가상주소 
  * r5: _sdata         <- 위와 동일하지만 XIP 커널의 경우 RAM영역으로 바뀜
- *                       라즈베리파이2: 0x8000_8000
+ *                       라즈베리파이2: 0x8000_8000 <- 커널빌드시 결정
+ *                       vmlinux.lds.S
  * r6: __bss_start    <- .bss 섹션 시작
  * r7: _end           <- .bss 섹션 끝
  */
@@ -150,6 +151,8 @@ __mmap_switched:
  * ------------
  * start_kernel로 점프하기 전에 몇 개의 레지스터를 __mmap_switched_data 
  * 스트럭쳐의 일부에 저장한다.
+ *
+ * cr_alignment가 가리키는 곳에 SCTLR 값이 들어간다.
  */
  ARM(	ldmia	r3, {r4, r5, r6, r7, sp})
  THUMB(	ldmia	r3, {r4, r5, r6, r7}	)

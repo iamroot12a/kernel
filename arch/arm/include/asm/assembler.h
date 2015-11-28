@@ -260,6 +260,12 @@
 #define ALT_UP_B(label) b label
 #endif
 
+/* IAMROOT-12A:
+ * ------------
+ * ARMv6까지는 instruction 배리어를 수행하기 위해 시스템 레지스터의 기능을 
+ * 사용했었지만 ARMv7부터는 정식으로 명령에 포함되었다.
+ */
+
 /*
  * Instruction barrier
  */

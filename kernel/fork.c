@@ -296,6 +296,12 @@ int __weak arch_dup_task_struct(struct task_struct *dst,
 
 void set_task_stack_end_magic(struct task_struct *tsk)
 {
+/* IAMROOT-12A:
+ * ------------
+ * task의 kernel stack 마지막에 magic value를 박아놓는다.
+ * 이 magic value는 kernel stack overflow를 감지하는 데에
+ * 사용될 것이라 생각됨.
+ */
 	unsigned long *stackend;
 
 	stackend = end_of_stack(tsk);

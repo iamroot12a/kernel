@@ -9,6 +9,19 @@
  *  Simplified starting of init:  Michael A. Griffith <grif@acm.org>
  */
 
+/*
+ * 참여자:
+ *     문영일 - jakeisname@gmail.com
+ *     이벽산 - lbyeoksan@gmail.com
+ *     유계성 - gsryu99@gmail.com 
+ *     전성윤 - roland.korea@gmail.com
+ *     최영민 - jiggly2k@gmail.com
+ *     한상종 - sjhan00000@gmail.com
+ *     김형일 - khi8660@naver.com
+ */
+
+
+
 #define DEBUG		/* Enable initcall_debug */
 
 #include <linux/types.h>
@@ -461,6 +474,19 @@ static void __init boot_cpu_init(void)
 
 void __init __weak smp_setup_processor_id(void)
 {
+/* IAMROOT-12A:
+ * ------------
+ *  __weak: __attribute__((weak))
+ *          해당 symbol을 weak symbol로 만든다.
+ *          링커가 링크를 수행할 때 다른 곳에
+ *          같은 이름의 strong symbol이 존재하면
+ *          strong symbol을 참조하고 strong symbol이 존재하지
+ *          않으면 weak symbol을 참조한다.
+ *          참고: http://www.valvers.com/programming/c/gcc-weak-function-attributes/
+ *
+ * __weak attribute 때문에 이 함수가 아니라 arch/arm/kernel/setup.c에
+ * 정의되어 있는 smp_setup_processor_id가 호출될 것이다.
+ */
 }
 
 # if THREAD_SIZE >= PAGE_SIZE
@@ -486,6 +512,17 @@ static void __init mm_init(void)
 	vmalloc_init();
 }
 
+
+/* IAMROOT-12A:
+ * ------------
+ * __init: __section(.init.text) __cold notrace
+ *         init.text 섹션에 해당 코드를 배치한다.
+ * __cold: 호출될 가능성이 희박한 함수를 뜻함.
+ * notrace: __attribute__((no_instrument_function))
+ *          -finstrument-functions 컴파일 옵션을 사용할 때에도
+ *          해당 함수에 대한 profiling을 비활성화한다.
+ *          참고(https://gcc.gnu.org/onlinedocs/gcc-3.1/gcc/Function-Attributes.html)
+ */
 asmlinkage __visible void __init start_kernel(void)
 {
 	char *command_line;
@@ -496,6 +533,12 @@ asmlinkage __visible void __init start_kernel(void)
 	 * lockdep hash:
 	 */
 	lockdep_init();
+
+/* IAMROOT-12A:
+ * ------------
+ * init_task는 init process를 나타내는 구조체이고 현재
+ * 초기화가 가능한 부분만 초기화되어 있는 상태인 것으로 보임.
+ */
 	set_task_stack_end_magic(&init_task);
 	smp_setup_processor_id();
 	debug_objects_early_init();

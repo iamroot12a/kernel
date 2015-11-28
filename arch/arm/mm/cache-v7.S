@@ -87,11 +87,24 @@ ENDPROC(v7_flush_icache_all)
  *     Corrupted registers: r0-r7, r9-r11 (r6 only in Thumb mode)
  */
 
+/* IAMROOT-12A:
+ * ------------
+ * r3: read CLIDR.LoUU(UP) or CLIDR.LoUIS(SMP)
+ */
+
+
 ENTRY(v7_flush_dcache_louis)
 	dmb					@ ensure ordering with previous memory accesses
 	mrc	p15, 1, r0, c0, c0, 1		@ read clidr, r0 = clidr
 	ALT_SMP(ands	r3, r0, #(7 << 21))	@ extract LoUIS from clidr
 	ALT_UP(ands	r3, r0, #(7 << 27))	@ extract LoUU from clidr
+
+/* IAMROOT-12A:
+ * ------------
+ * ERRATA_643719:
+ * 특정 프로세서의 CLIDR.LOUIS가 잘못 기록이 되어 있어서 이를 보정해주는 코드
+ */
+
 #ifdef CONFIG_ARM_ERRATA_643719
 	ALT_SMP(mrceq	p15, 0, r2, c0, c0, 0)	@ read main ID register
 	ALT_UP(reteq	lr)			@ LoUU is zero, so nothing to do
@@ -123,6 +136,11 @@ ENTRY(v7_flush_dcache_all)
 	mov	r3, r3, lsr #23			@ left align loc bit field
 	beq	finished			@ if loc is 0, then no need to clean
 	mov	r10, #0				@ start clean at cache level 0
+
+/* IAMROOT-12A:
+ * ------------
+ * 아래의 루틴은 기존에 compressed/head.S - hierarchical: 루틴과 거의 동일
+ */
 flush_levels:
 	add	r2, r10, r10, lsr #1		@ work out 3x current cache level
 	mov	r1, r0, lsr r2			@ extract cache type bits from clidr
