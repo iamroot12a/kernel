@@ -21,7 +21,7 @@
  *     한상종 - sjhan00000@gmail.com
  *     김형일 - khi8660@naver.com
  *     김종철 - jongchul.kim@gmail.com
- *     김상덕 - 
+ *     김상덕 - ksd3148@gmail.com
  */
 
 /*

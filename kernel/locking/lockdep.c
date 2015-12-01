@@ -4003,10 +4003,8 @@ out_restore:
 
 /* IAMROOT-12A:
  * ------------
- * lockdep이란 무엇인가?
- * -> lock dependency의 약자로 커널이 deadlock과 같은 상황을 발견하고
- * 해지시키기 위해 관리하는 자료구조인 것 같음.
- * ???: 정확한 용도는 후에 채우기로 함
+ * lockdep: lock dependency의 약자로 커널이 lock을 모니터링하고 디버깅하기
+ * 위한 것으로 dead-lock 검출도 한다.
  *
  * lockdep에 관한 내용은 Documentation/locking/lockdep_design.txt에
  * 자세히 나와있다.

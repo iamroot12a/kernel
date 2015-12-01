@@ -17,7 +17,7 @@
  *     문영일 - jakeisname@gmail.com
  *     이벽산 - lbyeoksan@gmail.com
  *     한대근 - dev.daegeunhan@gmail.com
- *     구동수 - cloudevops@naver.comp
+ *     구동수 - cloudevops@naver.com
  *     유계성 - gsryu99@gmail.com 
  *     전성윤 - roland.korea@gmail.com
  *     김관호 - junku80@gmail.com
@@ -26,7 +26,7 @@
  *     한상종 - sjhan00000@gmail.com
  *     김형일 - khi8660@naver.com
  *     김종철 - jongchul.kim@gmail.com
- *     김상덕 - 
+ *     김상덕 - ksd3148@gmail.com
  */
 
 #include <linux/linkage.h>
