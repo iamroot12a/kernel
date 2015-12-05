@@ -1008,6 +1008,13 @@ void __init debug_objects_early_init(void)
 {
 	int i;
 
+
+/* IAMROOT-12A:
+ * ------------
+ * ODEBUG_HASH_SIZE는 2^14이다.
+ *
+ * 이 루틴을 이해하기 위해서는 lockdep에 대한 이해가 필요해보임.
+ */
 	for (i = 0; i < ODEBUG_HASH_SIZE; i++)
 		raw_spin_lock_init(&obj_hash[i].lock);
 

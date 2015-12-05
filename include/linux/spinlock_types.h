@@ -19,6 +19,12 @@
 
 typedef struct raw_spinlock {
 	arch_spinlock_t raw_lock;
+
+/* IAMROOT-12A:
+ * ------------
+ * CONFIG_GENERIC_LOCKBREAK는 정의하는 아키텍처가 있고 그렇지 않은
+ * 아키텍처가 있다. ARM의 경우 정의하지 않는다.
+ */
 #ifdef CONFIG_GENERIC_LOCKBREAK
 	unsigned int break_lock;
 #endif

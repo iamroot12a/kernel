@@ -1809,6 +1809,12 @@ int vprintk_default(const char *fmt, va_list args)
 {
 	int r;
 
+
+/* IAMROOT-12A:
+ * ------------
+ * KGDB???
+ * KDB???
+ */
 #ifdef CONFIG_KGDB_KDB
 	if (unlikely(kdb_trap_printk)) {
 		r = vkdb_printf(KDB_MSGSRC_PRINTK, fmt, args);
@@ -1864,6 +1870,11 @@ asmlinkage __visible int printk(const char *fmt, ...)
 	 * the printk_func should be set to the default. No need to
 	 * disable preemption here.
 	 */
+
+/* IAMROOT-12A:
+ * ------------
+ * 초기 printk 함수로 vprintk_default가 설정되어있다.
+ */
 	vprintk_func = this_cpu_read(printk_func);
 	r = vprintk_func(fmt, args);
 

@@ -488,14 +488,56 @@ void notrace cpu_init(void)
 #endif
 }
 
+
+/* IAMROOT-12A:
+ * ------------
+ * Designated Initializers 라고 불리는 배열 초기화 방법.
+ * 참고: http://gcc.gnu.org/onlinedocs/gcc/Designated-Inits.html
+ *
+ * NR_CPUS: 가능한 CPU의 최대 개수이고 configuration 할 때 정해지는 값.
+ *          2 ~ 32의 값을 가질 수 있다.
+ * MPIDR_INVALID: 하위 세 바이트는 모두 0이고 상위 바이트는 0xFF인 값.
+ *
+ * 따라서 __cpu_logical_map은 모두 invalid mpidr 값을 가지도록 초기화된다.
+ */
 u32 __cpu_logical_map[NR_CPUS] = { [0 ... NR_CPUS-1] = MPIDR_INVALID };
 
 void __init smp_setup_processor_id(void)
 {
 	int i;
+
+/* IAMROOT-12A:
+ * ------------
+ * MPIDR의 하위 3바이트(Aff0, Aff1, Aff2)를 가져오기 위해 비트마스킹을 한다.
+ * CPU Affinity는 여러 개의 CPU core 중에서 각각의 cpu가 가지는 고유 번호같은 것.
+ * Affinity는 계층적으로 표현된다.
+ * MPIDR은 현재 동작하는 cpu의 affinity값을 담고 있으며
+ * 자세한 형태는 매뉴얼을 참고할 것.
+ *
+ * 예시(각각의 affinity level의 의미는 아키텍처 구현마다 다름):
+ *   Cluster 0                     Cluster 1                  <- Aff1
+ *   -------------------------     -------------------------
+ *  |  ___   ___   ___   ___  |   |  ___   ___   ___   ___  |
+ *  | | 0 | | 1 | | 2 | | 3 | |   | | 0 | | 1 | | 2 | | 3 | | <- Aff0
+ *  |  ---   ---   ---   ---  |   |  ---   ---   ---   ---  |
+ *   -------------------------     -------------------------
+ */
 	u32 mpidr = is_smp() ? read_cpuid_mpidr() & MPIDR_HWID_BITMASK : 0;
 	u32 cpu = MPIDR_AFFINITY_LEVEL(mpidr, 0);
 
+/* IAMROOT-12A:
+ * ------------
+ * cpu_logical_map(0) = cpu <=> __cpu_logical_map[0] = cpu
+ *
+ * 이 코드가 동작할 시에는 nr_cpu_ids는 NR_CPUS와 값이 같다.
+ * SMP가 아닌 경우에는 1이 될 것이다.
+ *
+ * cpu_logical_map은 커널이 사용할 cpu의 logical 번호를 physical cpu 번호로 매핑한다.
+ * 이 때 부팅 cpu를 항상 logical cpu 0번으로 지정한다.
+ *
+ * 부팅 cpu가 physical cpu 2번이라면 physical cpu 0번은 logical cpu 2번이 된다.
+ * 나머지는 physical 번호와 logical 번호가 같은 값을 가진다.
+ */
 	cpu_logical_map(0) = cpu;
 	for (i = 1; i < nr_cpu_ids; ++i)
 		cpu_logical_map(i) = i == cpu ? 0 : i;
@@ -507,6 +549,12 @@ void __init smp_setup_processor_id(void)
 	 */
 	set_my_cpu_offset(0);
 
+
+/* IAMROOT-12A:
+ * ------------
+ * printk류의 함수는 일단 분석하지 않고 넘어가기로 함.
+ * 무서움...
+ */
 	pr_info("Booting Linux on physical CPU 0x%x\n", mpidr);
 }
 

@@ -56,6 +56,13 @@
 #define MPIDR_LEVEL_BITS 8
 #define MPIDR_LEVEL_MASK ((1 << MPIDR_LEVEL_BITS) - 1)
 
+/* IAMROOT-12A:
+ * ------------
+ * 읽어온 mpidr에서 해당 affinity level의 값을 추출한다.
+ * MPIDR_LEVEL_BITS는 하나의 affinity level 값은 몇 비트로 이루어져 있는지
+ * 나타내고 8로 설정되어 있다(1바이트).
+ * MPIDR_LEVEL_MASK는 하위 MPIDR_LEVEL_BITS개의 비트만 1이고 나머지는 0인 값이다.
+ */
 #define MPIDR_AFFINITY_LEVEL(mpidr, level) \
 	((mpidr >> (MPIDR_LEVEL_BITS * level)) & MPIDR_LEVEL_MASK)
 
@@ -214,6 +221,11 @@ static inline unsigned int __attribute_const__ read_cpuid_mpidr(void)
  *                      반면 pure function은 global memory에 접근은 가능하나
  *                      read만 가능하고 write는 불가능하다.
  *                      pure function도 side effect가 없다.
+ *
+ *  왜 const attribute를 사용할까???:
+ *   - 커널 개발자들에게 이 함수는 언제 사용하더라도 안전한 것임을 알리기 위해서?
+ *   - 잘못된 코딩(예를 들어, const function 안에서 non-const function을 호출하는 경우)
+ *     를 방지하기 위해서?
  */
 
 /* IAMROOT-12A:
@@ -228,6 +240,11 @@ static inline unsigned int __attribute_const__ read_cpuid_mpidr(void)
 		    : "cc");						\
 		__val;							\
 	});
+ */
+
+/* IAMROOT-12A:
+ * ------------
+ * MPIDR(Multiprocessor Affinity Register)를 읽어온다.
  */
 	return read_cpuid(CPUID_MPIDR);
 }

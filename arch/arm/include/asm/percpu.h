@@ -24,6 +24,21 @@
 static inline void set_my_cpu_offset(unsigned long off)
 {
 	/* Set TPIDRPRW */
+
+/* IAMROOT-12A:
+ * ------------
+ * percpu 자료구조에서 사용되는 cpu마다 개별적으로 가지는 값.
+ * 받아온 off 값을 TPIDRPRW register에 쓴다.
+ * inline assembly 참고: https://wiki.kldp.org/KoreanDoc/html/EmbeddedKernel-KLDP/app3.basic.html
+ * 질문: 왜 메모리에 할당하지 않고 CP15 register를 이용하는지????
+ *          메모리를 사용한 offset은 메모리 접근이 2번 필요한데
+ *          속도 향상을 위해서 사용하지 않는 register를 사용함.
+ *          (이전에는 메모리에 할당했었다)
+ *          참고: https://lwn.net/Articles/527927/
+ *
+ * The asm "memory" constraints are needed here to ensure the percpu offset
+ * gets reloaded.
+ */
 	asm volatile("mcr p15, 0, %0, c13, c0, 4" : : "r" (off) : "memory");
 }
 
