@@ -23,6 +23,14 @@ extern unsigned long __stack_chk_guard;
  * NOTE: this must only be called from functions that never return,
  * and it must always be inlined.
  */
+
+/* IAMROOT-12A:
+ * ------------
+ * __always_inline: 100% inline화 할 수 있도록 컴파일러에 요청.
+ *
+ * 아래 boot_init_stack_canary()를 통해 stack canary값을 알아온다.
+ */
+
 static __always_inline void boot_init_stack_canary(void)
 {
 	unsigned long canary;
@@ -31,6 +39,13 @@ static __always_inline void boot_init_stack_canary(void)
 	get_random_bytes(&canary, sizeof(canary));
 	canary ^= LINUX_VERSION_CODE;
 
+/* IAMROOT-12A:
+ * ------------
+ * current: 커널스택의 마지막에 thread_info가 담기고,
+ * thred_info->task는 task_struct를 가리킨다.
+ *
+ * 즉 current-> 는 현재 task 정보를 가리킨다.
+ */
 	current->stack_canary = canary;
 	__stack_chk_guard = current->stack_canary;
 }

@@ -1232,12 +1232,39 @@ static ssize_t extract_entropy_user(struct entropy_store *r, void __user *buf,
  */
 void get_random_bytes(void *buf, int nbytes)
 {
+
+/* IAMROOT-12A:
+ * ------------
+ * DEBUG_RANDOM_BOOT: ???
+ * unlikely(): false가 될 확률이 높을 때.
+ */
+
 #if DEBUG_RANDOM_BOOT > 0
 	if (unlikely(nonblocking_pool.initialized == 0))
 		printk(KERN_NOTICE "random: %pF get_random_bytes called "
 		       "with %d bits of entropy available\n",
 		       (void *) _RET_IP_,
 		       nonblocking_pool.entropy_total);
+
+/* IAMROOT-12A:
+ * ------------
+ *
+ * DEFINE_EVENT(random__get_random_bytes, get_random_bytes,
+         TP_PROTO(int nbytes, unsigned long IP),
+	         TP_ARGS(nbytes, IP) 
+		 );
+ *
+ * #define DEFINE_EVENT(template, name, proto, args)			\
+ *         DECLARE_TRACE(name, PARAMS(proto), PARAMS(args))
+ *
+ *
+ * #define DECLARE_TRACE(name, proto, args)				\
+ *              __DECLARE_TRACE(name, PARAMS(proto), PARAMS(args), 1,	\
+ *              PARAMS(void *__data, proto),				\
+ *              PARAMS(__data, args))
+ *
+ */
+
 #endif
 	trace_get_random_bytes(nbytes, _RET_IP_);
 	extract_entropy(&nonblocking_pool, buf, nbytes, 0, 0);
