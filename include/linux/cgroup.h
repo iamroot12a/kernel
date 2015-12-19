@@ -41,6 +41,11 @@ extern int proc_cgroup_show(struct seq_file *m, struct pid_namespace *ns,
 			    struct pid *pid, struct task_struct *tsk);
 
 /* define the enumeration of all cgroup subsystems */
+
+/* IAMROOT-12A:
+ * ------------
+ *  ## : 두개의 문자열을 붙여 주는 컴파일러 지시자.
+ */
 #define SUBSYS(_x) _x ## _cgrp_id,
 enum cgroup_subsys_id {
 #include <linux/cgroup_subsys.h>

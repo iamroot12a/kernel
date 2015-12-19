@@ -1063,6 +1063,21 @@ static inline notrace void rcu_read_unlock_sched_notrace(void)
  * Note that unlike rcu_assign_pointer(), RCU_INIT_POINTER() provides no
  * ordering guarantees for either the CPU or the compiler.
  */
+
+/* IAMROOT-12A:
+ * ------------
+ * sparse : 리눅스 커널의 문제를 찾아주는 툴
+ *          스파스는 정적 분석 도구이고, 설치된 후 gcc extension으로 동작
+ *          지원 속성으로 noderef, address_space, lock(acquires, releases), ...
+ *
+ * __rcu : __attribute__((noderef, address_space(4)))
+ *
+ *         noderef : 포인터 변수를 사용하여 직접 참조할 수 없다.
+ *                   (& 연산자를 사용해서 직접 참조해야 한다)
+ *         address_space: 커널에는 몇개의 주소공간이 있다.
+ *                        0 : kernel, 1: user, 2: iomem, 3: percpu, 4: __rcu 공간  
+ */
+
 #define RCU_INIT_POINTER(p, v) \
 	do { \
 		rcu_dereference_sparse(p, __rcu); \

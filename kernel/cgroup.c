@@ -1601,6 +1601,11 @@ out_unlock:
 	up_write(&css_set_rwsem);
 }
 
+/* IAMROOT-12A:
+ * ------------
+ * 토론 한번 해 봤음. 추후 분석 예정
+ */
+
 static void init_cgroup_housekeeping(struct cgroup *cgrp)
 {
 	struct cgroup_subsys *ss;
@@ -1630,6 +1635,16 @@ static void init_cgroup_root(struct cgroup_root *root,
 	atomic_set(&root->nr_cgrps, 1);
 	cgrp->root = root;
 	init_cgroup_housekeeping(cgrp);
+
+/* IAMROOT-12A:
+ * ------------
+ * IDR은 radix tree의 일종으로 정수 ID와 특정한 포인터 값을 연결시키는 역할을 해 준다.
+ * 원래는 POSIX timer 관련 시스템 콜 구현을 위해 작성된 것으로
+ * 특정한 timer 객체를 다룰 수 있는 ID를 생성해 주는 역할을 하였으나
+ * 현재는 각종 장치 드라이버나 VFS 레이어에서도 널리 사용된다.
+ *
+ * 참조: http://egloos.zum.com/studyfoss/v/5187192
+ */
 	idr_init(&root->cgroup_idr);
 
 	root->flags = opts->flags;
@@ -4959,6 +4974,13 @@ int __init cgroup_init_early(void)
 	init_cgroup_root(&cgrp_dfl_root, &opts);
 	cgrp_dfl_root.cgrp.self.flags |= CSS_NO_REF;
 
+
+/* IAMROOT-12A:
+ * ------------
+ * RCU : Read Copy Update 
+ *       커널 락을 없애려는 시도로 도입된 동기화 기법.
+ *       추후 검토 예정
+ */
 	RCU_INIT_POINTER(init_task.cgroups, &init_css_set);
 
 	for_each_subsys(ss, i) {
@@ -4972,6 +4994,10 @@ int __init cgroup_init_early(void)
 		ss->id = i;
 		ss->name = cgroup_subsys_name[i];
 
+/* IAMROOT-12A:
+ * ------------
+ *  추후 분석 예정
+ */
 		if (ss->early_init)
 			cgroup_init_subsys(ss, true);
 	}
