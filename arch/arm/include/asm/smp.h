@@ -18,6 +18,11 @@
 # error "<asm/smp.h> included in non-SMP build"
 #endif
 
+/* IAMROOT-12A:
+ * ------------
+ * processor_id를 리턴한다. 첫 프로세서는 0부터~
+ */
+
 #define raw_smp_processor_id() (current_thread_info()->cpu)
 
 struct seq_file;

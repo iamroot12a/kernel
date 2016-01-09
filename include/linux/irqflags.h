@@ -58,6 +58,13 @@
  */
 #define raw_local_irq_disable()		arch_local_irq_disable()
 #define raw_local_irq_enable()		arch_local_irq_enable()
+
+/* IAMROOT-12A:
+ * ------------
+ * 아래 typecheck()는 flags의 데이터 형이 unsigned long이 아닌 경우
+ * 컴파일러 warnning 출력됨.
+ */
+
 #define raw_local_irq_save(flags)			\
 	do {						\
 		typecheck(unsigned long, flags);	\

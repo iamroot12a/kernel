@@ -95,6 +95,11 @@ register unsigned long current_stack_pointer asm ("sp");
  */
 static inline struct thread_info *current_thread_info(void) __attribute_const__;
 
+/* IAMROOT-12A:
+ * ------------
+ * 커널 스택(8K)의 바닥에 위치한 thread_info 구조체 포인터를 리턴한다.
+ */
+
 static inline struct thread_info *current_thread_info(void)
 {
 	return (struct thread_info *)

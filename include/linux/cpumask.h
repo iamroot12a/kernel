@@ -20,6 +20,7 @@ typedef struct cpumask { DECLARE_BITMAP(bits, NR_CPUS); } cpumask_t;
  * You should only assume nr_cpu_ids bits of this mask are valid.  This is
  * a macro so it's const-correct.
  */
+
 #define cpumask_bits(maskp) ((maskp)->bits)
 
 /**
@@ -737,6 +738,15 @@ void init_cpu_online(const struct cpumask *src);
  *
  * This does the conversion, and can be used as a constant initializer.
  */
+
+/* IAMROOT-12A:
+ * ------------
+ * 항상 true 인데 왜 false에 대한 루틴을 호출하게 놓았을까?
+ *    - 실제 실행되지 않지만 컴파일 시 unsigned long * 타입이 아닌 경우
+ *      컴파일 오류 발생 목적
+ * 런타임 시에는 항상 true이므로 cpumask *로의 타입 캐스트만 동작한다.
+ */
+
 #define to_cpumask(bitmap)						\
 	((struct cpumask *)(1 ? (bitmap)				\
 			    : (void *)sizeof(__check_is_bitmap(bitmap))))

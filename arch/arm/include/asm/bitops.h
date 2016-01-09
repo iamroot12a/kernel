@@ -32,10 +32,36 @@
  *
  * First, the atomic bitops. These use native endian.
  */
+
+/* IAMROOT-12A:
+ * ------------
+ * 현재 코어의 소프트웨어 인터럽트를 막고 해당 비트를 enable한 후 
+ * 원래 인터럽트 상태로 되돌린다.
+ *
+ * 현재 코어의 인터럽트를 막게되면 현재 코어 내에서 해당 opearation에
+ * 개입하는 것을 막을 수 있다.
+ */
+
 static inline void ____atomic_set_bit(unsigned int bit, volatile unsigned long *p)
 {
 	unsigned long flags;
+
+/* IAMROOT-12A:
+ * ------------
+ *     mask: bit=0, mask=1
+ *           bit=1, mask=2
+ *           bit=2, mask=4
+ */
+
 	unsigned long mask = 1UL << (bit & 31);
+
+/* IAMROOT-12A:
+ * ------------
+ * 이 함수는 arch/arm 전용이므로 항상 ARM 32비트 시스템에서만 호출됨.
+ * 32로 나누는 이유는 unsigned long 데이터형이 이 시스템에서 4바이트 이므로
+ * 배열 번호를 지정할 수 있게 된다.
+ *      p[bit/32]와 동일
+ */
 
 	p += bit >> 5;
 
@@ -176,6 +202,12 @@ extern int _find_next_bit_be(const unsigned long *p, int size, int offset);
 /*
  * The __* form of bitops are non-atomic and may be reordered.
  */
+
+/* IAMROOT-12A:
+ * ------------
+ * __builtin_constant_p: 인수가 상수이면 true, 변수이면 false
+ */
+
 #define ATOMIC_BITOP(name,nr,p)			\
 	(__builtin_constant_p(nr) ? ____atomic_##name(nr, p) : _##name(nr,p))
 #else

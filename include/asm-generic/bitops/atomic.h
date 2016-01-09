@@ -62,6 +62,18 @@ extern arch_spinlock_t __atomic_hash[ATOMIC_HASH_SIZE] __lock_aligned;
  * Note that @nr may be almost arbitrarily large; this function is not
  * restricted to acting on a single-word quantity.
  */
+
+/* IAMROOT-12A:
+ * ------------
+ * include/asm-generic에 있는 코드들은 아키텍처의 포팅을 도와주기 위해
+ * 만들어진 대표성이 있는 코드이며 다른 아키텍처에 같은 이름의 함수가
+ * 있다는 뜻은 asm-generic에 만들어 놓은 코드를 사용하지 않고 해당 아키텍처의
+ * 코드를 사용하게 구성되어 있다는 의미와 유사하다.
+ *
+ * 라즈베리파이2 에서의 atomic bit operation들은 아래의 헤더 파일을 사용한다.
+ * arch/arm/include/asm/bitops.h
+ */
+
 static inline void set_bit(int nr, volatile unsigned long *addr)
 {
 	unsigned long mask = BIT_MASK(nr);

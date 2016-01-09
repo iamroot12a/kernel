@@ -124,6 +124,11 @@ extern void __init smp_init(void);
 
 static inline void smp_send_stop(void) { }
 
+/* IAMROOT-12A:
+ * ------------
+ * UP 시스템에서는 processor_id를 0으로 리턴한다. 
+ */
+
 /*
  *	These macros fold the SMP functionality into a single CPU system
  */

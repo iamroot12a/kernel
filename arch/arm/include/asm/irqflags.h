@@ -20,6 +20,14 @@
 
 #if __LINUX_ARM_ARCH__ >= 6
 
+
+/* IAMROOT-12A:
+ * ------------
+ * flags 변수에 cpsr 레지스터를 받아와서 저장하고 그 값을 리턴한다.
+ * cpsid i 문장은 역시 arch_local_irq_disable과 같이 소프트웨어 인터럽트를
+ * disable 시킨다.
+ */
+
 static inline unsigned long arch_local_irq_save(void)
 {
 	unsigned long flags;
@@ -31,6 +39,11 @@ static inline unsigned long arch_local_irq_save(void)
 	return flags;
 }
 
+/* IAMROOT-12A:
+ * ------------
+ * cpsr 레지스터의 SW 인터럽트 상태 플래그를 enable
+ */
+
 static inline void arch_local_irq_enable(void)
 {
 	asm volatile(
@@ -40,6 +53,14 @@ static inline void arch_local_irq_enable(void)
 		: "memory", "cc");
 }
 
+/* IAMROOT-12A:
+ * ------------
+ * cpsr 레지스터의 SW 인터럽트 상태 플래그를 disable
+ * cpsid i 어셈블리에 compiler barrier인 volatile을 사용한 이유?
+ *    루틴이 중요해서 컴파일러가 optimization을 하는 것을 막도록 지시한다.
+ *    (명령어의 실행 위치를 바꿀 수 없도록)
+ */
+
 static inline void arch_local_irq_disable(void)
 {
 	asm volatile(
@@ -48,6 +69,11 @@ static inline void arch_local_irq_disable(void)
 		:
 		: "memory", "cc");
 }
+
+/* IAMROOT-12A:
+ * ------------
+ * cpsr 레지스터의 HW 인터럽트 상태 플래그를 enable/disable
+ */
 
 #define local_fiq_enable()  __asm__("cpsie f	@ __stf" : : : "memory", "cc")
 #define local_fiq_disable() __asm__("cpsid f	@ __clf" : : : "memory", "cc")
@@ -147,6 +173,12 @@ static inline unsigned long arch_local_save_flags(void)
 /*
  * restore saved IRQ & FIQ state
  */
+
+/* IAMROOT-12A:
+ * ------------
+ * cpsr_c 레지스터(8 비트만) 값을 flags 값으로 바꾼다.
+ */
+
 static inline void arch_local_irq_restore(unsigned long flags)
 {
 	asm volatile(

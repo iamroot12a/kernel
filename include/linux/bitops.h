@@ -10,6 +10,13 @@
 #define BIT_ULL_MASK(nr)	(1ULL << ((nr) % BITS_PER_LONG_LONG))
 #define BIT_ULL_WORD(nr)	((nr) / BITS_PER_LONG_LONG)
 #define BITS_PER_BYTE		8
+
+/* IAMROOT-12A:
+ * ------------
+ * nr에 비트가 들어가는데 이를 long 데이터 형으로 바뀔 때 필요한 개수를 리턴.
+ *     32비트 시스템에서 nr=16 인 경우 1을 리턴, nr=33인 경우 2를 리턴
+ */
+
 #define BITS_TO_LONGS(nr)	DIV_ROUND_UP(nr, BITS_PER_BYTE * sizeof(long))
 #endif
 

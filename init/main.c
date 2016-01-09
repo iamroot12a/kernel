@@ -11,16 +11,16 @@
 
 /*
  * 참여자:
+ *     김상덕 - ksd3148@gmail.com
+ *     김종철 - jongchul.kim@gmail.com
+ *     김형일 - khi8660@naver.com
  *     문영일 - jakeisname@gmail.com
- *     이벽산 - lbyeoksan@gmail.com
  *     유계성 - gsryu99@gmail.com 
+ *     이벽산 - lbyeoksan@gmail.com
  *     전성윤 - roland.korea@gmail.com
  *     최영민 - jiggly2k@gmail.com
  *     한상종 - sjhan00000@gmail.com
- *     김형일 - khi8660@naver.com
  */
-
-
 
 #define DEBUG		/* Enable initcall_debug */
 
@@ -464,8 +464,49 @@ void __init parse_early_param(void)
 
 static void __init boot_cpu_init(void)
 {
+
+/* IAMROOT-12A:
+ * ------------
+ * CPU 상태를 관리하는 몇 개의 비트맵 전역 변수에 현재 CPU의 상태를 설정한다.
+ *
+ * 현재 동작하는 프로세서 번호가 리턴 (0 부터~~)
+ */
 	int cpu = smp_processor_id();
 	/* Mark the boot cpu "present", "online" etc for SMP and UP case */
+
+/* IAMROOT-12A:
+ * ------------
+ * online: 
+ *	현재 online 상태이고, 스케쥴 되는 상태인 cpu 집합.
+ *	present cpu들 중 cpu_up() 호출되었을 때 추가됨
+ * active:
+ *	스케쥴을 받을 수있는 상태. 
+ *	    cpu up 하면 거의 동시에 active(true),  online(true)
+ *	    cpu down 하면 active(false) 후 -> online(false)
+ *	CONFIG_NR_CPUS 최대값 이하.
+ *	runqueue migration 등에 사용되는 cpu 집합.
+ * present:
+ *	현재 시스템에서 존재하는 cpu 집합. possible의 부분집합
+ *	online 또는 offline 일 수 있음.
+ * possible:
+ *	현재 동작하거나 확장할 수 있는 상태비트로 boot시 고정.
+ *	NR_CPUS 만큼 설정됨
+ *	(처음 부팅 시 존재 하지 않아도 hotplug로 인해 최대 확장 가능한 수)
+ *
+ * 추정 순서:
+ *	시스템을 NR_CPUS = 8, 부팅 시 4개 동작, CPU 카드가 별도로 추가되지 않은 상태
+ *	
+ *			possible	present		active		online 
+ *			--------------------------------------------------------
+ * 1. 첫 부팅 후:	11111111	11110000	11110000	11110000
+ * 2. CPU 카드 추가:	11111111	11111111	11110000	11110000
+ * 3. CPU up 요청:	11111111	11111111	11111111	11111111
+ * 4. CPU down 요청:	11111111	11111111	11110000	11111111
+ *    (시간차)		11111111	11111111	11110000	11110000
+ * 5. CPU 카드 제거:	11111111	11110000	11110000	11110000
+ *
+ */
+
 	set_cpu_online(cpu, true);
 	set_cpu_active(cpu, true);
 	set_cpu_present(cpu, true);
