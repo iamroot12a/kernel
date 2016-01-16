@@ -122,6 +122,11 @@ static void v6_clear_user_highpage_aliasing(struct page *page, unsigned long vad
 	raw_spin_unlock(&v6_lock);
 }
 
+/* IAMROOT-12A:
+ * ------------
+ * 라즈베리파이2에서 사용하는 cpu_user_fns 구조체
+ */
+
 struct cpu_user_fns v6_user_fns __initdata = {
 	.cpu_clear_user_highpage = v6_clear_user_highpage_nonaliasing,
 	.cpu_copy_user_highpage	= v6_copy_user_highpage_nonaliasing,

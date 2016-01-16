@@ -25,6 +25,12 @@
 #include "proc-v7-2level.S"
 #endif
 
+
+/* IAMROOT-12A:
+ * ------------
+ * 라즈베리파이2: 초기화 없이 리턴
+ */
+
 ENTRY(cpu_v7_proc_init)
 	ret	lr
 ENDPROC(cpu_v7_proc_init)
@@ -505,6 +511,12 @@ __v7_setup_stack:
 	__INITDATA
 
 	@ define struct processor (see <asm/proc-fns.h> and proc-macros.S)
+
+/* IAMROOT-12A:
+ * ------------
+ * 라즈베리파이2가 사용하는 processor 정보를 선언하는 곳
+ * v7_process_functions라는 이름의 구조체가 선언됨.
+ */
 	define_processor_functions v7, dabort=v7_early_abort, pabort=v7_pabort, suspend=1
 	define_processor_functions ca9mp, dabort=v7_early_abort, pabort=v7_pabort, suspend=1
 #ifdef CONFIG_CPU_PJ4B
@@ -522,6 +534,7 @@ __v7_setup_stack:
 	/*
 	 * Standard v7 proc info content
 	 */
+
 .macro __v7_proc initfunc, mm_mmuflags = 0, io_mmuflags = 0, hwcaps = 0, proc_fns = v7_processor_functions
 	ALT_SMP(.long	PMD_TYPE_SECT | PMD_SECT_AP_WRITE | PMD_SECT_AP_READ | \
 			PMD_SECT_AF | PMD_FLAGS_SMP | \mm_mmuflags)
@@ -593,7 +606,10 @@ __v7_cr7mp_proc_info:
  * 마스크   : 0xff0f_fff0
  *
  * __v7_ca7mp_setup은 이 구조체의 initfunc에 주소가 저장됨..
+ *
+ * 아래의 객체는 proc_info_list 구조체와 동일
  */
+
 	/*
 	 * ARM Ltd. Cortex A7 processor.
 	 */

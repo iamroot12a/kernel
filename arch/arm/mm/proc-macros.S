@@ -258,6 +258,19 @@
 	mcr	p15, 0, ip, c7, c10, 4		@ data write barrier
 	.endm
 
+/* IAMROOT-12A:
+ * ------------
+ * define_processor_functions 매크로에서 processor 구조체 타입의 객체를 초기화
+ *
+ * 라즈베리파이2:
+ *	v7_processor_functions 구조체
+ *	   ...
+ *	   cpu_v7_proc_init()
+ *	   ...
+ *         cpu_v7_switch_mm()
+ *         ...
+ */
+
 .macro define_processor_functions name:req, dabort:req, pabort:req, nommu=0, suspend=0
 	.type	\name\()_processor_functions, #object
 	.align 2
@@ -295,6 +308,13 @@ ENTRY(\name\()_processor_functions)
 	.size	\name\()_processor_functions, . - \name\()_processor_functions
 .endm
 
+/* IAMROOT-12A:
+ * ------------
+ * 라즈베리파이2: v7_cache_fns 이름의 cpu_cache_fns 구조체 생성
+ *	v7_flush_icache_all()
+ *	...	
+ */
+
 .macro define_cache_functions name:req
 	.align 2
 	.type	\name\()_cache_fns, #object
@@ -312,6 +332,13 @@ ENTRY(\name\()_cache_fns)
 	.long	\name\()_dma_flush_range
 	.size	\name\()_cache_fns, . - \name\()_cache_fns
 .endm
+
+/* IAMROOT-12A:
+ * ------------
+ * 라즈베리파이2: v7_tlb_fns 이름으로 cpu_tlb_fns 구조체 생성
+ *	v7_flush_user_tlb_range()
+ *	...	
+ */
 
 .macro define_tlb_functions name:req, flags_up:req, flags_smp
 	.type	\name\()_tlb_fns, #object

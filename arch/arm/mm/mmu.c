@@ -86,6 +86,11 @@ struct cachepolicy {
 #define s2_policy(policy)	0
 #endif
 
+/* IAMROOT-12A:
+ * ------------
+ * 라즈베리파이2: WBWA 사용
+ */
+
 static struct cachepolicy cache_policies[] __initdata = {
 	{
 		.policy		= "uncached",
@@ -137,6 +142,15 @@ void __init init_default_cache_policy(unsigned long pmd)
 	initial_pmd_value = pmd;
 
 	pmd &= PMD_SECT_TEX(1) | PMD_SECT_BUFFERABLE | PMD_SECT_CACHEABLE;
+
+/* IAMROOT-12A:
+ * ------------
+ * 전역변수 cachepolicy에 캐시 정책(0~4)을 저장한다.
+ *
+ * 라즈베리파이2: 
+ *      cachepolicy = 0 (CPOLICY_UNCACHED) or
+ *	cachepolicy = 4 (CPOLICY_WRITEALLOC)
+ */
 
 	for (i = 0; i < ARRAY_SIZE(cache_policies); i++)
 		if (cache_policies[i].pmd == pmd) {
