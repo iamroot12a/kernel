@@ -88,7 +88,7 @@ struct cachepolicy {
 
 /* IAMROOT-12A:
  * ------------
- * 라즈베리파이2: pmd에 uncached 사용
+ * 라즈베리파이2: pmd 엔트리에서 사용할 캐시 속성에 writealloc 사용
  */
 
 static struct cachepolicy cache_policies[] __initdata = {
@@ -145,10 +145,11 @@ void __init init_default_cache_policy(unsigned long pmd)
 
 /* IAMROOT-12A:
  * ------------
- * 전역변수 cachepolicy에 pmd(ARM 32bit에서 1차 페이지테이블)용 캐시 정책(0~4)을 저장한다.
+ * 전역변수 cachepolicy에 pmd(ARM 32bit에서 1차 페이지테이블) 엔트리에서
+ * 사용할 캐시 정책(0~4)을 저장한다.
  *
  * 라즈베리파이2: 
- *      cachepolicy = 0 (CPOLICY_UNCACHED) 
+ *      cachepolicy = 4 (CPOLICY_WRITEALLOC) 
  */
 
 	for (i = 0; i < ARRAY_SIZE(cache_policies); i++)

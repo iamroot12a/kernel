@@ -361,8 +361,10 @@ static void __init cacheid_init(void)
  * ------------
  * cachetype = CTR(Cache Type Register)
  * CTR.Format을 읽어 0x4 인경우 ARMv7이다.
+ *	- L1 d-cache를 CACHEID_VIPT_NONALIASING로 설정한다.
+ *	  (참고로 ARMv7의 실제 L1 d-cache 타입은 PIPT)
  * CTR.L1IP(L1 instruction cache policy)
- *	값이 2인 경우는 d-cache 관련하여 CACHEID_VIPT_NONALIASING
+ *	값이 2인 경우는 i-cache 관련하여 VIPT
  */
 
 		unsigned int cachetype = read_cpuid_cachetype();
@@ -388,11 +390,18 @@ static void __init cacheid_init(void)
 
 /* IAMROOT-12A:
  * ------------
+ * L1 i-cache에 대하여 aliasing이 필요한지 정한다.
+ * 캐시의 단면(1 way, 라인사이즈 * numsets) 사이즈가 페이지 크기(4KB) 보다
+ * 큰 경우 aliasing(page coloring)이 필요하다고 판단한다.
+ *
  * 라즈베리파이2:
  *	L1 i-cache의 타입은 CACHEID_VIPT_I_ALIASING
- *	결국 L1 cacahe의 타입은 d-cache, i-cache 플래그들의 특성을 담는다.
- *		CACHEID_VIPT_NONALIASING | CACHEID_VIPT_I_ALIASING
+ *	L1 cacahe의 타입은 d-cache + i-cache 플래그들의 특성을 담는다.
+ *		CACHEID_VIPT_NONALIASING(b1) | CACHEID_VIPT_I_ALIASING(b4)
  *		cacheid = 0x12
+ *
+ *	 출력메시지:
+ *		"CPU: PIPT / VIPT nonaliasing data cache, VIPT aliasing instruction cache"
  */
 
 		if (cpu_has_aliasing_icache(arch))
@@ -462,7 +471,7 @@ static void __init cpuid_init_hwcaps(void)
 
 /* IAMROOT-12A:
  * ------------
- * 라즈베리파이2는 LPAE를 사용하지 않음.
+ * 라즈베리파이2는 LPAE를 사용하지는 않지만 칩은 지원함.
  */
 
 	/* LPAE implies atomic ldrd/strd instructions */
@@ -525,6 +534,11 @@ void notrace cpu_init(void)
 {
 #ifndef CONFIG_CPU_V7M
 	unsigned int cpu = smp_processor_id();
+
+/* IAMROOT-12A:
+ * ------------
+ * 4가지 모드에 대한 스택은 CPU 별로 필요하다.
+ */
 	struct stack *stk = &stacks[cpu];
 
 	if (cpu >= NR_CPUS) {
@@ -543,14 +557,15 @@ void notrace cpu_init(void)
  */
 	set_my_cpu_offset(per_cpu_offset(cpu));
 
-
 /* IAMROOT-12A:
  * ------------
+ * 특정 CPU 아키텍처에서 필요한 코드를 실행한다.
+ *	v7 아케텍처에서는 아무것도 하지 않고 그냥 return 한다.
+ *
  * 라즈베리파이2:
  *	MULTI_CPU가 동작 중이어서 processor._proc_init()를 호출하는데 
  *	이 변수에는 cpu_v7_proc_init의 주소가 담김 (../mm/proc-v7.S)
  */
-
 	cpu_proc_init();
 
 	/*
@@ -812,9 +827,9 @@ static void __init setup_processor(void)
  * 라즈베리파이2: 
  *	- 초기 hwcaps:		HWCAP_SWP | HWCAP_HALF | HWCAP_THUMB | 
  *				HWCAP_FAST_MULT | HWCAP_EDSP | HWCAP_TLS
- *	- cpuid_init_hwcaps():	HWCAP_IDIVA 플래그를 추가. 
- *				HWCAP_LPAE는 추가하지 않음. 
- *	- THUMB 여부에 따라:	HWCAP_THUMB 및 HWCAP_IDIVT 플래그를 제거. 
+ *	- cpuid_init_hwcaps():	HWCAP_IDIVA 추가. 
+ *				HWCAP_LPAE 추가. 
+ *	- THUMB 여부에 따라:	HWCAP_THUMB 및 HWCAP_IDIVT 제거. 
  *	- elf_hwcap_fixup():	HWCAP_TLS 보존
  *				HWCAP_SWP 제거.
  * -----------------------------------------------------------------------
@@ -831,11 +846,12 @@ static void __init setup_processor(void)
 
 /* IAMROOT-12A:
  * ------------
- * 전역 변수 cachepolicy에 캐시 정책을 저장한다.
+ * 전역 변수 cachepolicy에 pmd 엔트리에 사용할 캐시 정책을 저장한다.
  *
  * 라즈베리파이2:
  *  __cpu_mm_mmu_flags = PMD_TYPE_SECT | PMD_SECT_AP_WRITE | 
  *		PMD_SECT_AP_READ | PMD_SECT_AF | PMD_FLAGS_SMP 
+ *		(PMD_FLAGS_SMP = PMD_SECT_WBWA | PMD_SECT_S)
  */
 	init_default_cache_policy(list->__cpu_mm_mmu_flags);
 #endif
@@ -843,6 +859,13 @@ static void __init setup_processor(void)
 
 	elf_hwcap_fixup();
 
+/* IAMROOT-12A:
+ * ------------
+ * 라즈베리파이2:
+ *	최종 elf_hwcap:
+ *		HWCAP_LPAE | HWCAP_IDIVA | HWCAP_TLS | HWCAP_EDSP
+ *		HWCAP_FAST_MULT | HWCAP_HALF 
+ */
 
 /* IAMROOT-12A:
  * ------------
