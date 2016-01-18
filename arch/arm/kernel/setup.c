@@ -107,6 +107,13 @@ EXPORT_SYMBOL(elf_hwcap2);
 
 
 #ifdef MULTI_CPU
+
+/* IAMROOT-12A:
+ * ------------
+ * MULTI_CPU로 정의된 아키텍처들은 아래의 전역변수에 
+ * 각종 구조체가 연결되어 있다.
+ */
+
 struct processor processor __read_mostly;
 #endif
 #ifdef MULTI_TLB
@@ -129,6 +136,12 @@ EXPORT_SYMBOL(outer_cache);
  * variable directly.
  */
 int __cpu_architecture __read_mostly = CPU_ARCH_UNKNOWN;
+
+/* IAMROOT-12A:
+ * ------------
+ * 각 CPU 모드용 스택 저장 장소이다.
+ * 배열이 3인 이유???
+ */
 
 struct stack {
 	u32 irq[3];
@@ -233,6 +246,12 @@ static int __get_cpu_architecture(void)
 	return CPU_ARCH_ARMv7M;
 }
 #else
+
+/* IAMROOT-12A:
+ * ------------
+ * 라즈베리파이2: cpu_arch = CPU_ARCH_ARMv7(9)
+ */
+
 static int __get_cpu_architecture(void)
 {
 	int cpu_arch;
@@ -276,6 +295,11 @@ static int cpu_has_aliasing_icache(unsigned int arch)
 	int aliasing_icache;
 	unsigned int id_reg, num_sets, line_size;
 
+/* IAMROOT-12A:
+ * ------------
+ * aliasing은 VIPT에서만 사용. (page coloring)
+ */
+
 	/* PIPT caches never alias. */
 	if (icache_is_pipt())
 		return 0;
@@ -283,6 +307,21 @@ static int cpu_has_aliasing_icache(unsigned int arch)
 	/* arch specifies the register format */
 	switch (arch) {
 	case CPU_ARCH_ARMv7:
+
+/* IAMROOT-12A:
+ * ------------
+ * L1 i-cache를 선택 (CSSELR)
+ * 현재 캐시 속성을 id_reg에 담는다. (CCSIDR)
+ *
+ * 라즈베리파이2:
+ *	L1 Cache:	I-32KB(TCM, VIPT, 2 way, 32B cache line), 
+ *			D-32KB(PIPT, 4 way, 64B cache line)
+ *      CCSIDR:		0x203FE009
+ *	line_size =	4 * (2 ^ 3) = 32 bytes
+ *	num_sets =	0x200 (512)
+ *	aliasing_icache = (32 * 512) > 4K = 1 (true)
+ */
+
 		asm("mcr	p15, 2, %0, c0, c0, 0 @ set CSSELR"
 		    : /* No output operands */
 		    : "r" (1));
@@ -291,6 +330,12 @@ static int cpu_has_aliasing_icache(unsigned int arch)
 		    : "=r" (id_reg));
 		line_size = 4 << ((id_reg & 0x7) + 2);
 		num_sets = ((id_reg >> 13) & 0x7fff) + 1;
+
+/* IAMROOT-12A:
+ * ------------
+ * aliasing이 필요한 경우는 캐시 단면의 사이즈가 
+ * 한 개의 페이지 사이즈(4K)를 초과하는 경우 aliasing이 필요
+ */
 		aliasing_icache = (line_size * num_sets) > PAGE_SIZE;
 		break;
 	case CPU_ARCH_ARMv6:
@@ -311,6 +356,15 @@ static void __init cacheid_init(void)
 	if (arch == CPU_ARCH_ARMv7M) {
 		cacheid = 0;
 	} else if (arch >= CPU_ARCH_ARMv6) {
+
+/* IAMROOT-12A:
+ * ------------
+ * cachetype = CTR(Cache Type Register)
+ * CTR.Format을 읽어 0x4 인경우 ARMv7이다.
+ * CTR.L1IP(L1 instruction cache policy)
+ *	값이 2인 경우는 d-cache 관련하여 CACHEID_VIPT_NONALIASING
+ */
+
 		unsigned int cachetype = read_cpuid_cachetype();
 		if ((cachetype & (7 << 29)) == 4 << 29) {
 			/* ARMv7 register format */
@@ -331,6 +385,16 @@ static void __init cacheid_init(void)
 			else
 				cacheid = CACHEID_VIPT_NONALIASING;
 		}
+
+/* IAMROOT-12A:
+ * ------------
+ * 라즈베리파이2:
+ *	L1 i-cache의 타입은 CACHEID_VIPT_I_ALIASING
+ *	결국 L1 cacahe의 타입은 d-cache, i-cache 플래그들의 특성을 담는다.
+ *		CACHEID_VIPT_NONALIASING | CACHEID_VIPT_I_ALIASING
+ *		cacheid = 0x12
+ */
+
 		if (cpu_has_aliasing_icache(arch))
 			cacheid |= CACHEID_VIPT_I_ALIASING;
 	} else {
@@ -377,6 +441,16 @@ static void __init cpuid_init_hwcaps(void)
 	if (cpu_architecture() < CPU_ARCH_ARMv7)
 		return;
 
+/* IAMROOT-12A:
+ * ------------
+ * ARMv7 부터 HWCAP에 추가 항목 여부에 따라 HWCAP에 설정한다.
+ *
+ * CPUID_EXT_ISAR0.Device_instrs:   
+ *	0=나눗셈명령지원없음, 
+ *	1=Thumb에서 SDIV/UDIV 명령 지원 (IDIVT: Instruction DIV for Thumb)
+ *	2=ARM에서 SDIV/UDIV 명령 지원   (IDIVA: Instruction DIV for ARM)
+ */
+
 	divide_instrs = (read_cpuid_ext(CPUID_EXT_ISAR0) & 0x0f000000) >> 24;
 
 	switch (divide_instrs) {
@@ -385,6 +459,11 @@ static void __init cpuid_init_hwcaps(void)
 	case 1:
 		elf_hwcap |= HWCAP_IDIVT;
 	}
+
+/* IAMROOT-12A:
+ * ------------
+ * 라즈베리파이2는 LPAE를 사용하지 않음.
+ */
 
 	/* LPAE implies atomic ldrd/strd instructions */
 	vmsa = (read_cpuid_ext(CPUID_EXT_MMFR0) & 0xf) >> 0;
@@ -401,11 +480,26 @@ static void __init elf_hwcap_fixup(void)
 	 * HWCAP_TLS is available only on 1136 r1p0 and later,
 	 * see also kuser_get_tls_init.
 	 */
+
+/* IAMROOT-12A:
+ * ------------
+ * CPU 아키텍처가 ARM1136 r1p0 이상에서는 TLS 기능이 있다.
+ * 아래의 루틴같이 ARM1136 r1p0에서 MIDR.variant = 0인 경우 
+ * TLS 기능이 없다고 판단하면 뒤 루틴을 생략하고 빠져나간다. 
+ */
+
 	if (read_cpuid_part() == ARM_CPU_PART_ARM1136 &&
 	    ((id >> 20) & 3) == 0) {
 		elf_hwcap &= ~HWCAP_TLS;
 		return;
 	}
+
+/* IAMROOT-12A:
+ * ------------
+ * MIDR.architecture가 0xf인 경우 ARMv7이고 아닌 경우는 그 이하.
+ * SWP를 제거할 필요가 있는 경우는 ARMv7 부터이다.
+ * ARMv7에서는 SWP를 대체할 수 있는 LDREX/STREX를 사용한다.
+ */
 
 	/* Verify if CPUID scheme is implemented */
 	if ((id & 0x000f0000) != 0x000f0000)
@@ -442,7 +536,20 @@ void notrace cpu_init(void)
 	 * This only works on resume and secondary cores. For booting on the
 	 * boot cpu, smp_prepare_boot_cpu is called after percpu area setup.
 	 */
+
+/* IAMROOT-12A:
+ * ------------
+ * TODO: per_cpu_offset() 함수 분석 필요
+ */
 	set_my_cpu_offset(per_cpu_offset(cpu));
+
+
+/* IAMROOT-12A:
+ * ------------
+ * 라즈베리파이2:
+ *	MULTI_CPU가 동작 중이어서 processor._proc_init()를 호출하는데 
+ *	이 변수에는 cpu_v7_proc_init의 주소가 담김 (../mm/proc-v7.S)
+ */
 
 	cpu_proc_init();
 
@@ -459,6 +566,15 @@ void notrace cpu_init(void)
 	/*
 	 * setup stacks for re-entrant exception handlers
 	 */
+
+/* IAMROOT-12A:
+ * ------------
+ * 1) IRQ_MODE에 대한 스택 설정
+ *    irq, fiq 비트 매스크한 상태에서 IRQ_MODE 진입
+ *    stack 구조체의 irq[0]를 sp에 설정.
+ * 2) 순서대로 ABT_MODE, UND_MODE, FIQ_MODE에 대한 스택 설정.
+ * 3) 마지막으로 다시 SVC_MODE로 돌아온다.
+ */
 	__asm__ (
 	"msr	cpsr_c, %1\n\t"
 	"add	r14, %0, %2\n\t"
@@ -640,8 +756,32 @@ static void __init setup_processor(void)
 		while (1);
 	}
 
+/* IAMROOT-12A:
+ * ------------
+ * 전역 변수 __cpu_architecture에 CPU 아키텍처 번호를 저장한다.
+ *
+ * 라즈베리파이2: 
+ *	__cpu_architecture = CPU_ARCH_ARMv7(9)
+ */
+
 	cpu_name = list->cpu_name;
+
 	__cpu_architecture = __get_cpu_architecture();
+
+/* IAMROOT-12A:
+ * ------------
+ * 전역 변수 processor, cpu_tlb, cpu_user, cpu_cache에 CPU 아키텍처가
+ * 제공하는 구조체를 찾아 대입한다.
+ *
+ * 라즈베리파이2: MULTI_CPU를 사용하므로 아래의 전역변수를 사용한다.
+ *	processor	v7_processor_functions	(../mm/proc-v7.S)
+ *	cpu_tlb_fns	v7_tlb_process_		(../mm/tlb-v7.S)
+ *	cpu_user_fns	v6_user_fns		(../mm/copypage-v6.c)
+ *	cpu_cache_fns	v7_cache_fns		(../mm/cache-v7.S)
+ *
+ * 위의 구조체중 v7_으로 시작되는 구조체들은 ../mm/proc-macros.S에서 정의된다.
+ * v6_user_fns만 직접 사용한다.
+ */
 
 #ifdef MULTI_CPU
 	processor = *list->proc;
@@ -664,6 +804,22 @@ static void __init setup_processor(void)
 		 list->arch_name, ENDIANNESS);
 	snprintf(elf_platform, ELF_PLATFORM_SIZE, "%s%c",
 		 list->elf_name, ENDIANNESS);
+
+/* IAMROOT-12A:
+ * ------------
+ * 전역 변수 elf_hwcap에 하드웨어 지원 캐파(capacity)를 설정한다.
+ *
+ * 라즈베리파이2: 
+ *	- 초기 hwcaps:		HWCAP_SWP | HWCAP_HALF | HWCAP_THUMB | 
+ *				HWCAP_FAST_MULT | HWCAP_EDSP | HWCAP_TLS
+ *	- cpuid_init_hwcaps():	HWCAP_IDIVA 플래그를 추가. 
+ *				HWCAP_LPAE는 추가하지 않음. 
+ *	- THUMB 여부에 따라:	HWCAP_THUMB 및 HWCAP_IDIVT 플래그를 제거. 
+ *	- elf_hwcap_fixup():	HWCAP_TLS 보존
+ *				HWCAP_SWP 제거.
+ * -----------------------------------------------------------------------
+ *	HWCAP_HALF | HWCAP_FAST_MULT | HWCAP_EDSP | HWCAP_TLS | HWCPA_IDIVA
+ */
 	elf_hwcap = list->elf_hwcap;
 
 	cpuid_init_hwcaps();
@@ -672,13 +828,33 @@ static void __init setup_processor(void)
 	elf_hwcap &= ~(HWCAP_THUMB | HWCAP_IDIVT);
 #endif
 #ifdef CONFIG_MMU
+
+/* IAMROOT-12A:
+ * ------------
+ * 전역 변수 cachepolicy에 캐시 정책을 저장한다.
+ *
+ * 라즈베리파이2:
+ *  __cpu_mm_mmu_flags = PMD_TYPE_SECT | PMD_SECT_AP_WRITE | 
+ *		PMD_SECT_AP_READ | PMD_SECT_AF | PMD_FLAGS_SMP 
+ */
 	init_default_cache_policy(list->__cpu_mm_mmu_flags);
 #endif
 	erratum_a15_798181_init();
 
 	elf_hwcap_fixup();
 
+
+/* IAMROOT-12A:
+ * ------------
+ * 전역 변수 cacheid에 L1 cache 타입 설정
+ */
 	cacheid_init();
+
+/* IAMROOT-12A:
+ * ------------
+ * TPIDRPRW <- per_cpu_offset???
+ * IRQ_MODE, ABT_MODE, UND_MODE, FIQ_MODE에 대한 스택 설정.
+ */
 	cpu_init();
 }
 

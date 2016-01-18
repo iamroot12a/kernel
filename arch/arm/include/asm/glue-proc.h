@@ -239,6 +239,15 @@
 # endif
 #endif
 
+/* IAMROOT-12A:
+ * ------------
+ * DTB가 나올 때  MULTI_CPU 라는 개념도 생겼는데
+ * 커널이 특정 CPU 아키텍처로 고정되지 않을 수 있기 때문에
+ * 이를 지원하기 위해 커널은 아키텍처를 모른체로 시작한다.
+ *
+ * 라즈베리파이2: MULTI_CPU를 사용
+ */
+
 #ifdef CONFIG_CPU_V7
 /*
  * Cortex-A9 needs a different suspend/resume function, so we need
@@ -247,6 +256,16 @@
 #  undef  MULTI_CPU
 #  define MULTI_CPU
 #endif
+
+/* IAMROOT-12A:
+ * ------------
+ * MULTI_CPU를 지원하지 않는 경우 커널이 고정된 아키텍처를 알기 때문에
+ * 해당 cpu의 함수를 미리 지정할 수 있다.
+ *
+ * cpu_proc_init -> cpu_v6_proc_init (arch/arm/mm/proc-V6.S)
+ *
+ * 라즈베리파이2: 아래 매크로를 사용하지 않는다.
+ */
 
 #ifndef MULTI_CPU
 #define cpu_proc_init			__glue(CPU_NAME,_proc_init)

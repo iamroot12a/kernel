@@ -186,6 +186,14 @@ __mmap_switched_data:
 /*
  * This provides a C-API version of __lookup_processor_type
  */
+
+/* IAMROOT-12A:
+ * ------------
+ * r0(MIDR)에 인수를 받아서 이 루틴으로 들어온다.
+ * __lookup_processor_type으로 proc_info_list 구조체 포인터를 담아서 r0로 리턴
+ * 다시 r0를 r5에 저장하고 루틴을 종료한다. 
+ */
+
 ENTRY(lookup_processor_type)
 	stmfd	sp!, {r4 - r6, r9, lr}
 	mov	r9, r0

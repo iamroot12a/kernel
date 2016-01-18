@@ -4,6 +4,12 @@
 #include <linux/stringify.h>
 #include <linux/kernel.h>
 
+/* IAMROOT-12A:
+ * ------------
+ * CPUID_ID: MIDR (Main ID Register)
+ * CPUID_CACHETYPE (Cache Type Register)
+ */
+
 #define CPUID_ID	0
 #define CPUID_CACHETYPE	1
 #define CPUID_TCM	2
@@ -106,6 +112,15 @@ extern unsigned int processor_id;
  * any is_smp() tests, which can cause undefined instruction aborts on
  * ARM1136 r0 due to the missing extended CP15 registers.
  */
+
+/* IAMROOT-12A:
+ * ------------
+ * 인라인 어셈블리  mrc p15, <opc1>, <레지스터>, <CRn>, <CRm>[, <opc2>]
+ *
+ * 매뉴얼 표현:     p15, <CRn>/<opc1>, <CRm>/<opc2>
+ * MIDR 예)         p15, c0/0, c0/0
+ */
+
 #define read_cpuid_ext(ext_reg)						\
 	({								\
 		unsigned int __val;					\
@@ -156,6 +171,12 @@ static inline unsigned int __attribute_const__ read_cpuid_ext(unsigned offset)
  */
 static inline unsigned int __attribute_const__ read_cpuid_id(void)
 {
+
+/* IAMROOT-12A:
+ * ------------
+ * CPUID_ID: MIDR(Main ID Register)
+ */
+
 	return read_cpuid(CPUID_ID);
 }
 
@@ -187,6 +208,11 @@ static inline unsigned int __attribute_const__ read_cpuid_implementor(void)
  */
 static inline unsigned int __attribute_const__ read_cpuid_part(void)
 {
+
+/* IAMROOT-12A:
+ * ------------
+ * return MIDR & 0xff00fff0
+ */
 	return read_cpuid_id() & ARM_CPU_PART_MASK;
 }
 

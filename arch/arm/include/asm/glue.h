@@ -15,6 +15,11 @@
  */
 #ifdef __KERNEL__
 
+/* IAMROOT-12A:
+ * ------------
+ * 접착제라는 뜻으로 두 개의 인수를 사용해서 하나의 이름으로 만든다.
+ */
+
 #ifdef __STDC__
 #define ____glue(name,fn)	name##fn
 #else

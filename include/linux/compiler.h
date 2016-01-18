@@ -54,6 +54,13 @@ extern void __chk_io_ptr(const volatile void __iomem *);
 #include <linux/compiler-gcc.h>
 #endif
 
+/* IAMROOT-12A:
+ * ------------
+ * 참고:
+ *      함수선언부 관련 매크로(1) | 문c - http://jake.dothome.co.kr/attr1/
+ *      Profiling | 문c - http://jake.dothome.co.kr/profiling/
+ */
+
 #ifdef CC_USING_HOTPATCH
 #define notrace __attribute__((hotpatch(0,0)))
 #else

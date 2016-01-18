@@ -477,7 +477,7 @@ done:
 
 /* IAMROOT-12A:
  * ------------
- * arch/m68k, arch/sparc-(SUN3제외), arch-arc 아키텍처와 HIGHMEM을 사
+ * arch/m68k, arch/sparc-(SUN3제외), arch-arc 아키텍처이면서 HIGHMEM을 사
  * 용하는 경우에만 해당 해쉬 테이블을 사용하기위해 초기화함.
  * → ARM은 관련 사항 없음.
  */

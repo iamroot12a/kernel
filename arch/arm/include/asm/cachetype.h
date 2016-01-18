@@ -26,6 +26,12 @@ extern unsigned int cacheid;
  * - v7+ VIPT never aliases on D-side
  */
 #if __LINUX_ARM_ARCH__ >= 7
+
+/* IAMROOT-12A:
+ * ------------
+ * 라즈베리파이2: __CACHEID_ARCH_MIN = 0x3a 
+ */
+
 #define __CACHEID_ARCH_MIN	(CACHEID_VIPT_NONALIASING |\
 				 CACHEID_ASID_TAGGED |\
 				 CACHEID_VIPT_I_ALIASING |\
@@ -39,6 +45,14 @@ extern unsigned int cacheid;
 /*
  * Mask out support which isn't configured
  */
+
+/* IAMROOT-12A:
+ * ------------
+ * 라즈베리파이2: 
+ *      __CACHEID_ALWAYS = 0
+ *      __CACHEID_NEVER  = (CACHEID_VIVT(1))
+ */
+
 #if defined(CONFIG_CPU_CACHE_VIVT) && !defined(CONFIG_CPU_CACHE_VIPT)
 #define __CACHEID_ALWAYS	(CACHEID_VIVT)
 #define __CACHEID_NEVER		(~CACHEID_VIVT)
@@ -52,6 +66,13 @@ extern unsigned int cacheid;
 
 static inline unsigned int __attribute__((pure)) cacheid_is(unsigned int mask)
 {
+
+/* IAMROOT-12A:
+ * ------------
+ * 라즈베리파이2: cacheid_is(CACHEID_PIPT) 로 물어본 경우
+ *      return ( (0) & 0x30 ) |
+ *             (~1 & 0x3a & 0x30 & 2);
+ */
 	return (__CACHEID_ALWAYS & mask) |
 	       (~__CACHEID_NEVER & __CACHEID_ARCH_MIN & mask & cacheid);
 }

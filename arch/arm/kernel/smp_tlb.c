@@ -87,6 +87,17 @@ static bool erratum_a15_798181_broadcast(void)
 	return true;
 }
 
+/* IAMROOT-12A:
+ * ------------
+ * CONFIG_ARM_ERRATA_798181이 설정된 경우
+ * 특정 아키텍처 리비전 파트에서 전역 변수 erratum_a15_798181_handler에
+ * erratum_a15_798181_partial 또는 erratum_a15_798181_broadcast 함수를
+ * 대입하여 놓는다.
+ *
+ * 위의 핸들러는 TLB 캐시 관련한 코드에서 호출된다. (kernel/smp_tlb.c)
+ */
+
+
 void erratum_a15_798181_init(void)
 {
 	unsigned int midr = read_cpuid_id();

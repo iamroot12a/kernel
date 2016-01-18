@@ -26,6 +26,13 @@ struct processor;
  * language, NOT C code.  For more information, check:
  *  arch/arm/mm/proc-*.S and arch/arm/kernel/head.S
  */
+
+/* IAMROOT-12A:
+ * ------------
+ * 라즈베리파이2:
+ *      ../../mm/proc-v7.S에서 선언한 __v7_ca7mp_proc_info
+ */
+
 struct proc_info_list {
 	unsigned int		cpu_val;
 	unsigned int		cpu_mask;

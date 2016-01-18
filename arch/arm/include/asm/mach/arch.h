@@ -24,6 +24,16 @@ struct smp_operations;
 #define smp_init_ops(ops) (bool (*)(void))NULL
 #endif
 
+/* IAMROOT-12A:
+ * ------------
+ * 머신 디스크립터로 CPU 아키텍처 및 시스템을 구분하여 인식하게된 경우
+ * 관련 변수들이 이 구조체에 담긴다.
+ *
+ * nr: ATAG를 사용하는 방식에서는 부트로더가 r1 레지스터 머신 넘버를 
+ *     커널에게 전달해준 번호를 사용하여 머신을 검색.
+ * name: DTB를 사용하는 방식에서는 커널이 name 문자열로 머신을 검색한다.
+ */
+
 struct machine_desc {
 	unsigned int		nr;		/* architecture number	*/
 	const char		*name;		/* architecture name	*/

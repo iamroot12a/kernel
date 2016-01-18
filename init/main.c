@@ -592,6 +592,13 @@ asmlinkage __visible void __init start_kernel(void)
 	cgroup_init_early();
 
 	local_irq_disable();
+
+/* IAMROOT-12A:
+ * ------------
+ * boot process 중반까지 irq가 diable되어 있는데 이 때 특정 함수에 들어가는
+ * 경우 부트 프로세스가 진행중임을 알려주는 플래그이다.
+ */
+
 	early_boot_irqs_disabled = true;
 
 /*

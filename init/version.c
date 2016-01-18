@@ -42,6 +42,13 @@ struct uts_namespace init_uts_ns = {
 };
 EXPORT_SYMBOL_GPL(init_uts_ns);
 
+/* IAMROOT-12A:
+ * ------------
+ * 이 배너를 수정하지 말라고하는 이유:
+ *	추측: 버전 번호 등을 인식하는 루틴(다른 데몬을 포함)에서 활용을
+ *	 하는 경우가 있을까봐???
+ */
+
 /* FIXED STRINGS! Don't touch! */
 const char linux_banner[] =
 	"Linux version " UTS_RELEASE " (" LINUX_COMPILE_BY "@"
