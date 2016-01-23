@@ -1,6 +1,16 @@
 #ifndef __ASM_ARM_CACHETYPE_H
 #define __ASM_ARM_CACHETYPE_H
 
+/* IAMROOT-12A:
+ * ------------
+ * L1 cache type에 대해서
+ *
+ * bit0~2: d-cache 
+ * bit3~5: i-cache 
+ *
+ * ARMv7에서의 data cache 타입은 무조건 VIPT_ALIASING으로 고정
+ * 다만 i-cache는 시스템 레지스터를 읽어서 판단함.
+ */
 #define CACHEID_VIVT			(1 << 0)
 #define CACHEID_VIPT_NONALIASING	(1 << 1)
 #define CACHEID_VIPT_ALIASING		(1 << 2)

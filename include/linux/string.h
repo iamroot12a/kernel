@@ -154,6 +154,12 @@ void memzero_explicit(void *s, size_t count);
  */
 static inline const char *kbasename(const char *path)
 {
+
+/* IAMROOT-12A:
+ * ------------
+ * 문자열 첫부분이 '/'인 경우 그 다음 문자 위치를 리턴한다.
+ * 아니면 그냥 원래 문자열 시작 위치를 리턴한다.
+ */
 	const char *tail = strrchr(path, '/');
 	return tail ? tail + 1 : path;
 }

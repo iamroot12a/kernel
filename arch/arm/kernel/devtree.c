@@ -205,6 +205,11 @@ const struct machine_desc * __init setup_machine_fdt(unsigned int dt_phys)
 {
 	const struct machine_desc *mdesc, *mdesc_best = NULL;
 
+/* IAMROOT-12A:
+ * ------------
+ * 2012년에 멀티플랫폼을 지원하기 시작하였고,
+ * 라즈베리파이2는 이 옵션을 사용하지 않음.
+ */
 #ifdef CONFIG_ARCH_MULTIPLATFORM
 	DT_MACHINE_START(GENERIC_DT, "Generic DT based system")
 	MACHINE_END
@@ -212,9 +217,19 @@ const struct machine_desc * __init setup_machine_fdt(unsigned int dt_phys)
 	mdesc_best = &__mach_desc_GENERIC_DT;
 #endif
 
+
+/* IAMROOT-12A:
+ * ------------
+ * 간략하게 dtb가 존재하는지 확인한다.
+ */
 	if (!dt_phys || !early_init_dt_verify(phys_to_virt(dt_phys)))
 		return NULL;
 
+/* IAMROOT-12A:
+ * ------------
+ * 현재 시스템에 맞는 머신 디스크립터를 찾아온다.
+ * (잘 찾아올거라 예상하고 분석하지 않음)
+ */
 	mdesc = of_flat_dt_match_machine(mdesc_best, arch_get_next_mach);
 
 	if (!mdesc) {
@@ -237,12 +252,26 @@ const struct machine_desc * __init setup_machine_fdt(unsigned int dt_phys)
 		dump_machine_table(); /* does not return */
 	}
 
+/* IAMROOT-12A:
+ * ------------
+ * 대부분의 머신 디스크립터에는 dt_fixup이 null 인다.
+ * (참고 적용 사례: arch/arm/mach-exynos/exynos.c – dt_fixup에 exynos_dt_fixup())
+ */
 	/* We really don't want to do this, but sometimes firmware provides buggy data */
 	if (mdesc->dt_fixup)
 		mdesc->dt_fixup();
 
+/* IAMROOT-12A:
+ * ------------
+ * 전역 변수 boot_command_line에 dtb나 커널이 전달해준 커멘드라인 문자열을 저장
+ * memblock에 dtb 메모리 노드의 reg 영역을 추가한다.
+ */
 	early_init_dt_scan_nodes();
 
+/* IAMROOT-12A:
+ * ------------
+ * 전역 변수 __machine_arch_type에 머신 번호를 저장한다. 
+ */
 	/* Change machine number to match the mdesc we're using */
 	__machine_arch_type = mdesc->nr;
 

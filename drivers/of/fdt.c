@@ -433,6 +433,10 @@ EXPORT_SYMBOL_GPL(of_fdt_unflatten_tree);
 int __initdata dt_root_addr_cells;
 int __initdata dt_root_size_cells;
 
+/* IAMROOT-12A:
+ * ------------
+ * dtb 또는 ATAG 시작 위치에 대한 가상 주소가 담김.
+ */
 void *initial_boot_params;
 
 #ifdef CONFIG_OF_EARLY_FLATTREE
@@ -596,13 +600,29 @@ int __init of_scan_flat_dt(int (*it)(unsigned long node,
 	const char *pathp;
 	int offset, rc = 0, depth = -1;
 
+/* IAMROOT-12A:
+ * ------------
+ * dtb 처음 위치의 노드부터 하나씩 노드 시작 위치를 읽어온다.
+ */
         for (offset = fdt_next_node(blob, -1, &depth);
              offset >= 0 && depth >= 0 && !rc;
              offset = fdt_next_node(blob, offset, &depth)) {
 
+/* IAMROOT-12A:
+ * ------------
+ * pathp: 노드 명
+ */
 		pathp = fdt_get_name(blob, offset, NULL);
 		if (*pathp == '/')
 			pathp = kbasename(pathp);
+
+/* IAMROOT-12A:
+ * ------------
+ *  early_init_dt_scan_nodes()에서 전달하는 함수 들
+ * 	early_init_dt_scan_chosen()
+ *	early_init_dt_scan_root()
+ *	early_init_dt_scan_memory() 
+ */
 		rc = it(offset, pathp, depth, data);
 	}
 	return rc;
@@ -828,6 +848,18 @@ int __init early_init_dt_scan_root(unsigned long node, const char *uname,
 	dt_root_size_cells = OF_ROOT_NODE_SIZE_CELLS_DEFAULT;
 	dt_root_addr_cells = OF_ROOT_NODE_ADDR_CELLS_DEFAULT;
 
+/* IAMROOT-12A:
+ * ------------
+ * depth=0인 루트노드에서 #size-cells 속성을 찾아 전역 변수 
+ *		          dt_root_size_cells에 저장한다.
+ *	"	  "       #address-cells 속성을 찾아 전역 변수
+ *		          dt_root_addr_cells에 저장한다.
+ *
+ * be32_to_cpup():
+ *	커널이 리틀엔디안 아키텍처에서 동작하는 경우 변환하여 읽어온다.
+ *	--> __swab32p() 함수 사용
+ *	빅엔디안 아키텍처에서는 변환하지 않는다.
+ */
 	prop = of_get_flat_dt_prop(node, "#size-cells", NULL);
 	if (prop)
 		dt_root_size_cells = be32_to_cpup(prop);
@@ -871,17 +903,36 @@ int __init early_init_dt_scan_memory(unsigned long node, const char *uname,
 	} else if (strcmp(type, "memory") != 0)
 		return 0;
 
+/* IAMROOT-12A:
+ * ------------
+ * 노드명이 메모리이며 타입이 device_type인 경우에 한해 아래 루틴을 진행한다.
+ *
+ * linux,usable-memory 또는 reg 속성을 읽어오는데 없으면 리턴한다.
+ */
 	reg = of_get_flat_dt_prop(node, "linux,usable-memory", &l);
 	if (reg == NULL)
 		reg = of_get_flat_dt_prop(node, "reg", &l);
 	if (reg == NULL)
 		return 0;
 
+/* IAMROOT-12A:
+ * ------------
+ * endp의 경우는 reg 배열의 마지막 주소를 가리킨다.
+ * reg 값은 2개 또는 4개의 int 주소 값인데 배열로 구성될 수 있다.
+ * 따라서 l 값은 2, 4, 8, 16, ...
+ */
 	endp = reg + (l / sizeof(__be32));
 
 	pr_debug("memory scan node %s, reg size %d, data: %x %x %x %x,\n",
 	    uname, l, reg[0], reg[1], reg[2], reg[3]);
 
+/* IAMROOT-12A:
+ * ------------
+ * 루프로 반복되는 이유:
+ *	메모리 영역이 나뉘어 있는 case도 있다.
+ *	- 영역이 split 되어 있는 경우 
+ *	- NUMA 아키텍처
+ */
 	while ((endp - reg) >= (dt_root_addr_cells + dt_root_size_cells)) {
 		u64 base, size;
 
@@ -911,8 +962,17 @@ int __init early_init_dt_scan_chosen(unsigned long node, const char *uname,
 	    (strcmp(uname, "chosen") != 0 && strcmp(uname, "chosen@0") != 0))
 		return 0;
 
+/* IAMROOT-12A:
+ * ------------
+ * 노드가 depth=1인 노드명 chosen만 아래 루틴에 진입한다. 
+ */
 	early_init_dt_check_for_initrd(node);
 
+/* IAMROOT-12A:
+ * ------------
+ * 현재 노드에서 bootargs 속성을 찾아온다.
+ * 속성을 찾은 경우 boot_command_line에 데이터를 저장한다.
+ */
 	/* Retrieve command line */
 	p = of_get_flat_dt_prop(node, "bootargs", &l);
 	if (p != NULL && l > 0)
@@ -941,8 +1001,19 @@ int __init early_init_dt_scan_chosen(unsigned long node, const char *uname,
 
 void __init __weak early_init_dt_add_memory_arch(u64 base, u64 size)
 {
+
+/* IAMROOT-12A:
+ * ------------
+ * 라즈베리파이2: phys_offset = 0x0000_0000
+ */
 	const u64 phys_offset = __pa(PAGE_OFFSET);
 
+/* IAMROOT-12A:
+ * ------------
+ * base 주소가 페이지 align이 되어있지 않으면 
+ *	또한 size가 1페이지도 안되는 경우 경고 문구 출력 후 빠져나간다.
+ *	그렇지 않은 경우 size와 base 주소를 align한 후 사용한다.
+ */
 	if (!PAGE_ALIGNED(base)) {
 		if (size < PAGE_SIZE - (base & ~PAGE_MASK)) {
 			pr_warn("Ignoring memory block 0x%llx - 0x%llx\n",
@@ -954,29 +1025,51 @@ void __init __weak early_init_dt_add_memory_arch(u64 base, u64 size)
 	}
 	size &= PAGE_MASK;
 
+/* IAMROOT-12A:
+ * ------------
+ * base 주소가 시스템 최대 주소 크기를 넘어가는 경우 
+ */
 	if (base > MAX_PHYS_ADDR) {
 		pr_warning("Ignoring memory block 0x%llx - 0x%llx\n",
 				base, base + size);
 		return;
 	}
 
+/* IAMROOT-12A:
+ * ------------
+ * 영역이 시스템 최대 주소 크기를 넘어가는 경우 넘어간 영역을 잘라낸다.
+ */
 	if (base + size - 1 > MAX_PHYS_ADDR) {
 		pr_warning("Ignoring memory range 0x%llx - 0x%llx\n",
 				((u64)MAX_PHYS_ADDR) + 1, base + size);
 		size = MAX_PHYS_ADDR - base + 1;
 	}
 
+/* IAMROOT-12A:
+ * ------------
+ * 영역의 끝 주소가 물리메모리 하단에 있는 경우 리턴한다.
+ */
 	if (base + size < phys_offset) {
 		pr_warning("Ignoring memory block 0x%llx - 0x%llx\n",
 			   base, base + size);
 		return;
 	}
+
+/* IAMROOT-12A:
+ * ------------
+ * 영역이 물리메모리의 하단에서 겹치는 경우 밑부분을 잘라낸다.
+ */
 	if (base < phys_offset) {
 		pr_warning("Ignoring memory range 0x%llx - 0x%llx\n",
 			   base, phys_offset);
 		size -= phys_offset - base;
 		base = phys_offset;
 	}
+
+/* IAMROOT-12A:
+ * ------------
+ * 최종적으로 memblock 영역에 추가한다. 
+ */
 	memblock_add(base, size);
 }
 
@@ -1008,13 +1101,27 @@ int __init __weak early_init_dt_reserve_memory_arch(phys_addr_t base,
 
 bool __init early_init_dt_verify(void *params)
 {
+
+/* IAMROOT-12A:
+ * ------------
+ * 가상 주소 값이 null 이면 리턴
+ */
 	if (!params)
 		return false;
 
+/* IAMROOT-12A:
+ * ------------
+ * 가상주소 값에 DTB 스트럭처가 없으면(dtb magic 넘버가 틀리는 등) 리턴  
+ */
 	/* check device tree validity */
 	if (fdt_check_header(params))
 		return false;
 
+/* IAMROOT-12A:
+ * ------------
+ * - 전역 변수 initial_boot_params에 dtb 가상 주소 값을 저장한다.
+ * - 전역 변수 of_fdt_crc32에 dtb의 crc32 값을 저장한다.
+ */
 	/* Setup flat device-tree pointer */
 	initial_boot_params = params;
 	of_fdt_crc32 = crc32_be(~0, initial_boot_params,
@@ -1025,12 +1132,29 @@ bool __init early_init_dt_verify(void *params)
 
 void __init early_init_dt_scan_nodes(void)
 {
+
+/* IAMROOT-12A:
+ * ------------
+ * 전역 변수 boot_command_line에 /chosen 노드의 bootargs 속성 데이터를 저장한다.
+ * 만일 없는 경우 커널이 전달하는 커멘드 라인 값을 받아 올 수도 있다.(커널 설정
+ * 값에 따라-> CONFIG_CMDLINE, CONFIG_CMDLINE_FORCE)
+ */
 	/* Retrieve various information from the /chosen node */
 	of_scan_flat_dt(early_init_dt_scan_chosen, boot_command_line);
 
+/* IAMROOT-12A:
+ * ------------
+ * 
+ * 전역 변수 dt_root_size_cells에 루트 노드의 #size-cells 값을 저장한다.
+ * 전역 변수 dt_root_addr_cells에 루트 노드의 #address-cells 값을 저장한다.
+ */
 	/* Initialize {size,address}-cells info */
 	of_scan_flat_dt(early_init_dt_scan_root, NULL);
 
+/* IAMROOT-12A:
+ * ------------
+ * memblock에 memory 노드의 reg 값(base, size)들을 추가한다.
+ */
 	/* Setup memory, calling early_init_dt_add_memory_arch */
 	of_scan_flat_dt(early_init_dt_scan_memory, NULL);
 }

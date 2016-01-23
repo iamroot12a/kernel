@@ -1138,12 +1138,21 @@ void __init hyp_mode_check(void)
 		pr_info("CPU: All CPU(s) started in SVC mode.\n");
 #endif
 }
-
 void __init setup_arch(char **cmdline_p)
 {
 	const struct machine_desc *mdesc;
 
 	setup_processor();
+
+/* IAMROOT-12A:
+ * ------------
+ * 처음에 DT_START_MACHINE에서 등록한 머신 디스크립터 테이블에서 이름으로 
+ * 검색해보고 없으면 START_MACHINE에서 등록한 머신 디스크립터 테이블에서
+ * 머신 번호로 검색한다.
+ *
+ * setup_machine_fdt()
+ *   - dtb로부터  boot_cmd_line과 memblock에 메모리 노드의 reg 영역을 추가.
+ */
 	mdesc = setup_machine_fdt(__atags_pointer);
 	if (!mdesc)
 		mdesc = setup_machine_tags(__atags_pointer, __machine_arch_type);
