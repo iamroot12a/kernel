@@ -888,10 +888,19 @@ u64 __init dt_mem_next_cell(int s, const __be32 **cellp)
 int __init early_init_dt_scan_memory(unsigned long node, const char *uname,
 				     int depth, void *data)
 {
+/* IAMROOT-12A:
+ * ------------
+ * device_type 속성 값을 읽어온다.
+ */
 	const char *type = of_get_flat_dt_prop(node, "device_type", NULL);
 	const __be32 *reg, *endp;
 	int l;
 
+/* IAMROOT-12A:
+ * ------------
+ * device_type 속성 값이 memory가 아닌 경우 함수를 종료함.
+ * (예외: PPC32이면서 depth=1이고 노드명이 "memory@0" 인경우)
+ */
 	/* We are scanning "memory" nodes only */
 	if (type == NULL) {
 		/*
@@ -905,8 +914,6 @@ int __init early_init_dt_scan_memory(unsigned long node, const char *uname,
 
 /* IAMROOT-12A:
  * ------------
- * 노드명이 메모리이며 타입이 device_type인 경우에 한해 아래 루틴을 진행한다.
- *
  * linux,usable-memory 또는 reg 속성을 읽어오는데 없으면 리턴한다.
  */
 	reg = of_get_flat_dt_prop(node, "linux,usable-memory", &l);
@@ -917,9 +924,46 @@ int __init early_init_dt_scan_memory(unsigned long node, const char *uname,
 
 /* IAMROOT-12A:
  * ------------
- * endp의 경우는 reg 배열의 마지막 주소를 가리킨다.
- * reg 값은 2개 또는 4개의 int 주소 값인데 배열로 구성될 수 있다.
- * 따라서 l 값은 2, 4, 8, 16, ...
+ * 1) dtb에서 reg와 #address-cells 및 #size-cells 상관 관계
+ *    - reg는 메모리 시작 주소와 사이즈를 지정
+ *    - #address-cells = <n> 	메모리의 시작 주소 표현에 사용되는 셀 수
+ *    - #size-cells = <n> 	메모리의 사이즈 표현에 사용되는 셀 수
+ *    - 셀은 4바이트(32bit) 부호없는 정수
+ *    - #address-cells 및 #size-cells는 memory노드의 부모 노드에서 지정
+ *    - 64bit 값을 표현하려면 2개의 cells을 사용한다.
+ *   
+ * 2) memory 노드에서의 reg
+ *    - reg <시작주소, 사이즈> [, <시작주소, 사이즈>] [, ...];
+ *    - NUMA 시스템 또는 split RAM 시스템에서 메모리 정보는 2개 이상 존재
+ *    
+ * 3) 사용 예)
+ *    - 32bit: 시작주소 0x0000_0000, 사이즈 1GByte
+ *      	#address-cells = <1>;
+ *      	#size-cells = <1>;
+ *		memory {
+ *			device_type = "memory";
+ * 			reg = <0x0 0x40000000>;
+ *		} 
+ *
+ *    - 64bit: 시작주소 0x0000_0000_4000_0000, 사이즈 2GByte
+ *      	#address-cells = <2>;
+ *      	#size-cells = <2>;
+ * 		memory@40000000 {
+ *			device_type = "memory";
+ *			reg = <0x0 0x40000000 0x0 0x80000000>;
+ *		};
+ *
+ *    - 64bit: 첫 번째 RAM - 시작주소 0x0000_0000_8000_0000, 사이즈 2G
+ *             두 번째 RAM - 시작주소 0x0000_0008_8000_0000, 사이즈 2G
+ *      	#address-cells = <2>;
+ *      	#size-cells = <2>;
+ *   		memory@80000000 {
+ *			device_type = "memory";
+ *			reg = <0x00000000 0x80000000 0 0x80000000>,
+ *		      	      <0x00000008 0x80000000 0 0x80000000>;
+ *		};
+ *
+ * l은 reg에서 사용된 바이트 수
  */
 	endp = reg + (l / sizeof(__be32));
 
@@ -928,10 +972,7 @@ int __init early_init_dt_scan_memory(unsigned long node, const char *uname,
 
 /* IAMROOT-12A:
  * ------------
- * 루프로 반복되는 이유:
- *	메모리 영역이 나뉘어 있는 case도 있다.
- *	- 영역이 split 되어 있는 경우 
- *	- NUMA 아키텍처
+ * 추가할 메모리 수만큼 루프로 반복
  */
 	while ((endp - reg) >= (dt_root_addr_cells + dt_root_size_cells)) {
 		u64 base, size;
@@ -944,6 +985,20 @@ int __init early_init_dt_scan_memory(unsigned long node, const char *uname,
 		pr_debug(" - %llx ,  %llx\n", (unsigned long long)base,
 		    (unsigned long long)size);
 
+/* IAMROOT-12A:
+ * ------------
+ * 추가할 메모리 수만큼 루프로 반복
+ *
+ * early_init_dt_add_memory_arch()
+ * 	early 메모리 관리자를 사용해 메모리 영역을 등록한다.
+ *
+ *      현재도 early boot process가 진행중에 있고, 또한
+ * 	메모리 관리자(buddy allocator)가 아직 활성화된 단계가 아니므로
+ *      그 때까지는 임시로 사용할 early allocator가 필요하고 그 곳에
+ *      메모리 영역을 추가하여 관리해야 한다. early allocator가 
+ *      아키텍처별로 또한 단계별로 약간씩 다르지만 현재 ARM은 
+ *	리눅스 추세대로 이 곳에서 memblock을 사용한다. 
+ */
 		early_init_dt_add_memory_arch(base, size);
 	}
 
