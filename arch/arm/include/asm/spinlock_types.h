@@ -7,6 +7,13 @@
 
 #define TICKET_SHIFT	16
 
+/* IAMROOT-12A:
+ * ------------
+ * owner:
+ * next:
+ */
+
+
 typedef struct {
 	union {
 		u32 slock;

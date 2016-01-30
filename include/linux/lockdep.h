@@ -427,13 +427,22 @@ struct lock_class_key { };
 extern void lock_contended(struct lockdep_map *lock, unsigned long ip);
 extern void lock_acquired(struct lockdep_map *lock, unsigned long ip);
 
+/* IAMROOT-12A:
+ * ------------
+ * try(): do_raw_spin_trylock() 함수를 호출하여 lock을 한 번에 획득하기 위해
+ * 시도한다. 만일 한번에 획득되지 않으면 아래 함수를 호출한다. 
+ *
+ * lock(): do_raw_spin_lock spinning() 함수를 호출하여 lock을 획득할 때까지
+ *      루프를 돈다.
+ * lock_acquired(): 디버그용 lockdep 코드
+ */
 #define LOCK_CONTENDED(_lock, try, lock)			\
 do {								\
 	if (!try(_lock)) {					\
 		lock_contended(&(_lock)->dep_map, _RET_IP_);	\
 		lock(_lock);					\
 	}							\
-	lock_acquired(&(_lock)->dep_map, _RET_IP_);			\
+	lock_acquired(&(_lock)->dep_map, _RET_IP_);		\
 } while (0)
 
 #else /* CONFIG_LOCK_STAT */

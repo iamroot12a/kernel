@@ -19,6 +19,11 @@ int in_lock_functions(unsigned long addr);
 
 #define assert_raw_spin_locked(x)	BUG_ON(!raw_spin_is_locked(x))
 
+/* IAMROOT-12A:
+ * ------------
+ * 아래 spin_lock 함수들은 inline되지 않는 함수들로 .spinlock.text 섹션에 저장된다.
+ * __lockfunc: __attribute__((section(".spinlock.text")))
+ */
 void __lockfunc _raw_spin_lock(raw_spinlock_t *lock)		__acquires(lock);
 void __lockfunc _raw_spin_lock_nested(raw_spinlock_t *lock, int subclass)
 								__acquires(lock);
@@ -45,6 +50,11 @@ void __lockfunc
 _raw_spin_unlock_irqrestore(raw_spinlock_t *lock, unsigned long flags)
 								__releases(lock);
 
+/* IAMROOT-12A:
+ * ------------
+ * 아래 매크로는 코드 크기보다는 성능 향상을 바라는 목적으로
+ * inline 함수를 호출하기 위한 spin_lock 매크로들
+ */
 #ifdef CONFIG_INLINE_SPIN_LOCK
 #define _raw_spin_lock(lock) __raw_spin_lock(lock)
 #endif
@@ -140,7 +150,18 @@ static inline void __raw_spin_lock_bh(raw_spinlock_t *lock)
 
 static inline void __raw_spin_lock(raw_spinlock_t *lock)
 {
+
+/* IAMROOT-12A:
+ * ------------
+ * preemption을 정지시키고 spin을  .
+ */
+
 	preempt_disable();
+
+/* IAMROOT-12A:
+ * ------------
+ * lock 디버깅을 위한 코드
+ */
 	spin_acquire(&lock->dep_map, 0, 0, _RET_IP_);
 	LOCK_CONTENDED(lock, do_raw_spin_trylock, do_raw_spin_lock);
 }

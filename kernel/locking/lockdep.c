@@ -3605,6 +3605,12 @@ void lock_acquire(struct lockdep_map *lock, unsigned int subclass,
 	check_flags(flags);
 
 	current->lockdep_recursion = 1;
+
+/* IAMROOT-12A:
+ * ------------
+ * TRACE_EVENT(lock_acquire, ...)로 선언한 매크로 루틴을 동작시킨다.
+ * 이 루틴은 lock 관련 변수들의 상태를 trace 출력한다.
+ */
 	trace_lock_acquire(lock, subclass, trylock, read, check, nest_lock, ip);
 	__lock_acquire(lock, subclass, trylock, read, check,
 		       irqs_disabled_flags(flags), nest_lock, ip, 0);

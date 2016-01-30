@@ -3,6 +3,14 @@
 
 #ifndef __ASSEMBLY__
 
+/* IAMROOT-12A:
+ * ------------
+ * Sparse 정적 코드 분석 도구를 사용해서 오류을 찾아내기 위한것으로
+ * make C=1 또는 C=2 와 같은 옵션을 사용하여 사용할 수도 있다.
+ *
+ * address_space(): kernel, user, iomem, percpu, rcu 주소 공간에 맞는지
+ * 확인하여 다른 경우 경고 메시지 출력 
+ */
 #ifdef __CHECKER__
 # define __user		__attribute__((noderef, address_space(1)))
 # define __kernel	__attribute__((address_space(0)))
@@ -10,12 +18,29 @@
 # define __force	__attribute__((force))
 # define __nocast	__attribute__((nocast))
 # define __iomem	__attribute__((noderef, address_space(2)))
+
+/* IAMROOT-12A:
+ * ------------
+ * lock을 획득하고 해제하는 규칙을 벗어나는 것들을 체크하기 위한 매크로
+ * context(x, y, z): 
+ *      x는 lock, 
+ *      y=함수의 진입 시 체크 여부, 
+ *      z=함수의 진출 시 체크 여부
+ *
+ * __must_hold(): 함수의 시작/종료시 lock이 걸려있어야 하는데 끄렇지 않으면 경고.
+ * __acquires(): 함수의 종료시 lock이 걸려있어야 하는데 그렇지 않으면 경고.
+ * __releases(): 함수의 시작시 lock이 걸려있어야 하는데 그렇지 않으면 경고.
+ * __acquire():
+ * __release():
+ * __cond_lock():
+ */
 # define __must_hold(x)	__attribute__((context(x,1,1)))
 # define __acquires(x)	__attribute__((context(x,0,1)))
 # define __releases(x)	__attribute__((context(x,1,0)))
 # define __acquire(x)	__context__(x,1)
 # define __release(x)	__context__(x,-1)
 # define __cond_lock(x,c)	((c) ? ({ __acquire(x); 1; }) : 0)
+
 # define __percpu	__attribute__((noderef, address_space(3)))
 #ifdef CONFIG_SPARSE_RCU_POINTER
 # define __rcu		__attribute__((noderef, address_space(4)))

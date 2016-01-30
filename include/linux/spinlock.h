@@ -147,11 +147,22 @@ do {								\
 #define raw_spin_unlock_wait(lock)	arch_spin_unlock_wait(&(lock)->raw_lock)
 
 #ifdef CONFIG_DEBUG_SPINLOCK
+/* IAMROOT-12A:
+ * ------------
+ * 디버그용 do_raw_spin_lock() 함수들
+ */
  extern void do_raw_spin_lock(raw_spinlock_t *lock) __acquires(lock);
 #define do_raw_spin_lock_flags(lock, flags) do_raw_spin_lock(lock)
  extern int do_raw_spin_trylock(raw_spinlock_t *lock);
  extern void do_raw_spin_unlock(raw_spinlock_t *lock) __releases(lock);
 #else
+
+/* IAMROOT-12A:
+ * ------------
+ * 디버그 제외된 do_raw_spin_lock() 함수들
+ * __acquires(): 함수의 종료시 lock이 걸려있어야 하는데 그렇지 않으면 경고.
+ * __acquire():
+ */
 static inline void do_raw_spin_lock(raw_spinlock_t *lock) __acquires(lock)
 {
 	__acquire(lock);
@@ -165,6 +176,11 @@ do_raw_spin_lock_flags(raw_spinlock_t *lock, unsigned long *flags) __acquires(lo
 	arch_spin_lock_flags(&lock->raw_lock, *flags);
 }
 
+/* IAMROOT-12A:
+ * ------------
+ * raw_spin_trylock()은 각 아키텍처에 맞게 arch_spin_trylock() 함수를 호출한다.
+ *
+ */
 static inline int do_raw_spin_trylock(raw_spinlock_t *lock)
 {
 	return arch_spin_trylock(&(lock)->raw_lock);
@@ -307,6 +323,18 @@ do {							\
 	raw_spin_lock_init(&(_lock)->rlock);		\
 } while (0)
 
+
+/* IAMROOT-12A:
+ * ------------
+ * 속도에 아주 민감한 락이므로 함수가 inline code로 만들어진다.
+ * RT(Realtime) 리눅스인 경우에는 spin_lock()에서도 preemption이 
+ * 발생가능하다. 그러나 현재 리눅스 메인스트림은 아직 RT 기능이
+ * 완전히 이식되지 않았기 때문에 spin_lock()은 raw_spin_lock()을
+ * 호출한다. 
+ *
+ * raw_spin_lock()은 2009년 이전에 사용되었던 preemption이 원천적으로
+ * 봉쇄된 상태의 spin_lock()코드가 이전되었다.
+ */
 static inline void spin_lock(spinlock_t *lock)
 {
 	raw_spin_lock(&lock->rlock);
