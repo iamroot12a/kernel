@@ -59,8 +59,8 @@
 
 /* IAMROOT-12A:
  * ------------
- * ARM 하드웨어 디버거로 보통 하드웨어에 있는 JTAG 단자에 연결하여 디버깅을
- * 할 수 있다. 물론 라즈베리파이에도 JTAG 단자가 준비되어 있다.
+ * ARM 하드웨어 디버거로 보통 하드웨어에 있는 단자에 연결하여 디버깅을
+ * 할 수 있다.
  */
 #if defined(CONFIG_DEBUG_ICEDCC)
 
@@ -216,7 +216,7 @@
  * ------------
  * .align은 디폴트로 해당 아키텍처가 최적화된 바이트 단위로 코드와 데이터를
  *  정렬하게 한다.
- * ARM 32bit CPU들은 디폴트로 모두 4바이트이다. 64비트 CPU들은 8일까? 
+ * ARM 32bit CPU들은 디폴트로 모두 4바이트이다.
  *
  * 코드와 데이터를 4바이트 단위로 정렬하여야 메모리로 부터 데이터를 읽을 때
  * 별도의 추가 코드 없이 또는 instruction clock cycle이 가장 빠른 코드를
@@ -241,7 +241,7 @@ start:
  * 관계로 커널은 호환성을 갖기위해 아무일도 하지않는 코드를 사용할 수 밖에
  * 없었다고 함.
  *
- * 참고: www.simtec.co.uk/products/SWLINUX/files/booting_article.html
+ * 참고: http://comments.gmane.org/gmane.linux.ports.arm.kernel/26690
  */
 		.rept	7
 		mov	r0, r0
@@ -274,12 +274,15 @@ start:
 /* IAMROOT-12A:
  * ------------
  * start에 위치한 시작 코드:
- *   -0x00~0x1f: 그냥 노는(?) 코드 
+ *   -0x00~0x1f: 그냥 아무일도 하지 않는 코드 
  *   -0x20: brach code (b 1f)
  *   -0x24: zImage magic number (0x016f2818)
  *   -0x28: zImage 시작 주소    (rp ex: 0x00000000)
  *   -0x2c: zImage 끝 주소      (rp ex: 0x003cca28)
- *   -0x30: 엔디안 식별 코드
+ *   -0x30: 커널의 엔디안 식별 코드
+ *          -0x04 03 02 01: 빅엔디안 커널
+ *          -0x01 02 03 04: 리틀엔디안 커널
+ *          라즈베리파이2: 리틀엔디안 커널
  */ 
 		.word	_magic_sig	@ Magic numbers to help the loader
 		.word	_magic_start	@ absolute load/run zImage address
@@ -292,8 +295,9 @@ start:
 /* IAMROOT-12A:
  * ------------
  * ARMv6 및 ARMv7 아키텍처가 BIG ENDIAN을 지원함.
- * ARM_BE8은 BIG ENDIAN을 지원하는 경우 BIG ENDIAN 모드로 동작하게 함
- * 참고로 라즈베리 파이 2는 ARMv7 이므로 BIG ENDIAN을 지원함
+ * ARM_BE8은 CONFIG_CPU_ENDIAN_BE8=y로 설정된 경우 BIG ENDIAN 모드로 동작하게 함
+ * 라즈베리파이2: ARMv7 이며 BIG ENDIAN을 지원하지만 아래 매크로는 동작하지 않고
+ *                초기 설정인 리틀엔디안으로 동작한다.
  */
  ARM_BE8(	setend	be )			@ go BE8 if compiled for BE8
 		mrs	r9, cpsr
@@ -688,12 +692,25 @@ restart:	adr	r0, LC0
 
 /* IAMROOT-12A:
  * ------------
+ * relocation 후 DTB를 보호하기 위해 r9(decompressed 커널 사이즈)을 조절
+ *
+ * - DTB 영역이 decompressed 커널의 bss 영역안에 위치하지 않도록 하여야 한다.
+ * - bss 영역 사이즈가 재배치 코드 사이즈(_edata – wont_overwrite)보다 큰 경우 
+ *   재배치 코드 뿐만 아니라 DTB 영역도 bss 영역에 들어가게된다.
+ * - relocation 되고 압축이 풀려 decompressed 커널이 동작할 때에 relocation code는 
+ *   삭제되어도 상관없다. 그러나 DTB 영역은 보존된 상태에 있어야 한다.
+ * - decompressed 커널이 동작하면 decompressed 커널의 바로 상단에 위치한 bss 영역이
+ *   사용되면서 그 영역에 DTB 데이터가 존재한다면 DTB가 손상이 갈 것이다.
+ * - 그렇기 때문에 bss 영역에 relocation 코드가 오는 것은 상관이 없지만 DTB 코드영역까지
+ *   따라오면 안되기 때문에 이러한 영역을 보호하기 위해 bss 사이즈가 relocation 영역보다
+ *   큰 경우에는 차라리 relocation 코드 사이즈만큼 r9(decompressed 커널 사이즈)를 
+ *   추가하여 relocation 코드가 더 위쪽으로 자리할 수 있도록 한다.
+ *
  * decompressed 커널이 사용해야 하는 bss의 사이즈를 r5에 로드
- * (라즈베리파이2:0x000bd75c)
- * r1에 kernel bss size - zImage 대부분(_edata - addr(wont_overwrite))을
- * 구한 후 양수이면 r9에(target kernel size)에 그값을 더한다.
+ * r1(추가할 space): DTB를 제외한 zImage 대부분(_edata - addr(wont_overwrite))
+ * r5(decompressed 커널 bss 사이즈)가 r1(추가할 space)보다 큰 경우 
+ * r9(decompressed 커널 사이즈)에 r1(추가할 space)를 더한다.
  */
-
 		/*
 		 * Make sure that the DTB doesn't end up in the final
 		 * kernel's .bss area. To do so, we adjust the decompressed
@@ -810,13 +827,18 @@ dtb_check_done:
  * 추가 계산된 리로케이션코드 크기에 256바이트 단위로 trim을 한 주소가
  * 리로케이션 코드 영역이다.
  *
- * 왜 빈 공간을 256바이트로 두었을까???
+ * 기존에는 decompressed 커널의 끝에 256바이트의 space 공간을 두고 relocation되는
+ * compressed 커널이 놓이게 되었었는데 compressed 커널의 시작 주소가 relocation되는
+ * 곳의 시작주소의 바로 밑에 바짝 붙어 있는 경우 32바이트씩 copy하면서 overwrite될
+ * 가능성과 cache flush code에서 문제가 발생할 확률이 있어서 아예 이슈가 될만한 
+ * 사이즈만큼 더 띄우게 되었다.
+ * 참고: ARM: zImage: make sure not to relocate on top of the relocation code - 
+ * 	 https://github.com/torvalds/linux/commit/adcc25915b98e5752d51d66774ec4a61e50af3c5
  *
- * 라즈베리파이 예)
+ * 라즈베리파이 예) 0x900 만큼의 space를 두었다.
  * r10 += 0x900 (0x928 - 0xc0 + 0x100) & 0xffffff00
  * r10 &= 0xffffff00
  */
-
 		add	r10, r10, #((reloc_code_end - restart + 256) & ~255)
 		bic	r10, r10, #255
 

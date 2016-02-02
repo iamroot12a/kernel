@@ -757,7 +757,7 @@ void set_cpu_present(unsigned int cpu, bool present)
 }
 
 void set_cpu_online(unsigned int cpu, bool online)
-
+{
 /* IAMROOT-12A:
  * ------------
  * cpu_online_bits 등 5가지는 CPU에 대한 비트맵 전역 변수로 선언되어 있다.
@@ -765,8 +765,6 @@ void set_cpu_online(unsigned int cpu, bool online)
  * 라즈베리파이2: CPU 코어가 4개이므로 4비트가 필요하고 4바이트 long형 데이터
  *                하나로 처리가 가능하므로 cpu_online_bits[1]로 선언되어 있다.
  */
-
-{
 	if (online) {
 		cpumask_set_cpu(cpu, to_cpumask(cpu_online_bits));
 		cpumask_set_cpu(cpu, to_cpumask(cpu_active_bits));
