@@ -454,7 +454,7 @@ restart:	adr	r0, LC0
  * -r10 = _input_data_end-4 + delta
  *
  *  _input_data_end-4 = 압축된 커널(piggy)의 마지막 어드레스를 의미함.
- *                      데이터 내용은 압축된 커널의 길이.
+ *                      데이터 내용은 decompressed 커널의 길이.
  */
 		sub	r0, r0, r1		@ calculate the delta offset
 		add	r6, r6, r0		@ _edata
@@ -508,8 +508,7 @@ restart:	adr	r0, LC0
 
 /* IAMROOT-12A:
  * ------------
- * RAM에서 구동하는 경우
- * 기존에 설정한 스택 주소를 delta만큼 재조정
+ * RAM에서 구동하는 경우 기존에 설정한 스택 주소를 delta만큼 재조정
  * r10에 64K의 버퍼 마지막을 저장(delta 재조정된 스택 + 64K)
  */
 		add	sp, sp, r0
@@ -569,7 +568,16 @@ restart:	adr	r0, LC0
 
 /* IAMROOT-12A:
  * ------------
- * 아래 옵션은 가지고 있는 APPENDED_DTB에 ATAGS를 추가 할 수 있다. 
+ * CONFIG_ARM_ATAG_DTB_COMPAT:
+ * - DTB를 뿐만 아니라 옛날 부트로더가 사용한 ATAG도 지원한다.
+ * - DTB를 지원하지 못하는 오래된 부트로더로 부터 전달받은 ATAG로 부터 받은 정보는
+ *   메모리 정보, 램디스크 주소, 커널 cmdline, etc... 등이 있고 이들 정보는
+ *   모두 DTB로 변환되어 사용한다.
+ * - 특이하게 DTB와 ATAG 둘 다 사용해야 하는 경우가 있다.
+ *   이런 경우 DTB 사이즈가 부족한 경우가 있어 이를 일정부분 확장해서 사용해야 한다.
+ * - 처음에 하드코딩된 64k의 DTB 사이즈 때문에 ATAG 정보를 추가하면 용량이 부족해서
+ *   DTB 사이즈를 읽어서 확장(32K ~ 1M)시키는 코드가 추가되었다.
+ *   참고: https://github.com/torvalds/linux/commit/c2607f74aad96d18316a6e709b40e0ffe9def148
  */
 #ifdef CONFIG_ARM_ATAG_DTB_COMPAT
 		/*
@@ -583,9 +591,8 @@ restart:	adr	r0, LC0
 
 /* IAMROOT-12A:
  * ------------
- * r5 <- DTB size를 저장 (fdt_header->dt_total_size(fdt_size))
+ * r5 <- DTB size를 읽어온다. (fdt_header->dt_total_size(fdt_size))
  */
-
 		/* Get the initial DTB size */
 		ldr	r5, [r6, #4]
 #ifndef __ARMEB__
@@ -594,7 +601,7 @@ restart:	adr	r0, LC0
 /* IAMROOT-12A:
  * ------------
  * 시스템이 리틀엔디안으로 동작하는 경우 사이즈(기존 빅엔디안으로 저장된)를
- * 리틀엔디안으로 변환.
+ * 리틀엔디안으로 변환.(A=msb, D=lsb)
  *
  *         r5          A    B    C    D
  *              ror    C    D    A    B
@@ -653,6 +660,10 @@ restart:	adr	r0, LC0
  * r6=_edata
  * r5=dtb size
  * int atags_to_fdt(void *atag_list, void *fdt, int total_space)
+ *
+ * 증가시켜 확보한 DTB 사이즈를 인수로 atags_to_fdt() 함수를 호출한다.
+ * 이 증가된 DTB 사이즈는 이 함수를 호출할 때에만 사용한다.
+ * 즉 CONFIG_ARM_ATAG_DTB_COMPAT 옵션을 사용할 때에만 유효하다.
  *
  * TODO: atags_to_fdt 함수는 리로케이션 분석 후 예정.
  *
@@ -725,7 +736,13 @@ restart:	adr	r0, LC0
 
 /* IAMROOT-12A:
  * ------------
- * DTB 사이즈를 다시 r5에 로드한다.
+ * 위에서 CONFIG_ARM_ATAG_DTB_COMPAT 옵션을 사용하면서 DTB 사이즈를 읽어온 것과
+ * 달리 CONFIG_ARM_ATAG_DTB_COMPAT 옵션을 사용하지 않더라도 DTB를 사용하는 경우
+ * DTB 사이즈만큼 relocation 주소들을 바꿔야 한다.
+ *
+ * DTB 사이즈를 r5에 로드한다.
+ * 아키텍처가 빅엔디안인 경우 리틀엔디안으로 컨버팅한다
+ * 64비트 alignment를 수행한다.
  */
 
 		/* Get the current DTB size */
@@ -1460,10 +1477,13 @@ __armv7_mmu_cache_on:
 
 /* IAMROOT-12A:
  * ------------
+ * r0에 0을 집어넣는 이유:
+ *    blne __setup_mmu의 수행 이후에 mcr 명령이 동작하게 하기 위해 
+ *    r0에 0을 넣은 후 이를 다음 명령에서 사용하게 되면 CPU가 
+ *    out-of-order execution으로 동작한다 하더라도 레지스터 dependency로
+ *    인해 수행 순서가 바뀌지 않게 하는 효과가 있다. (in-order execution)
+ *
  * c7/0, c10/4 DSB
- * TODO: r0에 0을 집어넣는 이유는 무엇인가?
- *       아마 out-of-order execution으로 인한 오류를 막기 위해 reg. dependecy를 
- *       사용하여 in-order exe. 하기 위함...??
  */
 		mcr	p15, 0, r0, c7, c10, 4	@ drain write buffer
 		tst	r11, #0xf		@ vmsa
