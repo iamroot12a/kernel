@@ -1938,7 +1938,8 @@ hierarchical:
 
 /* IAMROOT-12A:
  * ------------
- * 왜 처음부터 DMB를 실행하는지??
+ * 캐시를 set/way 방식으로 하나씩 지워나가기 전에 DMB (Data Memory Barrier operation)를 
+ * 사용하여 이미 사용중인 모든 memory 작업이 완료할 때까지 기다린다.
  */
 		mcr	p15, 0, r10, c7, c10, 5	@ DMB
 
@@ -2012,7 +2013,7 @@ loop1:
  * ------------
  * r1: CCSIDR에 선택된 캐시의 정보가 담김.
  * WT, WB, RA, WA, LineSize, Associativity, Numsets
- * r2: 6 = 2 (raspberry data cheche line size = 16 words) + 4
+ * r2: 6 = 2 (raspberry L1 & L2 d-cache line size = 16 words) + 4
  */
 		mrc	p15, 1, r1, c0, c0, 0	@ read the new csidr
 		and	r2, r1, #7		@ extract the length of the cache lines
@@ -2035,8 +2036,10 @@ loop1:
 /* IAMROOT-12A:
  * ------------
  * r7: loop2용 NumSets(index-1) 카운터
- * for (r7 = Max NumSets(r1에서 추출) ; r7 < 0; r7--)
- * 라즈베리파이2: r7은 0x1ff, 0x1fe, ......, 0까지 루프 수행(-1이면 루프2 탈출)
+ *     for (r7 = Max NumSets(r1에서 추출) ; r7 >= 0; r7--)
+ * 라즈베리파이2: 
+ *     L1 d-cache: 0x7f, 0x7e, ......, 0까지 루프 수행(-1이면 루프2 탈출)
+ *     L2 d-cache: 0x3ff, 0x3fe, ......, 0까지 루프 수행(-1이면 루프2 탈출)
  */
 		ldr	r7, =0x7fff
 		ands	r7, r7, r1, lsr #13	@ extract max number of the index size
@@ -2045,8 +2048,10 @@ loop2:
 /* IAMROOT-12A:
  * ------------
  * r9: loop3용 way 카운터를 사용하여 0까지 루프를 돈다.
- * for (r9 = r4; r9 < 0; r9--)
- * 라즈베리파이2: r9는 3, 2, 1, 0까지 루프 수행(-1이면 루프3 탈출)
+ * for (r9 = r4; r9 >= 0; r9--)
+ * 라즈베리파이2: 
+ *     L1 d-cache: 3, 2, 1, 0까지 루프 수행(-1이면 루프3 탈출)
+ *     L2 d-cache: 7, 6, ..., 0까지 루프 수행(-1이면 루프3 탈출)
  */
 		mov	r9, r4			@ create working copy of max way size
 loop3:

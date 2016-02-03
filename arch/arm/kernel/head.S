@@ -139,6 +139,7 @@ ENTRY(stext)
  * ------------
  * ARM_BE8(): ARM 빅엔디안이 지원되면 설정을하여 빌드할 수도 있음.
  * setend be: 빅엔디안으로 CPU가 동작.  (cpsr BE 비트를 1로 설정)
+ * 라즈베리파이2: 리틀엔디안(ARM_BE8 옵션 사용하지 않음)으로 동작
  */
  ARM_BE8(setend	be )			@ ensure we are in BE8 mode
 
