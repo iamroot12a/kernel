@@ -271,7 +271,7 @@ extern const void *__pv_table_begin, *__pv_table_end;
  *
  * 물리주소 = 가상 주소 + pv_offset
  *
- * 라즈베리파이2의 경우 pv_offset: 0x8000_0000
+ * 라즈베리파이2의 경우 pv_offset: 0xffff_ffff_8000_0000
  */
 
 static inline phys_addr_t __virt_to_phys(unsigned long x)
@@ -280,7 +280,44 @@ static inline phys_addr_t __virt_to_phys(unsigned long x)
 
 /* IAMROOT-12A:
  * ------------
- * LPAE인 경우 물리주소를 64bit 타입 사용
+ * 물리주소 = 가상주소 + pv_offset
+ *
+ * 1) 32bit 가상 주소 -> 32비트 물리 주소
+ *    예) rpi2: 
+ *        phys = virt_to_phys(0x8123_0000);
+ *             * __pv_stub(0x8123_0000, t, "add", 0x8100_0000);
+ *                   	add t, 0x8123_0000, 0x8100_0000 
+ *             * 패치 후 (pv_offset = 0xFFFF_FFFF_80000_0000)
+ *                   	add t, 0x8123_0000, 0x8000_0000 
+ *             * phys = 0x0123_0000
+ *  
+ * 2) 32bit 가상 주소 -> 64bit 물리주소(LPAE)
+ *    예) 64비트 예(물리램=0x0_8000_0000, 커널가상주소=0xC000_0000)
+ *        phys = virt_to_phys(0xC123_4560);
+ *             * __pv_stub_mov_hi(0xC123_4560, 0x81); 
+ *               __pv_add_carry_stub(t, 0xC123_4560, 0x8100_000);
+ *                   	mov t[63:32], 0x81
+ *                      adds t[31:0], 0x8100_0000
+ *                      adc t[63:32], t[63:32], #0
+ *             * 패치 후 (pv_offset = 0xFFFF_FFFF_C0000_0000)
+ *                   	mov t[63:32], 0xFFFF_FFFF
+ *                      adds t[31:0], 0xC123_4560, 0xC000_0000
+ *                      adc t[63:32], t[63:32], #0
+ *             * phys = 0x0_8123_4560
+ *
+ * 3) 32bit 가상 주소 -> 64bit 물리주소(LPAE)
+ *    예) 64비트 예(물리램=0x2_8000_0000, 커널가상주소=0x8000_0000)
+ *        phys = virt_to_phys(0x8123_4560);
+ *             * __pv_stub_mov_hi(0x8123_4560, 0x81); 
+ *               __pv_add_carry_stub(t, 0x8123_4560, 0x8100_000);
+ *                   	mov t[63:32], 0x81
+ *                      adds t[31:0], 0x8100_0000
+ *                      adc t[63:32], t[63:32], #0
+ *             * 패치 후 (pv_offset = 0x2_0000_0000)
+ *                   	mov t[63:32], 0x2
+ *                      adds t[31:0], 0x8123_4560, 0x0000_0000
+ *                      adc t[63:32], t[63:32], #0
+ *             * phys = 0x2_8123_4560
  */
 	if (sizeof(phys_addr_t) == 4) {
 		__pv_stub(x, t, "add", __PV_BITS_31_24);
@@ -294,6 +331,13 @@ static inline phys_addr_t __virt_to_phys(unsigned long x)
 /* IAMROOT-12A:
  * ------------
  * 가상주소 = 물리주소 - pv_offset
+ *
+ * 1) 32bit 물리 주소 -> 32bit 가상 주소 &
+ * 2) 64bit 물리 주소 -> 32bit 가상 주소
+ *    - __pv_stub()의 경우 __PV_BITS_31_24를 사용하여
+ *      rotate[21:8] 필드 값은 4.a
+      - rotate 필드값의 2배를 rotation 한다.
+ *    - 따라서 rotate 값 4 = 우측으로 8번 로테이트
  */
 
 static inline unsigned long __phys_to_virt(phys_addr_t x)

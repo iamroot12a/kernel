@@ -155,7 +155,7 @@ ENTRY(stext)
 
 /* IAMROOT-12A:
  * ------------
- * normal & hyper mode에서 svc 모드로 진입할 수 있게 한다.
+ * svc 모드가 아닌 경우 svc 모드로 진입할 수 있게 한다.
  * fiq & irq bit를 disable한다(인터럽트를 허용하지 않도록)
  */
 	@ ensure svc mode and all interrupts masked
@@ -944,18 +944,18 @@ __fixup_pv_table:
  *		(라즈베리파이2:  0x0)
  *      __pv_offset에는 물리-가상 주소 즉 offset 값이 들어간다.
  *              이 값은 물리 <--> 가상 주소 변환에 offset으로 사용된다.
- *		(라즈베리파이2:  0x0000_0000_8000_0000)
+ *		(라즈베리파이2:  0xffff_ffff_8000_0000)
  */
 	mov	r0, r8, lsr #PAGE_SHIFT	@ convert to PFN
 	str	r0, [r6]	@ save computed PHYS_OFFSET to __pv_phys_pfn_offset
 
 /* IAMROOT-12A:
  * ------------
- * PHYS_OFFSET - PAGE_OFFSET의 결과가 음수가 아닌 경우 아래 명령 수행
+ * PHYS_OFFSET - PAGE_OFFSET의 결과가 음수인 경우 아래 명령 수행
  *   이 때에는 0xffff_ffff(음수의미)를 __pv_offset+#HIGHMEM에 저장 
- * 라즈베리파이2: strcc가 실행되지 않아 __pv_offset+#HIGHMEM에 기본 값 0.
+ * 라즈베리파이2: strcc가 실행되어 __pv_offset+#HIGHMEM에 0xffff_ffff
  *
- * 물리 RAM 주소가 커널시작가상주소보다 같거나 큰 경우에만
+ * 물리 RAM 주소가 커널시작가상주소보다 작은 경우에만 저장한다. 
  *	pv_offset+#HIGH_OFFSET에-1(0xffff_ffff)을 저장
  */
 	strcc	ip, [r7, #HIGH_OFFSET]	@ save to __pv_offset high bits
@@ -1009,8 +1009,9 @@ __fixup_a_pv_table:
 	add	r6, r6, r3
 /* IAMROOT-12A:
  * ------------
- * r0(0x0000_0000) <- pv_offset + #HIGH_OFFSET 
- * r6(0x8000_0000) <- pv_offset + #LOW_OFFSET
+ * 라즈베리파이2:
+ *     r0(0xffff_ffff) <- pv_offset + #HIGH_OFFSET 
+ *     r6(0x8000_0000) <- pv_offset + #LOW_OFFSET
  */
 	ldr	r0, [r6, #HIGH_OFFSET]	@ pv_offset high word
 	ldr	r6, [r6, #LOW_OFFSET]	@ pv_offset low word
@@ -1025,7 +1026,6 @@ __fixup_a_pv_table:
 /* IAMROOT-12A:
  * ------------
  * compare: r0(__pv_offset+#HIGH_OFFSET) <-> 0xffff_ffff  (cmp r0, #-1)
- * r0: 라즈베리파이2의 경우 moveq가 수행되지 않아 0인채로 있음.
  */
 	cmn	r0, #1
 #ifdef CONFIG_THUMB2_KERNEL
@@ -1065,19 +1065,18 @@ ARM_BE8(rev16	ip, ip)
 
 /* IAMROOT-12A:
  * ------------
- * 라즈베리파이2는 32비트형 물리주소를 사용하므로 아래 루틴의 동작 조건에
- * 부합되지 않으므로 pass.
+ * r0: 라즈베리파이2의 경우 moveq가 수행되어 r0 <- 0x400000
  *
  * 정확히 표현하자면,
- * 커널 시작 가상 주소가 물리 주소보다 작거나 같은 경우에 아래 코드가 실행되며
+ * 커널 시작 가상 주소가 물리 주소보다 큰 경우에 아래 코드가 실행된다.
  * ARM 32bit with LPAE (36bit)를 위해 사용되는 코드로 결국 LPAE를 사용할 때
- * 사용하기 위한 코드이다. 따라서 64비트 주소의 pv_offset를 사용한다.
+ * 사용하기 위한 코드이다.
  *
  * ARM은 32비트 -> 64비트로 프로세서가 이전하는 타이밍에 임시로 LPAE를
  * 지원하였는데 32비트 x86 시스템에서 4G 이상 물리메모리를 지원하기 위해
  * 나온 기법과 동일하다. x86은 아직도 이 옵션을 사용하는 PC가 많이 있지만
  * ARM에서는 대용량 메모리를 32비트 ARM에서 지원할 목적으로 LPAE가 나왔지만
- * 나온지 2년도 안된 사이에 64비트로 옮겨갔다.(apple 따라서~~)
+ * 나온지 2년도 안된 사이에 64비트로 옮겨갔다.
  */
 #ifdef CONFIG_CPU_ENDIAN_BE8
 	moveq	r0, #0x00004000	@ set bit 22, mov to mvn instruction
@@ -1188,14 +1187,14 @@ ENDPROC(fixup_pv_table)
  *       ARM에서는 워드가 4바이트지만 quad 타입은 위와 동일하게 8바이트.
  *
  * __pv_offset+#LOW_OFFSET에 교정된 pv_offset를 저장한다.
- * __pv_offset+#HIGH_OFFSET에 0x0000_0000로 채운다.
+ * __pv_offset+#HIGH_OFFSET에 초기 값 0x0000_0000로 채운다.
  *
  *   #HIGH_OFFSET는 빅엔디안에서 #0이며 리틀엔디안에서는 #4
  *   #LOW_OFFSET는  빅엔디안에서 #4이며 리틀엔디안에서는 #0
  *
- * 라즈베리파이2: 빌드 시 모든 값이 0이 담기고, 
+ * 라즈베리파이2: 빌드 시 초기 값 0이 담기고, 
  *                실제 수행 후 __pv_phys_pfn_offset = 0x0000_0000
- *                             __pv_offset = 0x0000_0000_8000_0000
+ *                             __pv_offset = 0xffff_ffff_8000_0000
  */
 	.data
 	.globl	__pv_phys_pfn_offset
