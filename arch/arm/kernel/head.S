@@ -725,7 +725,7 @@ __fixup_smp:
 
 /* IAMROOT-12A:
  * ------------
- * UP 판단 1)
+ * 1) UP case A - ARMv7이 아니면 UP
  * 0x000f000: armv7
  * tst는 and 연산 후 상태 반영, teq는 xor 연산 후 상태 반영
  * MIDR을 읽어서 MIDR.architecture가 f가 아니면(armv7이 아니면) UP에서
@@ -743,7 +743,7 @@ __fixup_smp:
 
 /* IAMROOT-12A:
  * ------------
- * UP 판단 2)
+ * 2) ARM11MPCore인 경우 SMP
  * 여기서부터 armv7
  *
  * variant, Architecture, Revision 비트를 clear 
@@ -760,7 +760,7 @@ __fixup_smp:
 
 /* IAMROOT-12A:
  * ------------
- * UP 판단 3)
+ * 3) UP case B - Multiprocessing Extension이 포함되었지만 UP로 구성된 시스템은 UP
  * MPIDR[31]=Multiprocess Extensions이 있는 경우 항상 1
  * MIPDR[30]=UP인경우 1, MP인경우 0
  */
@@ -771,7 +771,7 @@ __fixup_smp:
 
 /* IAMROOT-12A:
  * ------------
- * UP 판단 4)
+ * 4) Cortex-A9 MPCore가 아닌 다른 시리즈들은 SMP
  * r3가 r4(0x4100c090)와 비교하여 동일하지 않으면 리턴.
  * Cortex-A9의 경우 UP로 만든적이 있다.
  */
@@ -785,8 +785,7 @@ __fixup_smp:
 
 /* IAMROOT-12A:
  * ------------
- * UP 판단 5)
- * 여기서부터 ARM Cortex-A9이라고 판단됨.
+ * 5) UP case C - Cortex-A9 이면서 IO base 주소가 0이면 UP
  * CBAR에서 IO장치의 base 주소를 얻어온다.(TRM 참고)
  * IO 기본 주소는 CBAR[31..15]=bit31~bit15, CBAR[7..0]=bit39~bit32
  * IO 기본 주소가 0이면 UP로 인식
@@ -800,9 +799,10 @@ __fixup_smp:
 
 /* IAMROOT-12A:
  * ------------
- * UP 판단 6)
+ * 6) UP case D - Cortex-A9 이면서 CPU 수가 1개이면 UP
  * IO 기본 주소 + 4의 위치에서 SCU 설정값을 읽어온다. 
- * 여기서 CPU 갯수를 읽어와서 0(UP)이 아닌 경우(MP) 리턴 
+ * 여기서 CPU 갯수를 읽어와서 0(UP)이 아닌 경우(MP) 리턴
+ * CPU가 1개 이면 루틴을 빠져나가지 않고 계속 __fixup_smp_on_up: 루틴 진행
  */
 	ldr	r0, [r0, #4]		@ read SCU Config
 ARM_BE8(rev	r0, r0)			@ byteswap if big endian
