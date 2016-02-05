@@ -241,6 +241,10 @@ extern const void *__pv_table_begin, *__pv_table_end;
 	: "=r" (to)					\
 	: "r" (from), "I" (type))
 
+/* IAMROOT-12A:
+ * ------------
+ * %R0: 인수 %0의 하위 32비트를 취급하는 레지스터
+ */
 #define __pv_stub_mov_hi(t)				\
 	__asm__ volatile("@ __pv_stub_mov\n"		\
 	"1:	mov	%R0, %1\n"			\
@@ -250,6 +254,20 @@ extern const void *__pv_table_begin, *__pv_table_end;
 	: "=r" (t)					\
 	: "I" (__PV_BITS_7_0))
 
+/* IAMROOT-12A:
+ * ------------
+ * %Q0: 인수 %0의 상위 32비트를 취급하는 레지스터
+ * 
+ * adc 명령은 .pv_table에 push하지 않는다.
+ *
+ * __PV_BITS_31_24
+ *     0b10000001_00000000_00000000_00000000 이라는 큰 상수를 ARM이 만들기 위해
+ *     0b10000001에 대해 8번의 우측 rotation을 결정한다.
+ *     Rotate 필드에 4를 지정하여 4x2(항상 2배) = 8번의 우측 rotate
+ *    
+ *    이렇게 미리 해놓으면 나중에 fixup 루틴이 동작할 때 rotate 필드는 수정하지 
+ *    않아도된다.
+ */
 #define __pv_add_carry_stub(x, y)			\
 	__asm__ volatile("@ __pv_add_carry_stub\n"	\
 	"1:	adds	%Q0, %1, %2\n"			\
@@ -306,18 +324,18 @@ static inline phys_addr_t __virt_to_phys(unsigned long x)
  *             * phys = 0x0_8123_4560
  *
  * 3) 32bit 가상 주소 -> 64bit 물리주소(LPAE)
- *    예) 64비트 예(물리램=0x2_8000_0000, 커널가상주소=0x8000_0000)
+ *    예) 64비트 예(물리램=0x1_8000_0000, 커널가상주소=0xC000_0000)
  *        phys = virt_to_phys(0x8123_4560);
- *             * __pv_stub_mov_hi(0x8123_4560, 0x81); 
- *               __pv_add_carry_stub(t, 0x8123_4560, 0x8100_000);
+ *             * __pv_stub_mov_hi(0xC123_4560, 0x81); 
+ *               __pv_add_carry_stub(t, 0xC123_4560, 0x8100_000);
  *                   	mov t[63:32], 0x81
  *                      adds t[31:0], 0x8100_0000
  *                      adc t[63:32], t[63:32], #0
- *             * 패치 후 (pv_offset = 0x2_0000_0000)
- *                   	mov t[63:32], 0x2
- *                      adds t[31:0], 0x8123_4560, 0x0000_0000
+ *             * 패치 후 (pv_offset = 0x0_C000_0000)
+ *                   	mov t[63:32], 0x0
+ *                      adds t[31:0], 0xC123_4560, 0xC000_0000
  *                      adc t[63:32], t[63:32], #0
- *             * phys = 0x2_8123_4560
+ *             * phys = 0x1_8123_4560
  */
 	if (sizeof(phys_addr_t) == 4) {
 		__pv_stub(x, t, "add", __PV_BITS_31_24);
@@ -335,7 +353,7 @@ static inline phys_addr_t __virt_to_phys(unsigned long x)
  * 1) 32bit 물리 주소 -> 32bit 가상 주소 &
  * 2) 64bit 물리 주소 -> 32bit 가상 주소
  *    - __pv_stub()의 경우 __PV_BITS_31_24를 사용하여
- *      rotate[21:8] 필드 값은 4.a
+ *      rotate[21:8] 필드 값은 4
       - rotate 필드값의 2배를 rotation 한다.
  *    - 따라서 rotate 값 4 = 우측으로 8번 로테이트
  */
