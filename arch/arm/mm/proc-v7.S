@@ -454,8 +454,8 @@ __v7_setup:
  *
  * r10: 0
  * r4, r8: 페이지테이블 물리주소 |= TTB_RGN_WBWA|TTB_S
- * r5: 0x34 (PRRR)
- * r6: 0x38 (NMRR)
+ * r5: 0xff0a_81a8 (PRRR, arch/arm/mm/proc-v7-2level.S)
+ * r6: 0x40e0_40e0 (NMRR)
  */
 	v7_ttb_setup r10, r4, r8, r5		@ TTBCR, TTBRx setup
 	ldr	r5, =PRRR			@ PRRR
