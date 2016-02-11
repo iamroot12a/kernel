@@ -477,9 +477,8 @@ done:
 
 /* IAMROOT-12A:
  * ------------
- * arch/m68k, arch/sparc-(SUN3제외), arch-arc 아키텍처이면서 HIGHMEM을 사
- * 용하는 경우에만 해당 해쉬 테이블을 사용하기위해 초기화함.
- * → ARM은 관련 사항 없음.
+ * HIGHMEM을 사용하는 경우에  해당 해쉬 테이블을 사용하기위해 초기화함.
+ * 라즈베리파이2: HIGHMEM을 사용하지 않음.
  */
 
 void __init page_address_init(void)

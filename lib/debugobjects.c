@@ -1012,8 +1012,11 @@ void __init debug_objects_early_init(void)
 /* IAMROOT-12A:
  * ------------
  * ODEBUG_HASH_SIZE는 2^14이다.
+ * DEBUG_POOL_SIZE는 512이다.
  *
- * 이 루틴을 이해하기 위해서는 lockdep에 대한 이해가 필요해보임.
+ * 커널에서 사용하는 다이나믹 오브젝트의 life-time을 트래킹하게 하기 위해
+ * CONFIG_DEBUG_KERNEL 및 CONFIG_DEBUG_OBJECTS 옵션이 사용되는데
+ * /sys/kernel/debug/debug_objects 디렉토리를 사용한다.
  */
 	for (i = 0; i < ODEBUG_HASH_SIZE; i++)
 		raw_spin_lock_init(&obj_hash[i].lock);
