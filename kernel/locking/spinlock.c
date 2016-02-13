@@ -57,6 +57,12 @@
  * time (making _this_ CPU preemptable if possible), and we also signal
  * towards that other CPU that it should break the lock ASAP.
  */
+
+/* IAMROOT-12A:
+ * ------------
+ * LHP(Lock-Holder Preemption) 기능이 지원된 raw_spin_lock() 구현 방법
+ * ticket 구현은 안되는 상태로 파악됨.
+ */
 #define BUILD_LOCK_OPS(op, locktype)					\
 void __lockfunc __raw_##op##_lock(locktype##_t *lock)			\
 {									\
@@ -122,6 +128,11 @@ void __lockfunc __raw_##op##_lock_bh(locktype##_t *lock)		\
  *         __[spin|read|write]_lock_irq()
  *         __[spin|read|write]_lock_irqsave()
  *         __[spin|read|write]_lock_bh()
+ */
+
+/* IAMROOT-12A:
+ * ------------
+ * __raw_spin_lock()등을 실제 선언하는 매크로로 총 12개의 함수가 생성된다.
  */
 BUILD_LOCK_OPS(spin, raw_spinlock);
 BUILD_LOCK_OPS(read, rwlock);

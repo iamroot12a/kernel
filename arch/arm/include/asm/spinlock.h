@@ -55,6 +55,29 @@ static inline void dsb_sev(void)
 
 #define arch_spin_lock_flags(lock, flags) arch_spin_lock(lock)
 
+/* IAMROOT-12A:
+ * ------------
+ * 자기 순서의 ticket이 될 때까지 spin 하며 기다린다.
+ *
+ * 1:   ldrex   lockval, [&lock->slock]
+ *      add     newval, lockval, 0x10000
+ *      strex   tmp, newval,[&lock->slock]
+ *      teq     tmp, #0
+ *      bne     1b
+ *
+ * 1:   lockval = [lock->tickets];
+ *      newval = (lockval.tickets.next + 1);
+ *      [lock->tickets] = newval (strex 결과는 tmp에 저장)
+ *      if (tmp != 0)
+ *              b   1b
+ *
+ *	while (lockval.tickets.next != lockval.tickets.owner) {
+ *		wfe();
+ *		lockval.tickets.owner = ACCESS_ONCE(lock->tickets.owner);
+ *	}
+ *
+ * trylock과 lock을 분리한 이유???
+ */
 static inline void arch_spin_lock(arch_spinlock_t *lock)
 {
 	unsigned long tmp;
@@ -108,9 +131,9 @@ static inline void arch_spin_lock(arch_spinlock_t *lock)
  *      do {
  *            ldrex     slock(register), [&lock->slock]
  *            mov       res, #0
- *            subs      contended(register), slock - slock(msb 16bits <-> lsb 16bits)
+ *            subs      contended(register), slock - rotated slock(msb 16bits <-> lsb 16bits)
  *            addeq     slock, slock, 0x10000
- *            strexeq   res, slock, &lock->slock
+ *            strexeq   res, slock, [&lock->slock]
  *      } while (res)
  *
  *            prefetch  &lock->slock

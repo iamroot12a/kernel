@@ -98,6 +98,12 @@
 #define __scanf(a, b)			__attribute__((format(scanf, a, b)))
 #define  noinline			__attribute__((noinline))
 #define __attribute_const__		__attribute__((__const__))
+
+/* IAMROOT-12A:
+ * ------------
+ * 이 변수의 사용 여부 체크를 하지 않도록 gcc에게 알린다.
+ * (compile warnning을 제거)
+ */
 #define __maybe_unused			__attribute__((unused))
 #define __always_unused			__attribute__((unused))
 

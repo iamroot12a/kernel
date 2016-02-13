@@ -150,12 +150,12 @@ static inline void __raw_spin_lock_bh(raw_spinlock_t *lock)
 
 static inline void __raw_spin_lock(raw_spinlock_t *lock)
 {
-
 /* IAMROOT-12A:
  * ------------
- * preemption을 정지시키고 spin을  .
+ * LHP(Lock-Holder Preemption) 기능을 사용하지 않는 기존 raw_spin_lock 방식을 구현
+ *
+ * preemption을 정지.
  */
-
 	preempt_disable();
 
 /* IAMROOT-12A:
@@ -163,6 +163,11 @@ static inline void __raw_spin_lock(raw_spinlock_t *lock)
  * lock 디버깅을 위한 코드
  */
 	spin_acquire(&lock->dep_map, 0, 0, _RET_IP_);
+
+/* IAMROOT-12A:
+ * ------------
+ * 실제 lock을 수행하는 코드
+ */
 	LOCK_CONTENDED(lock, do_raw_spin_trylock, do_raw_spin_lock);
 }
 

@@ -9,6 +9,13 @@
 #if __LINUX_ARM_ARCH__ >= 7 ||		\
 	(__LINUX_ARM_ARCH__ == 6 && defined(CONFIG_CPU_32v6K))
 #define sev()	__asm__ __volatile__ ("sev" : : : "memory")
+
+/* IAMROOT-12A:
+ * ------------
+ * wfe(wait for event)로 다른 cpu에서 sev(send event)를 받으면 탈출
+ *
+ * wfe: 저전력 상태에서 대기
+ */
 #define wfe()	__asm__ __volatile__ ("wfe" : : : "memory")
 #define wfi()	__asm__ __volatile__ ("wfi" : : : "memory")
 #endif

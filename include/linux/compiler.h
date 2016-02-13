@@ -10,6 +10,12 @@
  *
  * address_space(): kernel, user, iomem, percpu, rcu 주소 공간에 맞는지
  * 확인하여 다른 경우 경고 메시지 출력 
+ *
+ * force: address_space(), bitwise, cast-to-as 등에서 warning을 발생하지
+ *        않도록 한다.
+ *
+ * noderef: dereferencing pointer를 사용할 수 없도록 한다.
+ *          *x (x)  ->  &x (o)
  */
 #ifdef __CHECKER__
 # define __user		__attribute__((noderef, address_space(1)))
@@ -495,6 +501,22 @@ static __always_inline void __write_once_size(volatile void *p, void *res, int s
  * required ordering.
  *
  * If possible use READ_ONCE/ASSIGN_ONCE instead.
+ */
+
+/* IAMROOT-12A:
+ * ------------
+ * __maybe_unused: 이 변수의 사용 여부 체크를 하지 않도록 gcc에게 알려
+ *              compile warnning을 출력하지 않도록 한다. (Sparse)
+ * typeof():    type 추출하여 대입한것과 유사(scalar 값일 때만 제대로 동작)
+ * __force:     Sparse를 사용할 때 아래 typeof(x)를 사용한 타입 캐스팅에서 
+ *              warning을 발생시키지 않도록 한다.
+ *
+ * ACCESS_ONCE(): non-scalar type이 들어오면 gcc의 volatile에서 문제가 발생하여
+ *              아예 non-sclar type이 들어오는 경우 error가 발생하게 루틴을 
+ *              추가하였다.
+ *              non-sclar type(struct, union 등)을 사용해야 하는 경우 
+ *              READ_ONCE() 또는 ASSIGN_ONCE()등을 사용한다.
+ * 참고: ACCESS_ONCE() and compiler bugs - https://lwn.net/Articles/624126
  */
 #define __ACCESS_ONCE(x) ({ \
 	 __maybe_unused typeof(x) __var = (__force typeof(x)) 0; \

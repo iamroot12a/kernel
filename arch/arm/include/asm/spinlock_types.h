@@ -9,10 +9,9 @@
 
 /* IAMROOT-12A:
  * ------------
- * owner:
- * next:
+ * owner: unlock시 owner 필드를 증가 시킨다.
+ * next: lock시 next 필드를 증가 시킨다.
  */
-
 
 typedef struct {
 	union {
