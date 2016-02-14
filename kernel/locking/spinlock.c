@@ -60,8 +60,11 @@
 
 /* IAMROOT-12A:
  * ------------
- * LHP(Lock-Holder Preemption) 기능이 지원된 raw_spin_lock() 구현 방법
- * ticket 구현은 안되는 상태로 파악됨.
+ * SMP + LHP(Lock-Holder Preemption) 기능이 지원된 raw_spin_lock() 
+ * 구현 방법으로 ticket 구현은 안된다. 
+ *
+ * 최근 방식의 SMP + Ticket 방식의 구현은 다음의 위치에 있다.
+ *  	include/linux/spinlock_api_smp.h
  */
 #define BUILD_LOCK_OPS(op, locktype)					\
 void __lockfunc __raw_##op##_lock(locktype##_t *lock)			\

@@ -75,8 +75,6 @@ static inline void dsb_sev(void)
  *		wfe();
  *		lockval.tickets.owner = ACCESS_ONCE(lock->tickets.owner);
  *	}
- *
- * trylock과 lock을 분리한 이유???
  */
 static inline void arch_spin_lock(arch_spinlock_t *lock)
 {
@@ -143,7 +141,7 @@ static inline void arch_spin_lock(arch_spinlock_t *lock)
  *            contended <- (tickets.owner != tickets.next)
  *            if (contended == 0) {
  *                  tickets.next++
- *                  &lock->slock = slock 결과값은 res에 저장
+ *                  [&lock->slock] <- slock 결과값은 res에 저장
  *            } 
  *      } while (res)
  */
@@ -187,6 +185,13 @@ static inline void arch_spin_unlock(arch_spinlock_t *lock)
 	dsb_sev();
 }
 
+/* IAMROOT-12A:
+ * ------------
+ * 기존 spinlock 구현 방식에서는 lock과 unlock시 lock 변수의 증/감 상태로
+ * lock/unlock 상태를 알았었는데 ticket based spinlock이 구현되면서는
+ * lock/unlock 상태 여부는 tickets.owner와 tickets.next 값의 동일 여부로
+ * 확인할 수 있게 바뀌었다.
+ */
 static inline int arch_spin_value_unlocked(arch_spinlock_t lock)
 {
 	return lock.tickets.owner == lock.tickets.next;
@@ -196,6 +201,17 @@ static inline int arch_spin_is_locked(arch_spinlock_t *lock)
 {
 	return !arch_spin_value_unlocked(READ_ONCE(*lock));
 }
+
+/* IAMROOT-12A:
+ * ------------
+ * 32비트 lock 값을 둘로 나누어 16비트씩 tickets.owner와 tickets.next로
+ * 나누어서 사용하고 lock을 할 때 tickets .next를 증가시키고 unlock시에
+ * tickets.owner를 증가시키는 방법을 도입하게 되었는데 이렇게 바꾸면서
+ * lock이 spinning 중인지 판단을 하는 lock_break 변수가 필요없게 되었다.
+ * 따라서 아래 함수를 만들어 기존 lock_break 변수를 확인하지 않고 
+ * tickets.next와 tickets.owner간의 차이가 1을 초과하는 경우 누군가 
+ * spinning 하는 조건이 되므로 lock이 spinning 여부를 알 수 있게 되었다.
+ */
 
 static inline int arch_spin_is_contended(arch_spinlock_t *lock)
 {

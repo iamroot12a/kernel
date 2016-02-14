@@ -111,6 +111,25 @@ static inline int __raw_spin_trylock(raw_spinlock_t *lock)
  * even on CONFIG_PREEMPT, because lockdep assumes that interrupts are
  * not re-enabled during lock-acquire (which the preempt-spin-ops do):
  */
+
+/* IAMROOT-12A:
+ * ------------
+ * CONFIG_GENERIC_LOCKBREAK:
+ * 	이 방식은 raw_spinlock 구조체에 break_lock이라는 변수를 넣어 
+ *      raw_spin_lock() 구현에서 추가된 내용으로 lock을 획득하지 못하고
+ *      spinning 중인지에 대한 여부를 확인할 수 있는 field를 집어 넣었다.
+ *      
+ *      그러면서 int 하나면 구현되는 크기가 두 배로 커지는 문제도 있지만
+ *      ticket이 구현되면서 추가로 spin_is_contended()라는 함수가 만들어
+ *      lock이 spin중인지를 break_lock 변수 없이 알아낼 수 있게 되었다.
+ *      따라서 이 커널 옵션은 필요 없어지게 되었다.
+ *      2013년 12월 마지막으로 사용했었던 arm64 아키텍처 코드에서도
+ *      삭제되면서 이제는 거의 필요 없어진 옵션이다.
+ *
+ * 참고: spinlock: lockbreak cleanups - https://lwn.net/Articles/241877/
+ *       arm64: locks: Remove CONFIG_GENERIC_LOCKBREAK -
+ * 	     http://marc.info/?l=git-commits-head&m=138418940913511&w=2
+ */
 #if !defined(CONFIG_GENERIC_LOCKBREAK) || defined(CONFIG_DEBUG_LOCK_ALLOC)
 
 static inline unsigned long __raw_spin_lock_irqsave(raw_spinlock_t *lock)
@@ -152,7 +171,10 @@ static inline void __raw_spin_lock(raw_spinlock_t *lock)
 {
 /* IAMROOT-12A:
  * ------------
- * LHP(Lock-Holder Preemption) 기능을 사용하지 않는 기존 raw_spin_lock 방식을 구현
+ * SMP + Ticket 방식의 raw_spin_lock 방식을 구현(최신 방식)
+ *
+ * 기존 방식의 SMP + LHP(Lock-Holder Preemption) 방식의 구현은
+ *    	kernel/locking/spinlock.c에 구현되어 있음.
  *
  * preemption을 정지.
  */
