@@ -94,11 +94,23 @@ __visible void __sched __mutex_lock_slowpath(atomic_t *lock_count);
  */
 void __sched mutex_lock(struct mutex *lock)
 {
+
+/* IAMROOT-12A:
+ * ------------
+ * CONFIG_PREEMPT_VOLUNTARY(preempt points를 동작시킨다) 커널 옵션을 사용하는 경우 
+ * 상황에 따라 reschedule 될 수 있다. (즉 sleep)
+ */
 	might_sleep();
 	/*
 	 * The locking fastpath is the 1->0 transition from
 	 * 'unlocked' into 'locked' state.
 	 */
+
+/* IAMROOT-12A:
+ * ------------
+ * fastpath는 unlock(1) 상태에서 0(lock) 상태로 변경을 시도한다.
+ * 안되면 __mutex_lock_slowpath()를 호출한다.
+ */
 	__mutex_fastpath_lock(&lock->count, __mutex_lock_slowpath);
 	mutex_set_owner(lock);
 }
@@ -219,6 +231,14 @@ ww_mutex_set_context_slowpath(struct ww_mutex *lock,
 #ifdef CONFIG_MUTEX_SPIN_ON_OWNER
 static inline bool owner_running(struct mutex *lock, struct task_struct *owner)
 {
+/* IAMROOT-12AB:
+ * ------------
+ * lock->owner: 루프를 돌기전에 알아왔던 락의 owner 태스크
+ * owner: 현재(spin 중에) lock->owner를 다시 읽어서 인수로 들어온 상태
+ *        (현재 뮤텍스는 기존 owner가 unlock 하게되는 순간에 null로 바뀔 수 있음
+ *
+ * 아래 조건 처럼 뮤텍스의 owner 유지되고 있지 않으면 실패.
+ */
 	if (lock->owner != owner)
 		return false;
 
@@ -230,6 +250,12 @@ static inline bool owner_running(struct mutex *lock, struct task_struct *owner)
 	 */
 	barrier();
 
+/* IAMROOT-12AB:
+ * ------------
+ * owner가 running 중인지 아닌지를 리턴
+ *     0=lock owner가 preemption이 된 경우(not running)
+ *     1=lock owner가 여전히 running 중
+ */
 	return owner->on_cpu;
 }
 
@@ -240,6 +266,10 @@ static inline bool owner_running(struct mutex *lock, struct task_struct *owner)
 static noinline
 int mutex_spin_on_owner(struct mutex *lock, struct task_struct *owner)
 {
+/* IAMROOT-12AB:
+ * ------------
+ * 뮤텍스의 onwer(midpath에 들어왔을 때)가 러닝중에 있으면 루프를 돌며 기다린다.
+ */
 	rcu_read_lock();
 	while (owner_running(lock, owner)) {
 		if (need_resched())
@@ -254,6 +284,12 @@ int mutex_spin_on_owner(struct mutex *lock, struct task_struct *owner)
 	 * owner changed, which is a sign for heavy contention. Return
 	 * success only when lock->owner is NULL.
 	 */
+
+/* IAMROOT-12AB:
+ * ------------
+ * lock owner가 unlock될 때 lock->owner==null이 된다. 
+ * 이 때 lock을 획득할 수 있는 상태가 된다.
+ */
 	return lock->owner == NULL;
 }
 
@@ -265,9 +301,19 @@ static inline int mutex_can_spin_on_owner(struct mutex *lock)
 	struct task_struct *owner;
 	int retval = 1;
 
+/* IAMROOT-12AB:
+ * ------------
+ * midpath 조건에 들려면 리스케쥴 요청이 없어야한다.
+ * 따라서 요청이 있는 경우 실패
+ */
 	if (need_resched())
 		return 0;
 
+/* IAMROOT-12AB:
+ * ------------
+ * 이 뮤텍스 락의 owner(task_struct *)가 running 중인지 확인한다.
+ * 1=running, 0=not running 
+ */
 	rcu_read_lock();
 	owner = ACCESS_ONCE(lock->owner);
 	if (owner)
@@ -317,6 +363,10 @@ static bool mutex_optimistic_spin(struct mutex *lock,
 {
 	struct task_struct *task = current;
 
+/* IAMROOT-12AB:
+ * ------------
+ * 리스케쥴 요청이 있거나 락의 owner 태스크가 running 중이 아니면 실패(done)
+ */
 	if (!mutex_can_spin_on_owner(lock))
 		goto done;
 
@@ -331,6 +381,10 @@ static bool mutex_optimistic_spin(struct mutex *lock,
 	while (true) {
 		struct task_struct *owner;
 
+/* IAMROOT-12AB:
+ * ------------
+ * use_ww_ctx: W/W mutex에서 사용하는 루틴이므로 추후 분석
+ */
 		if (use_ww_ctx && ww_ctx->acquired > 0) {
 			struct ww_mutex *ww;
 
@@ -351,6 +405,12 @@ static bool mutex_optimistic_spin(struct mutex *lock,
 		 * If there's an owner, wait for it to either
 		 * release the lock or go to sleep.
 		 */
+
+/* IAMROOT-12AB:
+ * ------------
+ * 루프를 반복하면서 뮤텍스 락의 onwer(task_struct *) task가  not running 중이면
+ * 빠져나감(실패)
+ */
 		owner = ACCESS_ONCE(lock->owner);
 		if (owner && !mutex_spin_on_owner(lock, owner))
 			break;
@@ -526,6 +586,11 @@ __mutex_lock_common(struct mutex *lock, long state, unsigned int subclass,
 	preempt_disable();
 	mutex_acquire_nest(&lock->dep_map, subclass, 0, nest_lock, ip);
 
+/* IAMROOT-12AB:
+ * ------------
+ * __mutex_lock_slowpath() 함수에서는 use_ww_ctl=0으로하여 ww mutex를 
+ * 동작시키지 않는다.
+ */
 	if (mutex_optimistic_spin(lock, ww_ctx, use_ww_ctx)) {
 		/* got the lock, yay! */
 		preempt_enable();
@@ -820,11 +885,39 @@ int __sched mutex_lock_killable(struct mutex *lock)
 }
 EXPORT_SYMBOL(mutex_lock_killable);
 
+
+/* IAMROOT-12A:
+ * ------------
+ * __visible		<-- ??
+ * __sched: .sched.text 섹션에 코드를 위치하게 한다.
+ */
+
 __visible void __sched
 __mutex_lock_slowpath(atomic_t *lock_count)
 {
+/* IAMROOT-12A:
+ * ------------
+ * fastpath 조건이 되지 않으면 이 루틴으로 온다.
+ * lock_count는 mutex 구조체의 count 멤버를 가리키는 주소만을 담고 있는데 
+ * container_of()를 사용하면 그 구조체의 주소를 알아올 수 있다.
+ *
+ *			struct abc {
+ *	0x0000_3abc		int a;
+ *	0x0000_3ac0		int b;
+ *				int c;
+ *			} _abc;
+ *			결과값은 0x0000_3abc
+ *
+ * int * bbb = &_abc.b;
+ * 0x0000_3abc = container_of(bbb, struct abc, b) = &_abc
+ */
 	struct mutex *lock = container_of(lock_count, struct mutex, count);
 
+/* IAMROOT-12AB:
+ * ------------
+ * _RET_IP_: 자신을 호출한 함수의 주소로 디버깅 추적을 위해 얻어온다. 
+ *	(unsigned long)__builtin_return_address(0)
+ */
 	__mutex_lock_common(lock, TASK_UNINTERRUPTIBLE, 0,
 			    NULL, _RET_IP_, NULL, 0);
 }

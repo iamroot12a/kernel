@@ -20,6 +20,20 @@
 static inline void
 __mutex_fastpath_lock(atomic_t *count, void (*fail_fn)(atomic_t *))
 {
+
+/* IAMROOT-12A:
+ * ------------
+ * atomic 하게 lock count를 1 감소 시키고 감소 시킨 결과를 return 한다.
+ * 만일 감소 시킨 결과가 0보다 작다면 fastpath가 성립되지 않아
+ * __mutex_lock_slowpath() 함수를 호출하게 된다.
+ *
+ * 결국 성공 조건은 lock count가 1(unlock)일 때만 가능하다.
+ * lock count: 1(unlock), 0(lock), -1 ~~ -n (lock with waiter)
+ *
+ * unlikely를 사용한 이유:
+ *      fastpath가 성립되는 경우 compiler optimization에 현재 코드 근처에
+ *      만들어지는 코드를 수행하게 하여 cache 효율성을 높인다.
+ */
 	if (unlikely(atomic_dec_return(count) < 0))
 		fail_fn(count);
 }

@@ -225,7 +225,9 @@ extern const void *__pv_table_begin, *__pv_table_end;
  * call: __pv_stub(x, t, "add", __PV_BITS_31_24);
  *  ->   1: add t, x, __PV_BITS_31_24
  *
- * "=r", "r", "I" 사용법은???
+ * "=r"     <- 
+ * "r"      <-
+ * "I"      <-
  *
  * .pushsection -> 현재 섹션을 컴파일러가 보관(push)하고 첫 번째 인수의 섹션 사용을 
  *                 컴파일러에게 설정 지시

@@ -38,6 +38,33 @@
  * to ensure that the update happens.
  */
 
+/* IAMROOT-12A:
+ * ------------
+ * rpi2: ARMv7이므로 여기에서 만들어지는 함수는 다음과 같다.
+ *  - atomic_add(), atomic_add_return()
+ *  - atomic_sub(), atomic_sub_return()
+ *
+ * ATOMIC_OPS(add, +=, add)
+ *
+ * atomic_add(int i, atomic_t *v)
+ *  - 이 함수는 atomic 하게 v+i를 한다.
+ *
+ * @ atomic_add         <-- 주석
+ * +Qo                  <-- ?
+ *
+ *      pldw
+ * 1:   ldrex   result, [&v->counter]
+ *      add     result, result, i
+ *      strex   tmp, result, [&v->counter]
+ *      teq     tmp, %0
+ *      bne     1b
+ *
+ * atomic_add_return(int i, atomic_t *v)
+ * - 이 함수는 atomic 하게 v+i를 하고 그 값을 return 한다.
+ *      - smp_mb() -> dmb(ish)를 호출한다.
+ *        2015.8월 이 코드는 삭제됨.
+ *      - atomic_add()와 다르게 함수의 시작과 끝 부분에 dmb를 호출한다.
+ */
 #define ATOMIC_OP(op, c_op, asm_op)					\
 static inline void atomic_##op(int i, atomic_t *v)			\
 {									\
@@ -206,6 +233,11 @@ ATOMIC_OPS(sub, -=, sub)
 #define atomic_inc_and_test(v)	(atomic_add_return(1, v) == 0)
 #define atomic_dec_and_test(v)	(atomic_sub_return(1, v) == 0)
 #define atomic_inc_return(v)    (atomic_add_return(1, v))
+
+/* IAMROOT-12A:
+ * ------------
+ * ARM의 경우 atomic_sub_return 매크로는 ATOMIC_OPS() 매크로로 만들어진다.
+ */
 #define atomic_dec_return(v)    (atomic_sub_return(1, v))
 #define atomic_sub_and_test(i, v) (atomic_sub_return(i, v) == 0)
 

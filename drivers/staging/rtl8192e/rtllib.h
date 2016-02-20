@@ -75,6 +75,20 @@
  * @member:     the name of the member within the struct.
  *
  */
+
+/* IAMROOT-12AB:
+ * ------------
+ * 구조체 멤버를 사용해서 그 구조체의 주소를 알아낸다.
+ * 
+ * 예)  container_of(lock_count, struct mutex, count)
+ *
+ *      const int * __mptr = lock_count;
+ *      (struct mutex *)((char *) __mptr - offsetof(struct mutex, count));
+ *
+ * lock_count: mutex.count를 가리키는 주소(포인터)
+ * offsetof(): 해당 스트럭처(TYPE)에서 멤버(MEMBER)의 offset를 구한다.
+ *
+ */
 #define container_of(ptr, type, member) ({		      \
 	const typeof(((type *)0)->member)*__mptr = (ptr);    \
 	(type *)((char *)__mptr - offsetof(type, member)); })
