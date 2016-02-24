@@ -233,9 +233,10 @@ static inline bool owner_running(struct mutex *lock, struct task_struct *owner)
 {
 /* IAMROOT-12AB:
  * ------------
- * lock->owner: 루프를 돌기전에 알아왔던 락의 owner 태스크
- * owner: 현재(spin 중에) lock->owner를 다시 읽어서 인수로 들어온 상태
- *        (현재 뮤텍스는 기존 owner가 unlock 하게되는 순간에 null로 바뀔 수 있음
+ * lock->owner: 현재 시점의 락의 owner 태스크
+ *        (이 값은 기존 owner가 unlock 하게되는 순간에 null로 바뀔 수 있음)
+ * owner: spin 중 매 번 lock->owner를 읽어온 값
+ *	  (이 값은 null이 아닌 상태에서 이 함수에 진입되었다.)
  *
  * 아래 조건 처럼 뮤텍스의 owner 유지되고 있지 않으면 실패.
  */
@@ -263,12 +264,20 @@ static inline bool owner_running(struct mutex *lock, struct task_struct *owner)
  * Look out! "owner" is an entirely speculative pointer
  * access and not reliable.
  */
+
+/* IAMROOT-12AB:
+ * ------------
+ * 성공: spin이 정상적으로 완료된 경우(lock->owner가 null이 된 순간)
+ *       (owner 태스크에서 unlock된 순간 이므로 midpath 성공 요건을 갖춤).
+ * 실패: 리스케쥴 요청이 있는 경우 루프를 중단.
+ */
 static noinline
 int mutex_spin_on_owner(struct mutex *lock, struct task_struct *owner)
 {
 /* IAMROOT-12AB:
  * ------------
  * 뮤텍스의 onwer(midpath에 들어왔을 때)가 러닝중에 있으면 루프를 돌며 기다린다.
+ * 스케쥴 조정 요청이 있는 경우 spin(midpath)을 포기하고 빠져나간다.
  */
 	rcu_read_lock();
 	while (owner_running(lock, owner)) {
@@ -287,8 +296,12 @@ int mutex_spin_on_owner(struct mutex *lock, struct task_struct *owner)
 
 /* IAMROOT-12AB:
  * ------------
- * lock owner가 unlock될 때 lock->owner==null이 된다. 
- * 이 때 lock을 획득할 수 있는 상태가 된다.
+ * lock owner가 unlock될 때 이미 lock->owner==null이 된다. 그런데
+ * 이 루틴에서 또 lock->onwer = null을 한 이유?
+ *      - 리스케쥴 요청이 있는 경우에도 lock->onwer = null을 강제 대입하여
+ *        heavy contention을 막기 위한 것처럼 주석에서 말하고 있다. 하지만
+ *	  아래의 문장은 2015년 2-4월에 걸쳐 코드가 리팩토링 되면서 삭제되었다.
+ *     	  (mutex_spin_on_onwer() + owner_running()가 합쳐짐)
  */
 	return lock->owner == NULL;
 }
@@ -375,6 +388,17 @@ static bool mutex_optimistic_spin(struct mutex *lock,
 	 * acquire the mutex all at once, the spinners need to take a
 	 * MCS (queued) lock first before spinning on the owner field.
 	 */
+
+/* IAMROOT-12A:
+ * ------------
+ * 동시에 midpath에 진입하는 cpu를 serialize한다. 즉 먼저 MCS lock을 획득하는
+ * cpu 만이 성공리에 리턴된다. MCS lock은 FIFO queue 방식으로 운영되어
+ * 인입된 순서대로 공정하게 MCS lock을 획득하게 된다.
+ * 대기 queue에 있는 cpu들은 MCS lock을 획득할 때까지 spin 하며 기다리는데
+ * 기다리다가 리스케쥴 요청이 있는 경우는 실패로 리턴된다.
+ * 물론 MCS lock을 획득한 cpu가 당장 mutex lock을 얻게되는 것이 아니라
+ * 이미 mutex lock을 가진 owner가 mutex unlock될 때 까지 spin된 후에 얻게될 것이다.
+ */
 	if (!osq_lock(&lock->osq))
 		goto done;
 
@@ -408,8 +432,9 @@ static bool mutex_optimistic_spin(struct mutex *lock,
 
 /* IAMROOT-12AB:
  * ------------
- * 루프를 반복하면서 뮤텍스 락의 onwer(task_struct *) task가  not running 중이면
- * 빠져나감(실패)
+ * 루프를 반복하면서 onwer 값을 읽어오고 null이 아닌 경우 mutex_spin_on_owner() 함수를
+ * 호출하고 리스케쥴 요청으로 인해 함수를 빠져나온 경우 break되어 midpath 실패로 이동한다.
+ * 함수가 성공되어 리턴된 경우는 spin이 정상적으로 끝난 경우(owner 태스크에서 unlock)이다.
  */
 		owner = ACCESS_ONCE(lock->owner);
 		if (owner && !mutex_spin_on_owner(lock, owner))
