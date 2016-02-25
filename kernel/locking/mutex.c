@@ -391,17 +391,29 @@ static bool mutex_optimistic_spin(struct mutex *lock,
 
 /* IAMROOT-12A:
  * ------------
- * 동시에 midpath에 진입하는 cpu를 serialize한다. 즉 먼저 MCS lock을 획득하는
- * cpu 만이 성공리에 리턴된다. MCS lock은 FIFO queue 방식으로 운영되어
- * 인입된 순서대로 공정하게 MCS lock을 획득하게 된다.
- * 대기 queue에 있는 cpu들은 MCS lock을 획득할 때까지 spin 하며 기다리는데
- * 기다리다가 리스케쥴 요청이 있는 경우는 실패로 리턴된다.
+ * 동시에 midpath에 진입하는 cpu를 serialize한다. 즉 먼저 OSQ(MCS) lock을 획득하는
+ * cpu 만이 성공리에 리턴된다. OSQ(MCS) lock은 FIFO queue 방식으로 운영되어
+ * 인입된 순서대로 공정하게 OSQ(MCS) lock을 획득하게 된다.
+ *
+ * 대기 queue에 있는 cpu들은 OSQ(MCS) lock을 획득할 때까지 spin 하며 기다리는데
+ * 기다리다가 lock->owner cpu가 sleep(preempt)되거나 리스케쥴 요청이 있는 경우는
+ * 실패로 리턴되어 goto done으로 이동한다.
+ *
  * 물론 MCS lock을 획득한 cpu가 당장 mutex lock을 얻게되는 것이 아니라
  * 이미 mutex lock을 가진 owner가 mutex unlock될 때 까지 spin된 후에 얻게될 것이다.
+ *
+ * 이와 같이 midpath는 2 단계의 spin 과정을 통과하면 mutex lock을 획득하게 된다.
+ *    1) FIFO로 동작하는 OSQ(MCS) lock에서 선두가 될 때까지 osq_lock() 내부에서 spin
+ *       - midpath에 혼자 진입한 경우는 이미 선두이므로 osq_lock()내부에서 spin하지 않음.
+ *    2) mutex를 소유한 lock->owner가 release될 때까지 아래 while 문에서 spin
  */
 	if (!osq_lock(&lock->osq))
 		goto done;
 
+/* IAMROOT-12A:
+ * ------------
+ * 이 while 문장부터 mutex를 획득하려고 spin 한다.
+ */
 	while (true) {
 		struct task_struct *owner;
 
@@ -432,9 +444,11 @@ static bool mutex_optimistic_spin(struct mutex *lock,
 
 /* IAMROOT-12AB:
  * ------------
- * 루프를 반복하면서 onwer 값을 읽어오고 null이 아닌 경우 mutex_spin_on_owner() 함수를
- * 호출하고 리스케쥴 요청으로 인해 함수를 빠져나온 경우 break되어 midpath 실패로 이동한다.
- * 함수가 성공되어 리턴된 경우는 spin이 정상적으로 끝난 경우(owner 태스크에서 unlock)이다.
+ * 루프를 반복하면서 onwer 값을 읽어온다. owner 값에 따라
+ *    - null인 경우 mutex 획득을 시도한다. (아래 mutex_try_to_acquire() 호출)
+ *   -  null이 아닌 경우 mutex_spin_on_owner() 함수를 호출하고
+ *      리스케쥴 요청으로 인해 함수를 빠져나온 경우(false) break되어 
+ *      midpath 실패로 이동한다.
  */
 		owner = ACCESS_ONCE(lock->owner);
 		if (owner && !mutex_spin_on_owner(lock, owner))
