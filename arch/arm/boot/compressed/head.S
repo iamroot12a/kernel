@@ -5,7 +5,13 @@
  * 
  * 주석 단축기 <F9>를 사용하는 방법:
  *   - 홈디렉토리에 위치한 .vimrc 파일에 아래의 내용을 추가
- *     map <F9> <ESC>O<ESC>0i<CR><CR><UP>/-<BS>*<SPACE>IAMROOT-12A:<CR>------------<CR><CR>/<UP><SPACE>
+ *	set nu			"line number
+ *	set ai			"auto indent
+ *	set ts=8 		"tab size
+ *	set bg=dark 		"background color
+ *	set formatoptions+=r	"auto comments
+ *	set hlsearch		"highlight search
+ *	map <F9> <ESC>O<ESC>0i<CR><CR><UP>/-<BS>*<SPACE>IAMROOT-12AB:<CR>-------------<CR><CR>/<UP><SPACE>
  *
  * 참여자:
  *     문영일 - jakeisname@gmail.com
