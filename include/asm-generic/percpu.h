@@ -17,6 +17,10 @@
 #ifndef __per_cpu_offset
 extern unsigned long __per_cpu_offset[NR_CPUS];
 
+/* IAMROOT-12AB:
+ * -------------
+ * per-cpu 데이터에서 cpu에 대한 offset
+ */
 #define per_cpu_offset(x) (__per_cpu_offset[x])
 #endif
 
@@ -38,6 +42,11 @@ extern unsigned long __per_cpu_offset[NR_CPUS];
 /*
  * Arch may define arch_raw_cpu_ptr() to provide more efficient address
  * translations for raw_cpu_ptr().
+ */
+
+/* IAMROOT-12AB:
+ * -------------
+ * ptr + __my_cpu_offset를 하는 매크로
  */
 #ifndef arch_raw_cpu_ptr
 #define arch_raw_cpu_ptr(ptr) SHIFT_PERCPU_PTR(ptr, __my_cpu_offset)

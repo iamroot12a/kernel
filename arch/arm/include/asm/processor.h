@@ -76,12 +76,24 @@ extern void release_thread(struct task_struct *);
 
 unsigned long get_wchan(struct task_struct *p);
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * Cortex-A9 (r2p0 이전의 리비전)에서 automatic store buffer drain 기능이
+ * 동작하지 않아서 dmb 명령을 사용하여 work-around 적용
+ * rpi2: Cortex-A7은 barrier() 호출
+ */
 #if __LINUX_ARM_ARCH__ == 6 || defined(CONFIG_ARM_ERRATA_754327)
 #define cpu_relax()			smp_mb()
 #else
 #define cpu_relax()			barrier()
 #endif
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * ARM에서는 cpu_relax()를 호출
+ */
 #define cpu_relax_lowlatency()                cpu_relax()
 
 #define task_pt_regs(p) \

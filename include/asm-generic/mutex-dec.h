@@ -28,7 +28,7 @@ __mutex_fastpath_lock(atomic_t *count, void (*fail_fn)(atomic_t *))
  * __mutex_lock_slowpath() 함수를 호출하게 된다.
  *
  * 결국 성공 조건은 lock count가 1(unlock)일 때만 가능하다.
- * lock count: 1(unlock), 0(lock), -1 ~~ -n (lock with waiter)
+ * lock count: 1(unlock), 0(lock), -1(-n, lock with waiter)
  *
  * unlikely를 사용한 이유:
  *      fastpath가 성립되는 경우 compiler optimization에 현재 코드 근처에

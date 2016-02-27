@@ -24,6 +24,17 @@
 #define swp_is_buggy
 #endif
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 사이즈가 1바이트형과 4바이트형이 지원되며 그 외에는 __bad_xchg() 호출하여
+ * 메시지를 출력하고 정지한다.
+ *
+ * ret(old) <- [ptr]
+ * x(new) -> [ptr]
+ *
+ * return ret(old);
+ */
 static inline unsigned long __xchg(unsigned long x, volatile void *ptr, int size)
 {
 	extern void __bad_xchg(volatile void *, int);

@@ -199,6 +199,21 @@
  * Constants used to force the right instruction encodings and shifts
  * so that all we need to do is modify the 8-bit constant field.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * ARM add/mov 명령어등을 구성하는데 큰 상수값을 사용하려고 하는데
+ * 큰 상수값을 표현하는 필드가 rotate[11:8], immeidate[7:0] 있다.
+ * rotate 필드를 사용하여 immediate 필드 값을 우측으로 회전시켜
+ * 큰 상수를 만들어내는데 rotate 값 1당 우측 회전이 2비트씩 이루어진다.
+ * 따라서 아래의 0x8100_0000 은 우측으로 8번 회전시켜야 하므로
+ * rotate 값은 4(8비트 우측 쉬프트), immediate 값은 0x81 이다.
+ *
+ * virt_to_phys() 또는 phys_to_virt() 등에서 va 및 pa 등의 주소 변환에
+ * msb 8bit만 사용하므로 아래의 0x8100_0000을 사용하여 컴파일하면
+ * rotate값이 4로 고정되고 va-pa 변환 함수에서는 rotate 값을 변경할
+ * 필요가 없어지므로 코드 절약을 위해 사용한다.
+ */
 #define __PV_BITS_31_24	0x81000000
 #define __PV_BITS_7_0	0x81
 
@@ -245,7 +260,7 @@ extern const void *__pv_table_begin, *__pv_table_end;
 
 /* IAMROOT-12A:
  * ------------
- * %R0: 인수 %0의 하위 32비트를 취급하는 레지스터
+ * %R0: 인수 %0의 상위 32비트를 취급하는 레지스터
  */
 #define __pv_stub_mov_hi(t)				\
 	__asm__ volatile("@ __pv_stub_mov\n"		\
@@ -258,7 +273,7 @@ extern const void *__pv_table_begin, *__pv_table_end;
 
 /* IAMROOT-12A:
  * ------------
- * %Q0: 인수 %0의 상위 32비트를 취급하는 레지스터
+ * %Q0: 인수 %0의 하위 32비트를 취급하는 레지스터
  * 
  * adc 명령은 .pv_table에 push하지 않는다.
  *
@@ -307,7 +322,7 @@ static inline phys_addr_t __virt_to_phys(unsigned long x)
  *        phys = virt_to_phys(0x8123_0000);
  *             * __pv_stub(0x8123_0000, t, "add", 0x8100_0000);
  *                   	add t, 0x8123_0000, 0x8100_0000 
- *             * 패치 후 (pv_offset = 0xFFFF_FFFF_80000_0000)
+ *             * 패치 후 (pv_offset = 0xFFFF_FFFF_8000_0000)
  *                   	add t, 0x8123_0000, 0x8000_0000 
  *             * phys = 0x0123_0000
  *  

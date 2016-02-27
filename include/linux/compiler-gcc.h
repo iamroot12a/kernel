@@ -32,6 +32,15 @@
  * the inline assembly constraint from =g to =r, in this particular
  * case either is valid.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * "0" <- 이 constraint의 의미는???
+ * 입력된 인수 ptr의 타입과 관계없이 변환할 수 있도록 하기 위하여
+ * 4바이트 포인터 형태로 대입한 후 offset를 더한다.
+ *
+ * 잘못 컴파일되는 사례(PPC64)가 있어서 work around를 적용
+ */
 #define RELOC_HIDE(ptr, off)					\
   ({ unsigned long __ptr;					\
     __asm__ ("" : "=r"(__ptr) : "0"(ptr));		\

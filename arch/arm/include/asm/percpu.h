@@ -42,6 +42,13 @@ static inline void set_my_cpu_offset(unsigned long off)
 	asm volatile("mcr p15, 0, %0, c13, c0, 4" : : "r" (off) : "memory");
 }
 
+/* IAMROOT-12AB:
+ * -------------
+ * 사용하지 않는 TPIDRPRW를 사용하여 per-cpu 데이터의 base offset를 읽어낸다.
+ * 
+ * 기존에는 메모리 변수를 사용했었는데 per-cpu의 속도를 향상시키기 위해서
+ * 메모리를 사용하지 않고 사용하지 않는 레지스터를 이용하여 연산에 사용한다.
+ */
 static inline unsigned long __my_cpu_offset(void)
 {
 	unsigned long off;

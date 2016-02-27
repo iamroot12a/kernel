@@ -77,6 +77,12 @@ do {									\
 	ACCESS_ONCE(*p) = (v);						\
 } while (0)
 
+/* IAMROOT-12AB:
+ * -------------
+ * - Sparse 툴을 위해 타입 체크를 하고,
+ * - 타입이 1,2,4,long 타입의 길이가 아닌 경우 compile time 에러 출력
+ * - dmb(ish) 를 호출한다.
+ */
 #define smp_load_acquire(p)						\
 ({									\
 	typeof(*p) ___p1 = ACCESS_ONCE(*p);				\

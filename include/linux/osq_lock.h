@@ -5,6 +5,14 @@
  * An MCS like lock especially tailored for optimistic spinning for sleeping
  * lock implementations (mutex, rwsem, etc).
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * *next *prev: optimistics_spin_node를 리스트로 연결해준다.
+ * locked: 초기값은 0이고, 1을 설정하는 경우 osq_lock()을 빠져나가게 한다.
+ *         즉, OSQ lock을 획득하고 mutex 소유자가 release 할 때까지 spin.(경쟁)
+ */
+
 struct optimistic_spin_node {
 	struct optimistic_spin_node *next, *prev;
 	int locked; /* 1 if lock acquired */

@@ -50,7 +50,8 @@
  *  - 이 함수는 atomic 하게 v+i를 한다.
  *
  * @ atomic_add         <-- 주석
- * +Qo                  <-- ?
+ * +Qo                  <-- memory clobber로 동작한다. 
+ *                          o: offsetable reference가 같은 경우 사용한다.
  *
  *      pldw
  * 1:   ldrex   result, [&v->counter]

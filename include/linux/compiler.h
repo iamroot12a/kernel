@@ -454,6 +454,11 @@ static __always_inline void __write_once_size(volatile void *p, void *res, int s
 # define __compiletime_error_fallback(condition) do { } while (0)
 #endif
 
+/* IAMROOT-12AB:
+ * -------------
+ * condition이 false일 때 prefix ## suffix() 함수를 호출한다.
+ * 추정: __compiletime_error(msg)는 built-in 확장 명령으로 보인다??? 
+ */
 #define __compiletime_assert(condition, msg, prefix, suffix)		\
 	do {								\
 		bool __cond = !(condition);				\
@@ -516,6 +521,10 @@ static __always_inline void __write_once_size(volatile void *p, void *res, int s
  *              추가하였다.
  *              non-sclar type(struct, union 등)을 사용해야 하는 경우 
  *              READ_ONCE() 또는 ASSIGN_ONCE()등을 사용한다.
+ *
+ *              2015년 2월 kernel v4.1-rc1에서 모든 ACCESS_ONCE() 매크로 함수는 
+ *              READ_ONCE() 또는 WRITE_ONCE()로 교체되었다.
+ *
  * 참고: ACCESS_ONCE() and compiler bugs - https://lwn.net/Articles/624126
  */
 #define __ACCESS_ONCE(x) ({ \

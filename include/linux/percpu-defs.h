@@ -201,6 +201,18 @@
  * + 0 is required in order to convert the pointer type from a
  * potential array type to a pointer to a single item of the array.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 좌측 변수를 __percpu area(address_space(3))에 선언하고
+ * 입력 받은 인수가 __percpu area 가 아닌 경우 sparse 툴을 사용하여
+ * 빌드하면 경고 메시지가 출력된다.
+ *
+ * (void)__vpp_verify를 매크로 마지막에 사용한 이유:
+ *      - 추측: 사용하지 않는 변수를 만들었으므로 warning이 날까봐.
+ *      - scalar와 관련이 있을지..
+ */
+
 #define __verify_pcpu_ptr(ptr)						\
 do {									\
 	const void __percpu *__vpp_verify = (typeof((ptr) + 0))NULL;	\
@@ -214,6 +226,14 @@ do {									\
  * to prevent the compiler from making incorrect assumptions about the
  * pointer value.  The weird cast keeps both GCC and sparse happy.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * __p 인수가 per-cpu 포인터이고 __kernel area가 아니더라도 에러를
+ * 발생시키지 않도록 한다. (sparse 툴에서)
+ *
+ * 결국 __p + __offset을 하기 위한 매크로
+ */
 #define SHIFT_PERCPU_PTR(__p, __offset)					\
 	RELOC_HIDE((typeof(*(__p)) __kernel __force *)(__p), (__offset))
 
@@ -222,6 +242,14 @@ do {									\
 	__verify_pcpu_ptr(ptr);						\
 	SHIFT_PERCPU_PTR((ptr), per_cpu_offset((cpu)));			\
 })
+
+/* IAMROOT-12AB:
+ * -------------
+ * __verify_pcpu_ptr(ptr): Sparse tool을 사용하여 빌드 시 ptr이 
+ * per-cpu인지 영역 체크
+ *
+ * ptr + __my_cpu_offset을 리턴
+ */
 
 #define raw_cpu_ptr(ptr)						\
 ({									\
@@ -236,6 +264,12 @@ do {									\
 	SHIFT_PERCPU_PTR(ptr, my_cpu_offset);				\
 })
 #else
+
+/* IAMROOT-12AB:
+ * -------------
+ * SMP: this_cpu_ptr()에서 raw_cpu_ptr() 호출
+ */
+
 #define this_cpu_ptr(ptr) raw_cpu_ptr(ptr)
 #endif
 

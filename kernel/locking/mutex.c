@@ -413,6 +413,7 @@ static bool mutex_optimistic_spin(struct mutex *lock,
 /* IAMROOT-12A:
  * ------------
  * 이 while 문장부터 mutex를 획득하려고 spin 한다.
+ * OSQ(MCS) lock을 획득한 즉, OSQ의 선두에 있는 cpu만 아래 while 루프에서 spin.
  */
 	while (true) {
 		struct task_struct *owner;
@@ -927,7 +928,12 @@ EXPORT_SYMBOL(mutex_lock_killable);
 
 /* IAMROOT-12A:
  * ------------
- * __visible		<-- ??
+ * __visible		<-- LTO(Link Time Optimization)를 사용하는 경우에도 
+ *                          이 함수나 객체를 심볼로 표현한다.
+ *
+ * LTO:	한 군데서만 호출되는 함수나 객체를 링크 타임에서 inline화 시킨다.
+ *      따라서 함수 같은 경우는 심볼로 export 되지 않는 상태가 된다.
+ *
  * __sched: .sched.text 섹션에 코드를 위치하게 한다.
  */
 
