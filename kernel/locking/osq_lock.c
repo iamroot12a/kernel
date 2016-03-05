@@ -277,12 +277,26 @@ void osq_unlock(struct optimistic_spin_queue *lock)
 	/*
 	 * Fast path for the uncontended case.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 내가 마지막 노드인지 확인하여 마지막인 경우 lock->tail 에 0을 기록하여 
+ * 더 이상 osq에 대기 태스크가 없음을 알린다.
+ */
 	if (likely(atomic_cmpxchg(&lock->tail, curr, OSQ_UNLOCKED_VAL) == curr))
 		return;
 
 	/*
 	 * Second most likely case.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 이 루틴에 진입한 경우는 2개 이상의 노드가 존재하는 경우이다.
+ * 현재 노드는 osq의 선두이다. 따라서 node->next에 null을 집어 넣어 연결을 끊는다.
+ * 다음 노드 즉, 차선으로 대기하고 있던 노드의 locked 멤버변수에 1을 집어넣어
+ * osq lock spin을 빠져나올 수 있게 도와준다.(선두에서 spin)
+ */
 	node = this_cpu_ptr(&osq_node);
 	next = xchg(&node->next, NULL);
 	if (next) {
@@ -290,6 +304,14 @@ void osq_unlock(struct optimistic_spin_queue *lock)
 		return;
 	}
 
+/* IAMROOT-12AB:
+ * -------------
+ * 2개 이상의 노드가 osq에 있었는데 next가 없는 경우는 next 노드에 대한 안정화가
+ * 완료되지 않았던 것을 의미한다. (안정화: 리스트 연결이 확정) 
+ * 이 때 node->next에 연결이 생길때 까지 대기하였다가 null을 집어 넣게 된다.
+ * 그런 후 그 다음 노드의 locked 멤버변수에 1을 집어 넣어 osq lock spin을 
+ * 빠져나올 수 있게 한다.
+ */
 	next = osq_wait_next(lock, node, NULL);
 	if (next)
 		ACCESS_ONCE(next->locked) = 1;

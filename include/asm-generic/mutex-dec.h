@@ -70,6 +70,14 @@ __mutex_fastpath_lock_retval(atomic_t *count)
 static inline void
 __mutex_fastpath_unlock(atomic_t *count, void (*fail_fn)(atomic_t *))
 {
+/* IAMROOT-12AB:
+ * -------------
+ * 적은 확률로 count가 1(unlock)인 경우는 더 이상 후속 처리작업이 필요 없기 때문에
+ * atomic operation만으로 끝난다.
+ *
+ * 하지만 0이하인 경우 후속 처리 작업을 진행하기 위해 __mutex_unlock_slowpath()함수로
+ * 진입한다.
+ */
 	if (unlikely(atomic_inc_return(count) <= 0))
 		fail_fn(count);
 }

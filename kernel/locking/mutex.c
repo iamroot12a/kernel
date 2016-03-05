@@ -344,6 +344,10 @@ static inline int mutex_can_spin_on_owner(struct mutex *lock)
  */
 static inline bool mutex_try_to_acquire(struct mutex *lock)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * lock->count가 1(unlock) 이면 0(lock)으로 설정한다.
+ */
 	return !mutex_is_locked(lock) &&
 		(atomic_cmpxchg(&lock->count, 1, 0) == 1);
 }
@@ -466,6 +470,10 @@ static bool mutex_optimistic_spin(struct mutex *lock,
 				ww_mutex_set_context_fastpath(ww, ww_ctx);
 			}
 
+/* IAMROOT-12AB:
+ * -------------
+ * 드디어 mutex를 획득했으므로 owner가 되었음을 기록한다.
+ */
 			mutex_set_owner(lock);
 			osq_unlock(&lock->osq);
 			return true;
@@ -541,6 +549,11 @@ void __sched mutex_unlock(struct mutex *lock)
 	 * the slow path will always be taken, and that clears the owner field
 	 * after verifying that it was indeed current.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * lock owner 제거
+ */
 	mutex_clear_owner(lock);
 #endif
 	__mutex_fastpath_unlock(&lock->count, __mutex_unlock_slowpath);
@@ -637,12 +650,23 @@ __mutex_lock_common(struct mutex *lock, long state, unsigned int subclass,
 		return 0;
 	}
 
+/* IAMROOT-12AB:
+ * -------------
+ * 동시에 slowpath에 진입한 태스크들에 spin lock을 수행하여 
+ * wait_list 등의 연결리스트를 보호한다.
+ */
 	spin_lock_mutex(&lock->wait_lock, flags);
 
 	/*
 	 * Once more, try to acquire the lock. Only try-lock the mutex if
 	 * it is unlocked to reduce unnecessary xchg() operations.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 한 번 더 lock 상태를 보고 아무도 mutex를 소유하지 않았으면 여기서 획득하고
+ * 나갈 수 있는 기회가 있다.
+ */
 	if (!mutex_is_locked(lock) && (atomic_xchg(&lock->count, 0) == 1))
 		goto skip_wait;
 
@@ -650,6 +674,11 @@ __mutex_lock_common(struct mutex *lock, long state, unsigned int subclass,
 	debug_mutex_add_waiter(lock, &waiter, task_thread_info(task));
 
 	/* add waiting tasks to the end of the waitqueue (FIFO): */
+
+/* IAMROOT-12AB:
+ * -------------
+ * lock->wait_list 에 waiter(task 정보)를 추가한다.
+ */
 	list_add_tail(&waiter.list, &lock->wait_list);
 	waiter.task = task;
 
@@ -666,6 +695,12 @@ __mutex_lock_common(struct mutex *lock, long state, unsigned int subclass,
 		 * other waiters. We only attempt the xchg if the count is
 		 * non-negative in order to avoid unnecessary xchg operations:
 		 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 1(unlock)/0(lock)인 경우 -1로 변경(대기자 1명) 그리고 변경전에
+ * count가 1(unlocked) 상태였었으면 lock을 획득한 것으로 간주하고 break
+ */
 		if (atomic_read(&lock->count) >= 0 &&
 		    (atomic_xchg(&lock->count, -1) == 1))
 			break;
@@ -674,28 +709,69 @@ __mutex_lock_common(struct mutex *lock, long state, unsigned int subclass,
 		 * got a signal? (This code gets eliminated in the
 		 * TASK_UNINTERRUPTIBLE case.)
 		 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 일반 mutex_lock()을 호출하였을 때 TASK_UNINTERRUPTIBLE로 호출되는데
+ * 이런 경우 signal이 pending될게 없으므로 이루틴이 동작하지 않는다.
+ * 인수가 TASK_INTERRUPTIBLE로 호출된 경우에는 mutex 획득을 중단할 수도 있다.
+ */
 		if (unlikely(signal_pending_state(state, task))) {
 			ret = -EINTR;
 			goto err;
 		}
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * ww-mutex에서 사용하는 루틴.(dead-lock avoidance)
+ */
 		if (use_ww_ctx && ww_ctx->acquired > 0) {
 			ret = __ww_mutex_lock_check_stamp(lock, ww_ctx);
 			if (ret)
 				goto err;
 		}
 
+/* IAMROOT-12AB:
+ * -------------
+ * TODO: 상태를 왜 다시 저장하는지 확인 필요
+ * 추측: mutex_lock_interruptible_nested()등이 아닌 mutex_lock() 함수 호출 시
+ *       TASK_UNINTERRUPTIBLE로 설정 후 schedule() 호출 시 스스로 깨어나지 않도록
+ *       즉, mutex_unlock()에서 선두의 대기 태스크에대해 wake-up 호출할 때만 
+ *       깨어나도록 하였을 것이라 판단된다.
+ */
 		__set_task_state(task, state);
 
 		/* didn't get the lock, go to sleep: */
 		spin_unlock_mutex(&lock->wait_lock, flags);
+
+/* IAMROOT-12AB:
+ * -------------
+ * 여기서 sleep 한다.
+ */
 		schedule_preempt_disabled();
 		spin_lock_mutex(&lock->wait_lock, flags);
 	}
+
+/* IAMROOT-12AB:
+ * -------------
+ * slowpath에서 sleep 한 후 깨어나 lock을 얻을 때까지 문제없이 잘 동작하려면 
+ * 명시적으로 태스크를 TASK_RUNNING 상태로 설정해야 한다.
+ * 설정하지 않으면 어떤 문제가???
+ */
 	__set_task_state(task, TASK_RUNNING);
 
+/* IAMROOT-12AB:
+ * -------------
+ * 현재 waiter를 리스트에서 제거
+ */
 	mutex_remove_waiter(lock, &waiter, current_thread_info());
 	/* set it to 0 if there are no waiters left: */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 대기자가 없으면 count에 0(lock)을 대입
+ */
 	if (likely(list_empty(&lock->wait_list)))
 		atomic_set(&lock->count, 0);
 	debug_mutex_free_waiter(&waiter);
@@ -703,6 +779,11 @@ __mutex_lock_common(struct mutex *lock, long state, unsigned int subclass,
 skip_wait:
 	/* got the lock - cleanup and rejoice! */
 	lock_acquired(&lock->dep_map, ip);
+
+/* IAMROOT-12AB:
+ * -------------
+ * mutex를 얻어내었기 때문에 자신이 lock owner인것을 설정한다.
+ */
 	mutex_set_owner(lock);
 
 	if (use_ww_ctx) {
@@ -842,6 +923,12 @@ __mutex_unlock_common_slowpath(struct mutex *lock, int nested)
 	 * case, others need to leave it locked. In the later case we have to
 	 * unlock it here - as the lock counter is currently 0 or negative.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * ARM: __mutex_slowpath_needs_to_unlock() = 1
+ * midpath 등이 mutex를 얻기 위해서는 count가 1(unlock)이 되어야 한다.
+ */
 	if (__mutex_slowpath_needs_to_unlock())
 		atomic_set(&lock->count, 1);
 
@@ -849,6 +936,10 @@ __mutex_unlock_common_slowpath(struct mutex *lock, int nested)
 	mutex_release(&lock->dep_map, nested, _RET_IP_);
 	debug_mutex_unlock(lock);
 
+/* IAMROOT-12AB:
+ * -------------
+ * slowpath 대기자가 있는 경우 첫 대기 태스크를 깨운다.
+ */
 	if (!list_empty(&lock->wait_list)) {
 		/* get the first entry from the wait-list: */
 		struct mutex_waiter *waiter =

@@ -19,6 +19,12 @@ struct optimistic_spin_node {
 	int cpu; /* encoded CPU # + 1 value */
 };
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * optimistic_spin_node들이 연결되어 있을 때 가장 마지막에 위치한 노드의
+ * cpu 값을 가지고 있다. 즉. last 노드에 대한 cpu 번호(based 1)를 담고 있다.
+ */
 struct optimistic_spin_queue {
 	/*
 	 * Stores an encoded value of the CPU # of the tail node in the queue.
@@ -27,6 +33,11 @@ struct optimistic_spin_queue {
 	atomic_t tail;
 };
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * osq에 대기자가 없는 경우로 unlock 상태이다.
+ */
 #define OSQ_UNLOCKED_VAL (0)
 
 /* Init macro and function. */

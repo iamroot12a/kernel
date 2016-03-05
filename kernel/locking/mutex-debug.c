@@ -29,8 +29,17 @@
  */
 void debug_mutex_lock_common(struct mutex *lock, struct mutex_waiter *waiter)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * waiter: 뮤텍스를 획득하기 위해 대기할 태스크 정보를 가지고 있는 구조
+ */
 	memset(waiter, MUTEX_DEBUG_INIT, sizeof(*waiter));
 	waiter->magic = waiter;
+
+/* IAMROOT-12AB:
+ * -------------
+ * INIT_LIST_HEAD: 연결 구조의 prev, next에 자기 자신 list를 연결한다.
+ */
 	INIT_LIST_HEAD(&waiter->list);
 }
 
@@ -65,6 +74,11 @@ void mutex_remove_waiter(struct mutex *lock, struct mutex_waiter *waiter,
 	DEBUG_LOCKS_WARN_ON(ti->task->blocked_on != waiter);
 	ti->task->blocked_on = NULL;
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 현재 waiter를 제거한다.
+ */
 	list_del_init(&waiter->list);
 	waiter->task = NULL;
 }

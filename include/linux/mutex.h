@@ -70,6 +70,13 @@ struct mutex {
  * This is the control structure for tasks blocked on mutex,
  * which resides on the blocked task's kernel stack:
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * list: 연결리스트에 사용한다. 이 구조를 다른 노드와 연결할 때 사용한다.
+ * task: 대기 태스크
+ * magic: 디버그용 
+ */
 struct mutex_waiter {
 	struct list_head	list;
 	struct task_struct	*task;
@@ -127,6 +134,10 @@ extern void __mutex_init(struct mutex *lock, const char *name,
  */
 static inline int mutex_is_locked(struct mutex *lock)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * mutex lock->count는 1(unlock)이 아니면 lock 이다.
+ */
 	return atomic_read(&lock->count) != 1;
 }
 
