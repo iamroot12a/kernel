@@ -357,6 +357,16 @@ static inline unsigned long memblock_region_reserved_end_pfn(const struct memblo
 	     region++)
 
 
+/* IAMROOT-12AB:
+ * -------------
+ * CONFIG_ARCH_DISCARD_MEMBLOCK 옵션에 따라 저장 섹션이 달라진다.
+ *    __meminit: 
+ *          코드 부분을 아래 섹션에 등록
+ *          __section(.meminit.text) __cold notrace
+ *    __meminitdata: 
+ *          데이터 부분을 아래 섹션에 등록
+ *          __section(.meminit.data)
+ */
 #ifdef CONFIG_ARCH_DISCARD_MEMBLOCK
 #define __init_memblock __meminit
 #define __initdata_memblock __meminitdata

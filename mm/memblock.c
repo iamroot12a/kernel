@@ -25,12 +25,32 @@
 
 #include "internal.h"
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 아래 영역은 각 memblock region에 초기 커널이 생성될 때 만들어진다.(128/128/4)
+ * 추후 이 영역이 부족해지면 이 영역을 버리고 새로운 페이지를 할당 받아 
+ * 사용할 수 있다.
+ */
 static struct memblock_region memblock_memory_init_regions[INIT_MEMBLOCK_REGIONS] __initdata_memblock;
 static struct memblock_region memblock_reserved_init_regions[INIT_MEMBLOCK_REGIONS] __initdata_memblock;
 #ifdef CONFIG_HAVE_MEMBLOCK_PHYS_MAP
 static struct memblock_region memblock_physmem_init_regions[INIT_PHYSMEM_REGIONS] __initdata_memblock;
 #endif
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * __initdata_memblock: CONFIG_ARCH_DISCARD_MEMBLOCK 커널 옵션에 따라 .data 섹션 
+ * 또는 .meminit.data 섹션에 위치하게 된다.
+ *
+ * bottom_up: true=메모리 할당 요청시 아래에서 위로 영역을 검색
+ * current_limit: 메모리 영역 제한 시 설정된다.
+ *                초기 값 MEMBLOCK_ALLOC_ANYWHERE의 경우 물리 주소 한계 값을 가진다.
+ *                        MEMBLOCK_ALLOC_ACCESSIBLE의 경우 전체 메모리를 의미한다.
+ *
+ * cnt <- 시작 부터 1로 설정(empty)
+ */
 struct memblock memblock __initdata_memblock = {
 	.memory.regions		= memblock_memory_init_regions,
 	.memory.cnt		= 1,	/* empty dummy entry */
@@ -71,6 +91,13 @@ memblock_type_name(struct memblock_type *type)
 }
 
 /* adjust *@size so that (@base + *@size) doesn't overflow, return new size */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 물리 주소 끝을 초과하는 사이즈를 제한하기 위한 함수
+ * - base=0x8000_0000 (2G), size=0xc000_0000 (3G)
+ *   -> 0x7fff_ffff
+ */
 static inline phys_addr_t memblock_cap_size(phys_addr_t base, phys_addr_t *size)
 {
 	return *size = min(*size, (phys_addr_t)ULLONG_MAX - base);
@@ -429,6 +456,11 @@ static void __init_memblock memblock_merge_regions(struct memblock_type *type)
 {
 	int i = 0;
 
+/* IAMROOT-12AB:
+ * -------------
+ * memblock 들이 정확히 인접해 있는 경우만 merge 하여 하나로 만든다.
+ * (물론 여러개가 인접해 있으면 그 모두를 하나로 만든다)
+ */
 	/* cnt never goes below 1 */
 	while (i < type->cnt - 1) {
 		struct memblock_region *this = &type->regions[i];
@@ -501,6 +533,12 @@ int __init_memblock memblock_add_range(struct memblock_type *type,
 {
 	bool insert = false;
 	phys_addr_t obase = base;
+
+/* IAMROOT-12AB:
+ * -------------
+ * memblock_cap_size(): 사이즈가 물리 주소의 끝을 초과하지 않게 조정
+ * 예) base=0x8000_0000, size=0xc000_0000 : end=0xffff_ffff 
+ */
 	phys_addr_t end = base + memblock_cap_size(base, &size);
 	int i, nr_new;
 
@@ -508,6 +546,11 @@ int __init_memblock memblock_add_range(struct memblock_type *type,
 		return 0;
 
 	/* special case for empty array */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 첫 등록할 때에 아래 조건을 수행
+ */
 	if (type->regions[0].size == 0) {
 		WARN_ON(type->cnt != 1 || type->total_size);
 		type->regions[0].base = base;
@@ -531,14 +574,29 @@ repeat:
 		phys_addr_t rbase = rgn->base;
 		phys_addr_t rend = rbase + rgn->size;
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * a) 기존 영역의 시작 주소보다 요청 영역의 끝 주소가 같거나 작은 경우
+ */
 		if (rbase >= end)
 			break;
+
+/* IAMROOT-12AB:
+ * -------------
+ * b) 기존 영역의 끝 주소보다 요청 영역의 시작 주소가 같거나 큰 경우
+ */
 		if (rend <= base)
 			continue;
 		/*
 		 * @rgn overlaps.  If it separates the lower part of new
 		 * area, insert that portion.
 		 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * c) 기존 영역의 시작 주소가 요청 영역의 시작 주소보다 큰 경우
+ */
 		if (rbase > base) {
 			nr_new++;
 			if (insert)
@@ -550,6 +608,11 @@ repeat:
 		base = min(rend, end);
 	}
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * d) 요청 시작 주소(변경)가 끝 주소 보다 작은 경우
+ */
 	/* insert the remaining portion */
 	if (base < end) {
 		nr_new++;
@@ -579,6 +642,13 @@ int __init_memblock memblock_add_node(phys_addr_t base, phys_addr_t size,
 {
 	return memblock_add_range(&memblock.memory, base, size, nid, 0);
 }
+
+
+/* IAMROOT-12AB:
+ * -------------
+ * memory memblock에 메모리 영역을 추가
+ * rpi2: base=0x0, size=0x4000_0000
+ */
 
 int __init_memblock memblock_add(phys_addr_t base, phys_addr_t size)
 {

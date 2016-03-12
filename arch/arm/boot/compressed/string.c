@@ -40,6 +40,14 @@ void *memcpy(void *__dest, __const void *__src, size_t __n)
 	return __dest;
 }
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * - dest가 src보다 높은 케이스에서는 메모리 침범이 되므로 뒤에서부터 하나씩
+ *   복사한다. (slow)
+ * - 그렇지 않은 경우는 memcpy를 이용할 수 있다. (아키텍처에 따라 고속 
+ *   asm instruction을 사용할 수도 있다.)
+ */
 void *memmove(void *__dest, __const void *__src, size_t count)
 {
 	unsigned char *d = __dest;
