@@ -48,6 +48,11 @@ struct cpu_context_save {
  * low level task data that entry.S needs immediate access to.
  * __switch_to() assumes cpu_context follows immediately after cpu_domain.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 스택의 바닥에 위치하며 context switch용도로 사용한다.
+ */
 struct thread_info {
 	unsigned long		flags;		/* low level flags */
 	int			preempt_count;	/* 0 => preemptable, <0 => bug */
@@ -69,6 +74,14 @@ struct thread_info {
 	unsigned long		thumbee_state;	/* ThumbEE Handler Base register */
 #endif
 };
+
+
+/* IAMROOT-12AB:
+ * -------------
+ * 처음 만들어질 때 preempt_count 값은 0x0020_0000(PREEMPT_ACTIVE)으로 
+ * 설정되어 스케쥴러 서비스가 동작하기 전까지 인터럽트 핸들러에서 
+ * preemption 코드로 진입하는 것을 막는다.
+ */
 
 #define INIT_THREAD_INFO(tsk)						\
 {									\

@@ -678,6 +678,12 @@ void __init smp_setup_processor_id(void)
 	 * using percpu variable early, for example, lockdep will
 	 * access percpu variable inside lock_release
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 이 레지스터는 현재 원래 목적으로 사용되지 않고 per-cpu의 offset 저장용으로
+ * 사용되므로 일단 0으로 초기화한다.
+ */
 	set_my_cpu_offset(0);
 
 

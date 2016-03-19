@@ -148,6 +148,13 @@ __memblock_find_range_bottom_up(phys_addr_t start, phys_addr_t end,
 	u64 i;
 
 	for_each_free_mem_range(i, nid, &this_start, &this_end, NULL) {
+
+/* IAMROOT-12AB:
+ * -------------
+ * clamp()
+ *	start 보다 작은 경우 start 값을 리턴하고, 
+ *	end 보다 큰 경우 end 값을 리턴
+ */
 		this_start = clamp(this_start, start, end);
 		this_end = clamp(this_end, start, end);
 
@@ -179,13 +186,37 @@ __memblock_find_range_top_down(phys_addr_t start, phys_addr_t end,
 	phys_addr_t this_start, this_end, cand;
 	u64 i;
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * free 공간(this_start, this_end)을 top-down 검색하여 찾아온다.
+ */
 	for_each_free_mem_range_reverse(i, nid, &this_start, &this_end, NULL) {
+
+/* IAMROOT-12AB:
+ * -------------
+ * clamp()
+ *	start 보다 작은 경우 start 값을 리턴하고, 
+ *	end 보다 큰 경우 end 값을 리턴
+ */
 		this_start = clamp(this_start, start, end);
 		this_end = clamp(this_end, start, end);
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 알아온 free 영역의 끝 주소가 사이즈보다 작으면 next
+ * (아래 조건에서 this_end - size)를 하면 마이너스 값이 나오면서
+ * 오류(원하지 않는 round_down 값)가 나올 수 있으므로 이를 방지)
+ */
 		if (this_end < size)
 			continue;
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 알아온 free 영역의 범위에 size가 포함될 수 있으면 return cand
+ */
 		cand = round_down(this_end - size, align);
 		if (cand >= this_start)
 			return cand;
@@ -215,6 +246,12 @@ __memblock_find_range_top_down(phys_addr_t start, phys_addr_t end,
  * RETURNS:
  * Found address on success, 0 on failure.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * start~end 범위에서 size 크기로 검색
+ * start는 항상 4K부터 가능(0부터 시작하라고 지시해도 첫 번째 페이지는 회피)
+ */
 phys_addr_t __init_memblock memblock_find_in_range_node(phys_addr_t size,
 					phys_addr_t align, phys_addr_t start,
 					phys_addr_t end, int nid)
@@ -226,14 +263,33 @@ phys_addr_t __init_memblock memblock_find_in_range_node(phys_addr_t size,
 		end = memblock.current_limit;
 
 	/* avoid allocating the first page */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 왜 첫 페이지를 피하고 검색을 할까???
+ */
 	start = max_t(phys_addr_t, start, PAGE_SIZE);
 	end = max(start, end);
+
+/* IAMROOT-12AB:
+ * -------------
+ * kernel_end: 커널의 끝 물리 주소
+ */
 	kernel_end = __pa_symbol(_end);
 
 	/*
 	 * try bottom-up allocation only when bottom-up mode
 	 * is set and @end is above the kernel image.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * hotswap memory가 지원되는 아키텍처에서 상위 공간부터 할당 받는 경우 
+ * memory를 분리할 때 migration이 매우 많이 발생하기 때문에 이러한
+ * 아키텍처에서는 bottom-up 할당을 사용한다. 
+ *
+ * rpi2: 32bit ARM은 아직 hotswap memory 지원이되지 않아 top-down을 사용하여 검색
+ */
 	if (memblock_bottom_up() && end > kernel_end) {
 		phys_addr_t bottom_up_start;
 
@@ -260,6 +316,10 @@ phys_addr_t __init_memblock memblock_find_in_range_node(phys_addr_t size,
 			     "memory hotunplug may be affected\n");
 	}
 
+/* IAMROOT-12AB:
+ * -------------
+ * rpi2: top-down으로 검색
+ */
 	return __memblock_find_range_top_down(start, end, size, align, nid);
 }
 
@@ -357,6 +417,12 @@ static int __init_memblock memblock_double_array(struct memblock_type *type,
 	/* We don't allow resizing until we know about the reserved regions
 	 * of memory that aren't suitable for allocation
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * bootmem_init() -> memblock_allow_resize() 함수에서 호출되어 리사이즈 기능이
+ * enable 된다.
+ */
 	if (!memblock_can_resize)
 		return -1;
 
@@ -367,6 +433,12 @@ static int __init_memblock memblock_double_array(struct memblock_type *type,
 	 * We need to allocated new one align to PAGE_SIZE,
 	 *   so we can free them completely later.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * PAGE_ALIGN: 4K round up 
+ * 예) PAGE_ALIGN(0x1010)=0x2000
+ */
 	old_alloc_size = PAGE_ALIGN(old_size);
 	new_alloc_size = PAGE_ALIGN(new_size);
 
@@ -392,6 +464,15 @@ static int __init_memblock memblock_double_array(struct memblock_type *type,
 		addr = new_array ? __pa(new_array) : 0;
 	} else {
 		/* only exclude range when trying to double reserved.regions */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 확장할 공간(처음 128개 였던 region[])을 요청 range 밖에서 할당을 하기 위해
+ * 그 공간을 피해서 위에서 한 번 검색해서 할당하고 실패하는 경우 아래에서
+ * 한 번 더 시도를 한다. 
+ * 그러나 추가할 memblock 타입이 reserved가 아닌 경우 전체 memory range에서 
+ * 수행한다.
+ */
 		if (type != &memblock.reserved)
 			new_area_start = new_area_size = 0;
 
@@ -429,6 +510,12 @@ static int __init_memblock memblock_double_array(struct memblock_type *type,
 	/* Free old array. We needn't free it if the array is the static one */
 	if (*in_slab)
 		kfree(old_array);
+
+/* IAMROOT-12AB:
+ * -------------
+ * 처음 사용한 128개의 region[]인 경우는 memblock_free를 할 수 없다.
+ * 그러나 그 이후에 추가한 공간들은 memblock_free를 할 수 있다.
+ */
 	else if (old_array != memblock_memory_init_regions &&
 		 old_array != memblock_reserved_init_regions)
 		memblock_free(__pa(old_array), old_alloc_size);
@@ -475,6 +562,10 @@ static void __init_memblock memblock_merge_regions(struct memblock_type *type)
 			continue;
 		}
 
+/* IAMROOT-12AB:
+ * -------------
+ * 경계가 겹친 경우 아래와 같이 memblock_region을 합친다.
+ */
 		this->size += next->size;
 		/* move forward from next + 1, index of which is i + 2 */
 		memmove(next, next + 1, (type->cnt - (i + 2)) * sizeof(*next));
@@ -625,6 +716,11 @@ repeat:
 	 * If this was the first round, resize array and repeat for actual
 	 * insertions; otherwise, merge and return.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 기존 memblock region 최대 갯 수를 초과하는 경우 배열을 2배로 확장한다.
+ */
 	if (!insert) {
 		while (type->cnt + nr_new > type->max)
 			if (memblock_double_array(type, obase, size) < 0)
@@ -965,17 +1061,32 @@ void __init_memblock __next_mem_range_rev(u64 *idx, int nid,
 					  phys_addr_t *out_start,
 					  phys_addr_t *out_end, int *out_nid)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * idx가 64비트 값으로 이루어지며 idx_a = msb 32bits, idx_b = lsb 32bits
+ */
 	int idx_a = *idx & 0xffffffff;
 	int idx_b = *idx >> 32;
 
 	if (WARN_ONCE(nid == MAX_NUMNODES, "Usage of MAX_NUMNODES is deprecated. Use NUMA_NO_NODE instead\n"))
 		nid = NUMA_NO_NODE;
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * idx값이 처음 진입하면 ULLONG_MAX 값이다.
+ */
 	if (*idx == (u64)ULLONG_MAX) {
 		idx_a = type_a->cnt - 1;
 		idx_b = type_b->cnt;
 	}
 
+/* IAMROOT-12AB:
+ * -------------
+ * idx_a: memory 쪽 카운터
+ * idx_b: reserve 쪽 카운터
+ */
 	for (; idx_a >= 0; idx_a--) {
 		struct memblock_region *m = &type_a->regions[idx_a];
 
@@ -983,6 +1094,11 @@ void __init_memblock __next_mem_range_rev(u64 *idx, int nid,
 		phys_addr_t m_end = m->base + m->size;
 		int m_nid = memblock_get_region_node(m);
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 검색한 블럭이 요청한 노드 id가 아닌 경우 continue
+ */
 		/* only memory regions are associated with nodes, check it */
 		if (nid != NUMA_NO_NODE && nid != m_nid)
 			continue;
@@ -991,6 +1107,11 @@ void __init_memblock __next_mem_range_rev(u64 *idx, int nid,
 		if (movable_node_is_enabled() && memblock_is_hotpluggable(m))
 			continue;
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * reserve 타입을 지정하지 않은 경우 memory에서 찾은 영역을 그대로 return
+ */
 		if (!type_b) {
 			if (out_start)
 				*out_start = m_start;
@@ -1028,6 +1149,13 @@ void __init_memblock __next_mem_range_rev(u64 *idx, int nid,
 					*out_end = min(m_end, r_end);
 				if (out_nid)
 					*out_nid = m_nid;
+
+/* IAMROOT-12AB:
+ * -------------
+ * 검색한 영역의 시작 주소가 memory 영역을 아래쪽으로 벗어나면
+ * 다음 메모리 영역을 사용하기 위해 idx_a-- 한다.
+ * 그렇지 않은 경우는 아직 region 영역을 검색하기 위해 idx_b--한다.
+ */
 				if (m_start >= r_start)
 					idx_a--;
 				else

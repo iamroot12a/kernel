@@ -123,6 +123,18 @@ void __next_mem_range_rev(u64 *idx, int nid, struct memblock_type *type_a,
  * @p_end: ptr to phys_addr_t for end address of the range, can be %NULL
  * @p_nid: ptr to int for nid of the range, can be %NULL
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 0xffff_ffff_ffff_ffff: 여기서 부터 시작해서 밑으로 검색
+ *
+ * i값은 32비트씩 나뉘어서 
+ *       - msb는 reserve 쪽 카운터(dec)  - 0xffff_ffff, max_cnt-1, ..... 
+ *       - lsb는 memory 쪽 카운터(dec) - 0xffff_ffff, max_cnt, ..... 
+ *
+ * __next_mem_range_rev() 함수내에서 조건이 만족되지 않는 경우(next가 없을 때)
+ * i 값이 ULLONG_MAX로 다시 설정되어 루프를 빠져나오게 된다.
+ */
 #define for_each_mem_range_rev(i, type_a, type_b, nid,			\
 			       p_start, p_end, p_nid)			\
 	for (i = (u64)ULLONG_MAX,					\

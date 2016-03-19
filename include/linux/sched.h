@@ -587,6 +587,15 @@ struct task_cputime {
  * We include PREEMPT_ACTIVE to avoid cond_resched() from working
  * before the scheduler is active -- see should_resched().
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 커널이 초기화되는 도중에 즉 스케쥴러가 가동되기 전에는 preemption이
+ * 될 수 없으므로 이를 막는다.(PREEMPT_ACTIVE 비트=1)
+ *
+ * 인터럽트 핸들러에서 preempt_count 변수가 0이 아닌경우 preemption 로직을
+ * 진입하지 않도록 막는다.
+ */
 #define INIT_PREEMPT_COUNT	(PREEMPT_DISABLED + PREEMPT_ACTIVE)
 
 /**
@@ -1285,6 +1294,11 @@ enum perf_event_task_context {
 
 struct task_struct {
 	volatile long state;	/* -1 unrunnable, 0 runnable, >0 stopped */
+
+/* IAMROOT-12AB:
+ * -------------
+ * stack base 위치(스택이 top->down(base)으로 저장되는 구조를 일반적으로 사용한다)
+ */
 	void *stack;
 	atomic_t usage;
 	unsigned int flags;	/* per process flags, defined below */
@@ -2718,9 +2732,10 @@ static inline unsigned long *end_of_stack(struct task_struct *p)
  * ------------
  * task가 가지고 있는 kernel stack의 마지막 주소를 리턴한다.
  * task는 kernel stack과 user stack를 각각 하나씩 가진다.
- * kernel stack은 kernel이 자신의 코드를 수행할 때 사용하는 코드이다.
- * 예를 들어, user application이 요청한 시스템 콜을 수행할 때 kernel
- * stack이 사용될 수 있다.
+ * kernel stack은 kernel이 자신의 코드를 수행할 때 사용하는 스택이다.
+ * 예를 들어, user application이 요청한 시스템 콜을 호출하는 경우 
+ * 커널로 진입을 하는데 해당 application에 연결된 커널 스택이 사용된다.
+ * (application(엄밀히 task) 마다 user stack과 kernel stack이 존재한다)
  * kernel stack 참고: https://kldp.org/node/73308
  */
 #ifdef CONFIG_STACK_GROWSUP

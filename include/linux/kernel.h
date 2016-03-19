@@ -739,6 +739,12 @@ static inline void ftrace_dump(enum ftrace_dump_mode oops_dump_mode) { }
  * This macro does strict typechecking of lo/hi to make sure they are of the
  * same type as val.  See the unnecessary pointer comparisons.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 예) clamp(5, 10, 20)  = 10
+ *     clamp(25, 10, 20) = 20
+ */
 #define clamp(val, lo, hi) min((typeof(val))max(val, lo), hi)
 
 /*

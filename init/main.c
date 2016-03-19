@@ -15,9 +15,13 @@
  *     김종철 - jongchul.kim@gmail.com
  *     김형일 - khi8660@naver.com
  *     문영일 - jakeisname@gmail.com
+ *     박진영 - 
+ *     양유석 - xeite24@gmail.com
  *     유계성 - gsryu99@gmail.com 
+ *     윤창호 - zep25dr@gmail.com
  *     이벽산 - lbyeoksan@gmail.com
  *     전성윤 - roland.korea@gmail.com
+ *     조현철 - guscjf1112@gmail.com
  *     최영민 - jiggly2k@gmail.com
  *     한대근 - dev.daegeunhan@gmail.com
  *     한상종 - sjhan00000@gmail.com
@@ -557,9 +561,15 @@ static void __init mm_init(void)
 
 /* IAMROOT-12A:
  * ------------
+ * asmlinkage: extern "C" -> cpp에서 c함수를 호출할 수 있도록 한다.
+ * __visible: __attribute__((externally_visible)) 
+ *            externally_visible 속성을 사용하는 경우 LTO 옵션을 사용하여 링크를
+ *            하는 경우에도 하나의 완전한 함수나 객체로 외부에 보여질 수 있도록
+ *            심볼화하여 해당 함수나 객체가 inline화 되지 않도록 막는다
  * __init: __section(.init.text) __cold notrace
  *         init.text 섹션에 해당 코드를 배치한다.
  * __cold: 호출될 가능성이 희박한 함수를 뜻함.
+ *	   속도보다 사이즈에 더 최적화를 수행한다.
  * notrace: __attribute__((no_instrument_function))
  *          -finstrument-functions 컴파일 옵션을 사용할 때에도
  *          해당 함수에 대한 profiling을 비활성화한다.
