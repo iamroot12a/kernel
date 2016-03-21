@@ -561,7 +561,9 @@ static void __init mm_init(void)
 
 /* IAMROOT-12A:
  * ------------
- * asmlinkage: extern "C" -> cpp에서 c함수를 호출할 수 있도록 한다.
+ * asmlinkage: extern "C"
+ *	어셈블리 코드에서 C 함수를 호출할 때 함수 인자의 전달을 레지스터가 아닌i
+ *	스택을 이용하도록 해주는 속성지정 매크로이다.
  * __visible: __attribute__((externally_visible)) 
  *            externally_visible 속성을 사용하는 경우 LTO 옵션을 사용하여 링크를
  *            하는 경우에도 하나의 완전한 함수나 객체로 외부에 보여질 수 있도록
