@@ -4,6 +4,13 @@
 #ifndef __ASMARM_CACHE_H
 #define __ASMARM_CACHE_H
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * rpi2: L1_CACHE_SHIFT=6
+ *       L1_CACHE_BYTES=64
+ */
+
 #define L1_CACHE_SHIFT		CONFIG_ARM_L1_CACHE_SHIFT
 #define L1_CACHE_BYTES		(1 << L1_CACHE_SHIFT)
 

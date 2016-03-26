@@ -181,6 +181,11 @@ void __next_mem_pfn_range(int *idx, int nid, unsigned long *out_start_pfn,
  *
  * Walks over configured memory ranges.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 요청 nid를 만족하는 온전한 페이지가 하나 이상인 memory memblock들을 검색한다.
+ */
 #define for_each_mem_pfn_range(i, nid, p_start, p_end, p_nid)		\
 	for (i = -1, __next_mem_pfn_range(&i, nid, p_start, p_end, p_nid); \
 	     i >= 0; __next_mem_pfn_range(&i, nid, p_start, p_end, p_nid))
@@ -281,6 +286,12 @@ static inline bool memblock_bottom_up(void) { return false; }
 #endif
 
 /* Flags for memblock_alloc_base() amd __memblock_alloc_base() */
+
+/* IAMROOT-12AB:
+ * -------------
+ * MEMBLOCK_ALLOC_ANYWHERE: 시스템의 최상위 물리 주소 0xffff_ffff 
+ * MEMBLOCK_ALLOC_ACCESSIBLE: 0 시스템의 current_limit 값을 사용하기 위함
+ */
 #define MEMBLOCK_ALLOC_ANYWHERE	(~(phys_addr_t)0)
 #define MEMBLOCK_ALLOC_ACCESSIBLE	0
 

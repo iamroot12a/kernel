@@ -266,7 +266,9 @@ phys_addr_t __init_memblock memblock_find_in_range_node(phys_addr_t size,
 
 /* IAMROOT-12AB:
  * -------------
- * 왜 첫 페이지를 피하고 검색을 할까???
+ * 첫 페이지를 피하고 검색을 하는 이유는 첫 페이지의 시작 주소가 0이고
+ * 그 찾은 주소를 리턴하게 되면 호출 루틴에서 0 값을 실패로 규정하였기 
+ * 때문이다.
  */
 	start = max_t(phys_addr_t, start, PAGE_SIZE);
 	end = max(start, end);
@@ -350,6 +352,10 @@ static void __init_memblock memblock_remove_region(struct memblock_type *type, u
 		(type->cnt - (r + 1)) * sizeof(type->regions[r]));
 	type->cnt--;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 예외적으로 memblock이 하나도 없는 경우 카운트 값을 1로한다.
+ */
 	/* Special case for empty arrays */
 	if (type->cnt == 0) {
 		WARN_ON(type->total_size != 0);
@@ -780,6 +786,10 @@ static int __init_memblock memblock_isolate_range(struct memblock_type *type,
 	if (!size)
 		return 0;
 
+/* IAMROOT-12AB:
+ * -------------
+ * isloation을 하면 최대 2개의 메모리 블럭이 추가될 수 있다.
+ */
 	/* we'll create at most two more regions */
 	while (type->cnt + 2 > type->max)
 		if (memblock_double_array(type, base, size) < 0)
@@ -790,11 +800,26 @@ static int __init_memblock memblock_isolate_range(struct memblock_type *type,
 		phys_addr_t rbase = rgn->base;
 		phys_addr_t rend = rbase + rgn->size;
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * A) 분리할 영역이 메모리 블럭보다 하단에 위치한 경우 더 이상 진행할 필요 없다.
+ */
 		if (rbase >= end)
 			break;
+
+/* IAMROOT-12AB:
+ * -------------
+ * B) 분리할 영역이 메모리 블럭보다 상위에 위치한 경우 다음 메모리 블럭으로 진행한다.
+ */
 		if (rend <= base)
 			continue;
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * C) 분리할 영역이 메모리 블럭의 위쪽에 겹칠때
+ */
 		if (rbase < base) {
 			/*
 			 * @rgn intersects from below.  Split and continue
@@ -806,6 +831,11 @@ static int __init_memblock memblock_isolate_range(struct memblock_type *type,
 			memblock_insert_region(type, i, rbase, base - rbase,
 					       memblock_get_region_node(rgn),
 					       rgn->flags);
+
+/* IAMROOT-12AB:
+ * -------------
+ * D) 분리할 영역이 메모리 블럭의 아래쪽에 겹칠때
+ */
 		} else if (rend > end) {
 			/*
 			 * @rgn intersects from above.  Split and redo the
@@ -817,6 +847,13 @@ static int __init_memblock memblock_isolate_range(struct memblock_type *type,
 			memblock_insert_region(type, i--, rbase, end - rbase,
 					       memblock_get_region_node(rgn),
 					       rgn->flags);
+
+/* IAMROOT-12AB:
+ * -------------
+ * E) 분리할 영역이 메모리 블럭을 완전히 포함할 때는 아무것도 수행하지 않는다.
+ *    start_rgn: 포함된 메모리 블럭의 시작 값
+ *    end_rgn:   포함된 메모리 블럭의 마지막 값+1
+ */
 		} else {
 			/* @rgn is fully contained, record it */
 			if (!*end_rgn)
@@ -834,15 +871,28 @@ int __init_memblock memblock_remove_range(struct memblock_type *type,
 	int start_rgn, end_rgn;
 	int i, ret;
 
+/* IAMROOT-12AB:
+ * -------------
+ * isloation 동작에서 최대 2개까지 memblock이 추가될 수 있다.
+ */
 	ret = memblock_isolate_range(type, base, size, &start_rgn, &end_rgn);
 	if (ret)
 		return ret;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 지정한 삭제 영역에 포함된 memblock을 제거한다.
+ */
 	for (i = end_rgn - 1; i >= start_rgn; i--)
 		memblock_remove_region(type, i);
 	return 0;
 }
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * memory memblock의 주어진 영역을 삭제한다.
+ */
 int __init_memblock memblock_remove(phys_addr_t base, phys_addr_t size)
 {
 	return memblock_remove_range(&memblock.memory, base, size);
@@ -1183,11 +1233,27 @@ void __init_memblock __next_mem_pfn_range(int *idx, int nid,
 	while (++*idx < type->cnt) {
 		r = &type->regions[*idx];
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 영역이 하나도 온전한 페이지를 포함하지 않으면 다음 블럭으로 진행
+ */
 		if (PFN_UP(r->base) >= PFN_DOWN(r->base + r->size))
 			continue;
+
+/* IAMROOT-12AB:
+ * -------------
+ * 지정된 노드 번호인 경우
+ */
 		if (nid == MAX_NUMNODES || nid == r->nid)
 			break;
 	}
+
+/* IAMROOT-12AB:
+ * -------------
+ * 모든 memory memblock에서 원하는 영역(온전한 한페이지 이상을 갖은)이
+ * 발견되지 않으면
+ */
 	if (*idx >= type->cnt) {
 		*idx = -1;
 		return;
@@ -1238,6 +1304,11 @@ static phys_addr_t __init memblock_alloc_range_nid(phys_addr_t size,
 {
 	phys_addr_t found;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 특별히 align 지정이 없는 경우 cpu 캐시 라인 크기에 맞게 정렬
+ * rpi2: 64 byte 단위
+ */
 	if (!align)
 		align = SMP_CACHE_BYTES;
 
@@ -1247,6 +1318,11 @@ static phys_addr_t __init memblock_alloc_range_nid(phys_addr_t size,
 		 * The min_count is set to 0 so that memblock allocations are
 		 * never reported as leaks.
 		 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * allocation이 성공되어 memblock의 시작 주소가 리턴된다.
+ */
 		kmemleak_alloc(__va(found), size, 0, 0);
 		return found;
 	}
@@ -1273,6 +1349,11 @@ phys_addr_t __init memblock_alloc_nid(phys_addr_t size, phys_addr_t align, int n
 
 phys_addr_t __init __memblock_alloc_base(phys_addr_t size, phys_addr_t align, phys_addr_t max_addr)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * NUMA_NO_NODE: memory memblock의 어떠한 노드라도 상관 없을 때 사용
+ */
 	return memblock_alloc_base_nid(size, align, max_addr, NUMA_NO_NODE);
 }
 

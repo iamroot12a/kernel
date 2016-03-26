@@ -719,6 +719,15 @@ EXPORT_SYMBOL_GPL(cpu_bit_bitmap);
 const DECLARE_BITMAP(cpu_all_bits, NR_CPUS) = CPU_BITS_ALL;
 EXPORT_SYMBOL(cpu_all_bits);
 
+/* IAMROOT-12AB:
+ * -------------
+ * NR_CPUS=4
+ * const unsigned long cpu_possible_bits[1] __read_mostly = CPU_BITS_ALL;
+ *
+ * CONFIG_INIT_ALL_POSSIBLE:
+ *	컴파일 타임에 cpu_possible_bits의 비트들 중 CONFIG_NR_CPUS 만큼
+ *	1로 설정하고 싶을 때
+ */
 #ifdef CONFIG_INIT_ALL_POSSIBLE
 static DECLARE_BITMAP(cpu_possible_bits, CONFIG_NR_CPUS) __read_mostly
 	= CPU_BITS_ALL;

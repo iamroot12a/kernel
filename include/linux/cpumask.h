@@ -11,6 +11,12 @@
 #include <linux/bitmap.h>
 #include <linux/bug.h>
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * NR_CPUS=33
+ * cpumask { unsigned long bits[2]; } cpumask_t;
+ */
 typedef struct cpumask { DECLARE_BITMAP(bits, NR_CPUS); } cpumask_t;
 
 /**
@@ -775,6 +781,13 @@ static inline const struct cpumask *get_cpu_mask(unsigned int cpu)
 
 #define cpu_is_offline(cpu)	unlikely(!cpu_online(cpu))
 
+/* IAMROOT-12AB:
+ * -------------
+ * 예) NR_CPUS=66
+ *     [0] = 0b1111_1111_1111_1111_1111_1111_1111_1111
+ *     [1] = 0b1111_1111_1111_1111_1111_1111_1111_1111
+ *     [2] = 0b0000_0000_0000_0000_0000_0000_0000_0011
+ */
 #if NR_CPUS <= BITS_PER_LONG
 #define CPU_BITS_ALL						\
 {								\

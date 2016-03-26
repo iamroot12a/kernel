@@ -123,6 +123,16 @@ static struct workqueue_struct *cgroup_destroy_wq;
 static struct workqueue_struct *cgroup_pidlist_destroy_wq;
 
 /* generate an array of cgroup subsystem pointers */
+
+/* IAMROOT-12AB:
+ * -------------
+ * static struct cgroup_subsys *cgroup_subsys[] = {
+ *	[cpu_cgrp_id] = &cpu_cgrp_subsys,
+ *	[memory_cgrp_id] = &memory_cgrp_subsys,
+ *	...
+ * }
+ */
+
 #define SUBSYS(_x) [_x ## _cgrp_id] = &_x ## _cgrp_subsys,
 static struct cgroup_subsys *cgroup_subsys[] = {
 #include <linux/cgroup_subsys.h>

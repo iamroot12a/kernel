@@ -1,6 +1,12 @@
 #include <asm/assembler.h>
 #include <asm/unwind.h>
 
+/* IAMROOT-12AB:
+ * -------------
+ * ip(r12) 레지스터는 보관하지 않고 곧 바로 사용해도 되는듯...
+ * r0~r3는 ARM Standard calling convenction에 의해 파라메터로 넘겨지는
+ * 레지스터라 그냥 사용해도 된다.
+ */
 #if __LINUX_ARM_ARCH__ >= 6
 	.macro	bitop, name, instr
 ENTRY(	\name		)

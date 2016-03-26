@@ -901,6 +901,13 @@ void __init dump_machine_table(void)
 		/* can't use cpu_relax() here as it may require MMU setup */;
 }
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 이 함수를 호출하는 곳:
+ *	parse_tag_mem32()
+ *	early_mem()
+ */
 int __init arm_add_memory(u64 start, u64 size)
 {
 	u64 aligned_start;

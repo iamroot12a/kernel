@@ -172,6 +172,16 @@ extern unsigned int bitmap_ord_to_pos(const unsigned long *bitmap, unsigned int 
 extern int bitmap_print_to_pagebuf(bool list, char *buf,
 				   const unsigned long *maskp, int nmaskbits);
 
+/* IAMROOT-12AB:
+ * -------------
+ * BITMAP_LAST_WORD_MASK:
+ *      nbits 값 만큼 lsb를 1로 만든다. 단 0은 전체 비트를 1로 만든다.
+ *      예) 32bits 시스템에서
+ *          nbits=0  -> 0b1111_1111_1111_1111_1111_1111_1111_1111
+ *          nbits=2  -> 0b0000_0000_0000_0000_0000_0000_0000_0011
+ *          nbits=32 -> 0b1111_1111_1111_1111_1111_1111_1111_1111
+ *          nbits=34 -> 0b0000_0000_0000_0000_0000_0000_0000_0011
+ */
 #define BITMAP_FIRST_WORD_MASK(start) (~0UL << ((start) % BITS_PER_LONG))
 #define BITMAP_LAST_WORD_MASK(nbits)					\
 (									\

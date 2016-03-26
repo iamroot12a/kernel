@@ -36,6 +36,13 @@
 #define ARRAY_SIZE(_A) (sizeof(_A) / sizeof((_A)[0]))
 #endif /* ARRAY_SIZE */
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * x값을 y값 단위로 round up 후 몫을 리턴
+ * 예) x=8, y=32  -> 1 
+ *     c=33, y=32 -> 2 
+ */
 #define DIV_ROUND_UP(x, y)  (((x) + (y) - 1) / (y))
 #define max_t(type, x, y)  ((x) > (y) ? (x) : (y))
 #define min_t(type, x, y)  ((x) < (y) ? (x) : (y))

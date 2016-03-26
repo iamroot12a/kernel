@@ -168,6 +168,11 @@ struct tag {
 	} u;
 };
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * ATAG와 관련된 함수가 등록된다.
+ */
 struct tagtable {
 	__u32 tag;
 	int (*parse)(const struct tag *);
@@ -178,6 +183,11 @@ struct tagtable {
 		<= (tag)->hdr.size * 4)
 
 #define tag_next(t)	((struct tag *)((__u32 *)(t) + (t)->hdr.size))
+
+/* IAMROOT-12AB:
+ * -------------
+ * tag_header의 길이는 8, atag의 길이를 더해서 4로 나눈 값.
+ */
 #define tag_size(type)	((sizeof(struct tag_header) + sizeof(struct type)) >> 2)
 
 #define for_each_tag(t,base)		\

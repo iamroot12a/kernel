@@ -17,6 +17,16 @@
 #include <uapi/asm/setup.h>
 
 
+/* IAMROOT-12AB:
+ * -------------
+ * __tag
+ *      tagtable이 위치하는 섹션(.taglist.init)
+ * 예) tag=ATAG_CORE, fn=parse_tag_core
+ *      __tagtable_parse_tag_core  = { ATAG_CORE, parse_tag_core }
+ *
+ * __used
+ *      호출되지 않는 함수나 객체를 심볼에서 삭제하지 않도록 한다.
+ */
 #define __tag __used __attribute__((__section__(".taglist.init")))
 #define __tagtable(tag, fn) \
 static const struct tagtable __tagtable_##fn __tag = { tag, fn }

@@ -40,6 +40,9 @@
  *
  * 현재 코어의 인터럽트를 막게되면 현재 코어 내에서 해당 opearation에
  * 개입하는 것을 막을 수 있다.
+ *
+ * volatile: 
+ *      volatile로 선언된 변수에 대해 컴파일로로 하여금 optimization을 하지 못하게 한다.
  */
 
 static inline void ____atomic_set_bit(unsigned int bit, volatile unsigned long *p)
@@ -48,11 +51,10 @@ static inline void ____atomic_set_bit(unsigned int bit, volatile unsigned long *
 
 /* IAMROOT-12A:
  * ------------
- *     mask: bit=0, mask=1
- *           bit=1, mask=2
- *           bit=2, mask=4
+ *     mask: bit=0, mask=1 (0b0000_0001)
+ *           bit=1, mask=2 (0b0000_0010)
+ *           bit=2, mask=4 (0b0000_0100)
  */
-
 	unsigned long mask = 1UL << (bit & 31);
 
 /* IAMROOT-12A:
@@ -63,6 +65,11 @@ static inline void ____atomic_set_bit(unsigned int bit, volatile unsigned long *
  *      p[bit/32]와 동일
  */
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 배열로된 비트맵 형태에 대해 인덱스 주소를 가리키게 한다. 
+ */
 	p += bit >> 5;
 
 	raw_local_irq_save(flags);
@@ -206,6 +213,9 @@ extern int _find_next_bit_be(const unsigned long *p, int size, int offset);
 /* IAMROOT-12A:
  * ------------
  * __builtin_constant_p: 인수가 상수이면 true, 변수이면 false
+ *
+ * arch/arm/lib/setbit.S에 _set_bit 매크로가 있다.
+ * arch/arm/lib/bitops.h에 bitop 매크로가 있다.
  */
 
 #define ATOMIC_BITOP(name,nr,p)			\

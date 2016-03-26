@@ -227,6 +227,11 @@ SECTIONS
 		*(.arch.info.init)
 		__arch_info_end = .;
 	}
+
+/* IAMROOT-12AB:
+ * -------------
+ * ATAG 파라메터 관련 함수들이 등록되어 있다.
+ */
 	.init.tagtable : {
 		__tagtable_begin = .;
 		*(.taglist.init)

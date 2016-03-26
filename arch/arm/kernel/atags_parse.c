@@ -31,12 +31,24 @@
 
 #include "atags.h"
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * CONFIG_CMDLINE 커널 옵션(menuconfig에서 입력)
+ */
 static char default_command_line[COMMAND_LINE_SIZE] __initdata = CONFIG_CMDLINE;
 
 #ifndef MEM_SIZE
 #define MEM_SIZE	(16*1024*1024)
 #endif
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * default ATAG 정보
+ *	-core=flag=1, 4K page, 0xff ROOT_DEV
+ *	-mem32=16M
+ */
 static struct {
 	struct tag_header hdr1;
 	struct tag_core   core;
@@ -61,6 +73,11 @@ static int __init parse_tag_core(const struct tag *tag)
 	return 0;
 }
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * __tagtable()을 통해 tagtable 구조체가 태그 섹션에 추가된다.
+ */
 __tagtable(ATAG_CORE, parse_tag_core);
 
 static int __init parse_tag_mem32(const struct tag *tag)
@@ -126,12 +143,26 @@ __tagtable(ATAG_REVISION, parse_tag_revision);
 static int __init parse_tag_cmdline(const struct tag *tag)
 {
 #if defined(CONFIG_CMDLINE_EXTEND)
+
+/* IAMROOT-12AB:
+ * -------------
+ * 부트로더로 부터 받은 cmdline 문자열을 default_command_line에 추가한다.
+ */
 	strlcat(default_command_line, " ", COMMAND_LINE_SIZE);
 	strlcat(default_command_line, tag->u.cmdline.cmdline,
 		COMMAND_LINE_SIZE);
 #elif defined(CONFIG_CMDLINE_FORCE)
 	pr_warn("Ignoring tag cmdline (using the default kernel command line)\n");
+/* IAMROOT-12AB:
+ * -------------
+ * 부트로더로 부터 받은 cmdline 문자열을 사용하지 않고 default_command_line을 사용
+ */
 #else
+
+/* IAMROOT-12AB:
+ * -------------
+ * 부트로더로 부터 받은 cmdline 문자열을 default_command_line에 복사한다.
+ */
 	strlcpy(default_command_line, tag->u.cmdline.cmdline,
 		COMMAND_LINE_SIZE);
 #endif
@@ -165,12 +196,22 @@ static int __init parse_tag(const struct tag *tag)
  */
 static void __init parse_tags(const struct tag *t)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * tag 사이즈가 0이 아닌 동안 루프를 돌며 사이즈를 계속 더한다.
+ */
 	for (; t->hdr.size; t = tag_next(t))
 		if (!parse_tag(t))
 			pr_warn("Ignoring unrecognised tag 0x%08x\n",
 				t->hdr.tag);
 }
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * ATAG_MEM을 찾아서 ATAG_NONE으로 바꾼다.
+ */
 static void __init squash_mem_tags(struct tag *tag)
 {
 	for (; tag->hdr.size; tag = tag_next(tag))
@@ -185,6 +226,11 @@ setup_machine_tags(phys_addr_t __atags_pointer, unsigned int machine_nr)
 	const struct machine_desc *mdesc = NULL, *p;
 	char *from = default_command_line;
 
+/* IAMROOT-12AB:
+ * -------------
+ * default tag에 길이는 16M로 되어 있지만 시작 주소가 0으로 되어 있어서
+ * 이를 PHYS_OFFSET로 변경한다.
+ */
 	default_tags.mem.start = PHYS_OFFSET;
 
 	/*
@@ -203,16 +249,34 @@ setup_machine_tags(phys_addr_t __atags_pointer, unsigned int machine_nr)
 		dump_machine_table(); /* does not return */
 	}
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * atag 물리주소를 가상주소 변환
+ * 만일 주어진 atag 포인터가 없는 경우 머신에 있는 atag_offset를 알아와서
+ * PAGE_OFFSET에 더한다.
+ */
 	if (__atags_pointer)
 		tags = phys_to_virt(__atags_pointer);
 	else if (mdesc->atag_offset)
 		tags = (void *)(PAGE_OFFSET + mdesc->atag_offset);
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * PARAM_STRUCT는 ATAG 나오기 전에 사용했던 구조
+ */
 #if defined(CONFIG_DEPRECATED_PARAM_STRUCT)
 	/*
 	 * If we have the old style parameters, convert them to
 	 * a tag list.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * ATAG_CORE가 발견되지 않으면 param 구조라고 판단하여
+ * 기존 param 구조를 atag 구조로 바꾼다.
+ */
 	if (tags->hdr.tag != ATAG_CORE)
 		convert_to_tag_list(tags);
 #endif
@@ -221,17 +285,45 @@ setup_machine_tags(phys_addr_t __atags_pointer, unsigned int machine_nr)
 		tags = (struct tag *)&default_tags;
 	}
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 머신별로 구성 내용이 바뀔 수 있는 경우 fixup을 수행하여 교정한다.
+ * 참고: mach-msm/board-msm7x30.c - msm7x30_fixup() 참고
+ */
 	if (mdesc->fixup)
 		mdesc->fixup(tags, &from);
 
 	if (tags->hdr.tag == ATAG_CORE) {
+
+/* IAMROOT-12AB:
+ * -------------
+ * memory memblock의 total_size가 존재하는 경우 ATAG_MEM을 찾아 삭제한다.
+ * (아마 일부 머신에서 mdesc->fixup()을 통해 메모리가 등록되지 않았을까
+ *  판단됨.)
+ */
 		if (memblock_phys_mem_size())
 			squash_mem_tags(tags);
+
+/* IAMROOT-12AB:
+ * -------------
+ * tags를 백업한다.
+ */
 		save_atags(tags);
+
+/* IAMROOT-12AB:
+ * -------------
+ * tag를 해석하여 관련 함수를 호출한다.
+ */
 		parse_tags(tags);
 	}
 
 	/* parse_early_param needs a boot_command_line */
+
+/* IAMROOT-12AB:
+ * -------------
+ * boot_command_line에 default_command_line을 복사한다.
+ */
 	strlcpy(boot_command_line, from, COMMAND_LINE_SIZE);
 
 	return mdesc;
