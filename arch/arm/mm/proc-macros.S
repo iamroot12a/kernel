@@ -335,9 +335,9 @@ ENTRY(\name\()_cache_fns)
 
 /* IAMROOT-12A:
  * ------------
- * 라즈베리파이2: v7_tlb_fns 이름으로 cpu_tlb_fns 구조체 생성
- *	v7_flush_user_tlb_range()
- *	...	
+ * 라즈베리파이2: v7wbi_tlb_fns 이름의 구조체 생성
+ *	v7wbi_flush_user_tlb_range()
+ *	v7wbi_flush_kern_tlb_range()	
  */
 
 .macro define_tlb_functions name:req, flags_up:req, flags_smp
