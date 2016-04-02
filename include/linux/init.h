@@ -50,6 +50,12 @@
  * correctly. For those disable special sections for const, so that other
  * architectures can annotate correctly.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 몇 개이 아키텍처서는 Read only section으로 매핑하는데 문제가 있어서
+ * 그러한 경우 이 옵션을 사용하면 RODATA 영역으로 넣지 않는다.
+ */
 #ifdef CONFIG_BROKEN_RODATA
 #define __constsection(x)
 #else
@@ -240,6 +246,16 @@ extern bool initcall_debug;
 	static initcall_t __initcall_##fn \
 	__used __section(.security_initcall.init) = fn
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 커널이 사용하는 파라메터에 연결되어 있는 함수들이 등록된다.
+ *
+ * str="console"
+ * setup_func=위에 파라메터에 대응하는 설정 함수
+ * early=early 지원 여부로 0=disable, 1=enable(early도 지원)
+ */
+
 struct obs_kernel_param {
 	const char *str;
 	int (*setup_func)(char *);
@@ -251,6 +267,19 @@ struct obs_kernel_param {
  *
  * Force the alignment so the compiler doesn't space elements of the
  * obs_kernel_param "array" too far apart in .init.setup.
+ */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 예) early_param("cachepolicy", early_cachepolicy)
+ *     static const char __setup_str_early_cachepolicy[] .... 
+ *          = "cachepolicy";
+ *     static const obs_kernel_param __setup_early_cachepolocy ... 
+ *          = { __setup_str_early_cachepolicy, early_cachepolicy, 1 };
+ *
+ *          -> { "cachepolicy", early_cachepolicy, 1 }
+ *
+ * __aligned(1) -> 1 byte align
  */
 #define __setup_param(str, unique_id, fn, early)			\
 	static const char __setup_str_##unique_id[] __initconst	\

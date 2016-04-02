@@ -158,6 +158,11 @@ static inline void arch_local_irq_disable(void)
 
 #endif
 
+/* IAMROOT-12AB:
+ * -------------
+ * return cpsr
+ */
+
 /*
  * Save the current interrupt enable state.
  */
@@ -188,6 +193,11 @@ static inline void arch_local_irq_restore(unsigned long flags)
 		: "memory", "cc");
 }
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * cpsr(bit7)=irq bit만 리턴
+ */
 static inline int arch_irqs_disabled_flags(unsigned long flags)
 {
 	return flags & IRQMASK_I_BIT;

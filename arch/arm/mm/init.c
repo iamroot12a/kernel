@@ -38,6 +38,12 @@
 
 #include "mm.h"
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 기존 SCTLR 저장되어 있는 값에 mask bit들만 제외시키고 
+ * 전역 변수 cr_alignment에 저장시킨 후 리턴한다.
+ */
 #ifdef CONFIG_CPU_CP15_MMU
 unsigned long __init __clear_cr(unsigned long mask)
 {

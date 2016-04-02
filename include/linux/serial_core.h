@@ -342,6 +342,14 @@ int setup_earlycon(char *buf, const char *match,
 extern int of_setup_earlycon(unsigned long addr,
 			     int (*setup)(struct earlycon_device *, const char *));
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 예) EARLYCON_DECLARE(pl011, pl011_early_console_setup);
+ *      static int __init pl011_setup_earlycon(char *buf) {
+ *          return setup_earlycon(buf, pl011, pl011_early_console_setup); }
+ *      early_param("earlycon", pl011_setup_earlycon);    <- 매크로
+ */
 #define EARLYCON_DECLARE(name, func) \
 static int __init name ## _setup_earlycon(char *buf) \
 { \

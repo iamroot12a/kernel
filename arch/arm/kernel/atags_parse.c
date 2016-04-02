@@ -63,6 +63,14 @@ static struct {
 	{ 0, ATAG_NONE }
 };
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * root_mountflags = flags의 0번 비트가 0인 경우 root_mountflags의 0번 비트를 clear 
+ * 하여 root device의 write가 가능하게 한다.
+ *	flags=1(read only)
+ * ROOT_DEV 전역 변수에 root device 번호를 저장한다.
+ */
 static int __init parse_tag_core(const struct tag *tag)
 {
 	if (tag->hdr.size > 2) {
@@ -105,6 +113,11 @@ static int __init parse_tag_videotext(const struct tag *tag)
 __tagtable(ATAG_VIDEOTEXT, parse_tag_videotext);
 #endif
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 시작 주소, 사이즈(KB 단위), flags(bit0=load, bit1=prompt)
+ */
 #ifdef CONFIG_BLK_DEV_RAM
 static int __init parse_tag_ramdisk(const struct tag *tag)
 {
@@ -123,6 +136,11 @@ static int __init parse_tag_ramdisk(const struct tag *tag)
 __tagtable(ATAG_RAMDISK, parse_tag_ramdisk);
 #endif
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 보드의 시리얼넘버를 담는다.
+ */
 static int __init parse_tag_serialnr(const struct tag *tag)
 {
 	system_serial_low = tag->u.serialnr.low;
@@ -132,6 +150,11 @@ static int __init parse_tag_serialnr(const struct tag *tag)
 
 __tagtable(ATAG_SERIAL, parse_tag_serialnr);
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 보드 변경 이력 번호(보통 수정할 때마다 버전 증가)
+ */
 static int __init parse_tag_revision(const struct tag *tag)
 {
 	system_rev = tag->u.revision.rev;

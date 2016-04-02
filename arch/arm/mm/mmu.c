@@ -167,6 +167,12 @@ void __init init_default_cache_policy(unsigned long pmd)
  * the cache or the cache and writebuffer to be turned off.  (Note: the
  * write buffer should not be on and the cache off).
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * cmdine="cachepolicy=writealloc"
+ */
+
 static int __init early_cachepolicy(char *p)
 {
 	int i, selected = -1;
@@ -196,10 +202,21 @@ static int __init early_cachepolicy(char *p)
 		return 0;
 	}
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 캐시와 버퍼비트가 지원되는 상태에서 비지원 상태로 바꿀 수 있지만
+ * 반대로 지원되지 않는 상태에서 지원하라고 변경할 수 없다.
+ */
 	if (selected != cachepolicy) {
 		unsigned long cr = __clear_cr(cache_policies[selected].cr_mask);
 		cachepolicy = selected;
 		flush_cache_all();
+
+/* IAMROOT-12AB:
+ * -------------
+ * SCTLR <- cr (cache, buffered 속성 비트만 변경된 채로 저장)
+ */
 		set_cr(cr);
 	}
 	return 0;

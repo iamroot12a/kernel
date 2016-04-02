@@ -143,6 +143,24 @@ static char *next_arg(char *args, char **param, char **val)
 	int in_quote = 0, quoted = 0;
 	char *next;
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 토큰(arg)은 param과 val값으로 나뉜다.
+ *
+ * in_quote: 따옴표가 진행중인 경우=1
+ *        예) b="2 3"
+ *            param=(b), val=(2 3)
+ * quote: 파라메터 시작이 따옴표로 되어 있는 경우
+ *        예) "abc" "def"
+ *            param=(abc), val=()
+ *            param=(def), val=()
+ *        예) "a=1" "b=2"
+ *            param=(a), val=(1)
+ *            param=(b), val=(2)
+ *        예) "a=1 b=1"		<- 있을 수 없는 듯, 
+ *                                 이미 들어오기 전에 양쪽 따옴표가 없어야 함
+ */
 	if (*args == '"') {
 		args++;
 		in_quote = 1;
@@ -150,8 +168,18 @@ static char *next_arg(char *args, char **param, char **val)
 	}
 
 	for (i = 0; args[i]; i++) {
+
+/* IAMROOT-12AB:
+ * -------------
+ * 따옴표 밖에 있는 space의 경우 break
+ */
 		if (isspace(args[i]) && !in_quote)
 			break;
+
+/* IAMROOT-12AB:
+ * -------------
+ * 처음 '='을 만나게 되면 위치를 equals에 기억한다.
+ */
 		if (equals == 0) {
 			if (args[i] == '=')
 				equals = i;
@@ -164,10 +192,20 @@ static char *next_arg(char *args, char **param, char **val)
 	if (!equals)
 		*val = NULL;
 	else {
+
+/* IAMROOT-12AB:
+ * -------------
+ * '=' 위치에 null을 집어 넣어 param과 val을 분리
+ */
 		args[equals] = '\0';
 		*val = args + equals + 1;
 
 		/* Don't include quotes in value. */
+
+/* IAMROOT-12AB:
+ * -------------
+ * value값에 따옴표 부분을 제거한다.
+ */
 		if (**val == '"') {
 			(*val)++;
 			if (args[i-1] == '"')
@@ -187,6 +225,13 @@ static char *next_arg(char *args, char **param, char **val)
 	return skip_spaces(next);
 }
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * token이 space로 분리된다. 
+ * 컴마는 값에 사용
+ * 아래 예는 3가지 토큰(arg)을 사용
+ */
 /* Args looks like "foo=bar,bar2 baz=fuz wiz". */
 char *parse_args(const char *doing,
 		 char *args,
@@ -208,13 +253,44 @@ char *parse_args(const char *doing,
 		int ret;
 		int irq_was_disabled;
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * cmdline으로 받은 각 토큰을 분리하여 param과 val로 나눈다.
+ */
 		args = next_arg(args, &param, &val);
+
+/* IAMROOT-12AB:
+ * -------------
+ * --가 param 위치에서 발견되면 종료 한다.
+ *   a=1 -- b=2 => a=1만 처리된다.
+ */
 		/* Stop at -- */
 		if (!val && strcmp(param, "--") == 0)
 			return args;
+
+/* IAMROOT-12AB:
+ * -------------
+ * 현재 cpsr.i를 읽어온다.
+ */
 		irq_was_disabled = irqs_disabled();
+
+/* IAMROOT-12AB:
+ * -------------
+ * 커널 첫 부분에서 parse_args("early options", cmdline, NULL, 
+ * 0, 0, 0, do_early_param);로 호출되는 경우 num 값이 0이므로
+ * 항상 unknown 핸들러 함수를 호출한다.
+ */
+
 		ret = parse_one(param, val, doing, params, num,
 				min_level, max_level, unknown);
+
+/* IAMROOT-12AB:
+ * -------------
+ * 파싱 전에 irq 상태와 현재 irq 상태가 다른 경우 경고 메시지를 출력한다.
+ * 파라메터 연동으로 실행되는 코드에서 irq를 enable하고 빠져 나오는 경우를
+ * 알아내기 위한 디버그 용도의 코드로 사용된다.
+ */
 		if (irq_was_disabled && !irqs_disabled())
 			pr_warn("%s: option '%s' enabled irq's!\n",
 				doing, param);

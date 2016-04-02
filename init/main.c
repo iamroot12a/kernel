@@ -430,6 +430,15 @@ static int __init do_early_param(char *param, char *val, const char *unused)
 {
 	const struct obs_kernel_param *p;
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 요청 파라메터가 파람블록에서 early=1인 항목이 발견되거나
+ *        "        console 이면서 파람블록에 earlycon이라는 이름으로 항목이 있는 경우
+ *
+ * earlycon: EARLYCON_DECLARE()로 만들어진 파라메터 함수
+ *	예) EARLYCON_DECLARE(pl011, pl011_early_console_setup);
+ */
 	for (p = __setup_start; p < __setup_end; p++) {
 		if ((p->early && parameq(param, p->str)) ||
 		    (strcmp(param, "console") == 0 &&
@@ -445,8 +454,21 @@ static int __init do_early_param(char *param, char *val, const char *unused)
 
 void __init parse_early_options(char *cmdline)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * cmdline을 파싱하여 param과 val값을 가지고 강제로 unknown 핸들러인
+ * do_early_param(param, val, "early options")를 호출하게 한다.
+ */
+
 	parse_args("early options", cmdline, NULL, 0, 0, 0, do_early_param);
 }
+
+
+/* IAMROOT-12AB:
+ * -------------
+ * cmdline에 있는 각 파라메터에 연결되어 있는 early 함수들을 호출
+ */
 
 /* Arch code calls this early on, or if not, just before other parsing. */
 void __init parse_early_param(void)

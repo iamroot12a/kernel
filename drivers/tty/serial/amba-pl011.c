@@ -2125,6 +2125,11 @@ static int __init pl011_early_console_setup(struct earlycon_device *device,
 	device->con->write = pl011_early_write;
 	return 0;
 }
+
+/* IAMROOT-12AB:
+ * -------------
+ * ARM 시리얼 포트를 early 파라메터 함수로 등록
+ */
 EARLYCON_DECLARE(pl011, pl011_early_console_setup);
 OF_EARLYCON_DECLARE(pl011, "arm,pl011", pl011_early_console_setup);
 

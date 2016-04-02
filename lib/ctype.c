@@ -8,6 +8,16 @@
 #include <linux/compiler.h>
 #include <linux/export.h>
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 각 ASC-II 코드에 대한 속성이 담긴다.
+ * _C: Control
+ * _S: Space (탭, 라인피드를 포함한 스페이스)
+ * _SP: Hard Space(진짜 0x20-space 코드만)
+ * D: 숫자
+ * P: 특수문자?
+ */
 const unsigned char _ctype[] = {
 _C,_C,_C,_C,_C,_C,_C,_C,				/* 0-7 */
 _C,_C|_S,_C|_S,_C|_S,_C|_S,_C|_S,_C,_C,			/* 8-15 */

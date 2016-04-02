@@ -55,6 +55,12 @@ static inline void arch_local_irq_disable(void)
 }
 #endif
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * return cpsr.i
+ */
+
 /* test hardware interrupt enable bit */
 #ifndef arch_irqs_disabled
 static inline int arch_irqs_disabled(void)

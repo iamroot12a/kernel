@@ -346,6 +346,11 @@ EXPORT_SYMBOL(strnchr);
  *
  * Returns a pointer to the first non-whitespace character in @str.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 이 함수에서는 soft space(탭이나 라인피드를 포함한 space)를 skip한다.
+ */
 char *skip_spaces(const char *str)
 {
 	while (isspace(*str))

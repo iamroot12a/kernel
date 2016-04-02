@@ -965,6 +965,12 @@ int __init arm_add_memory(u64 start, u64 size)
 	if (size == 0)
 		return -EINVAL;
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * memory memblock에 메모리 영역을 추가한다.
+ * (start는 시작물리주소)
+ */
 	memblock_add(start, size);
 	return 0;
 }
@@ -1185,6 +1191,14 @@ void __init setup_arch(char **cmdline_p)
 	strlcpy(cmd_line, boot_command_line, COMMAND_LINE_SIZE);
 	*cmdline_p = cmd_line;
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * cmdline에서 입력된 모든 파라메터에 대응하는 early 함수를 찾아 호출한다.
+ * 일반 파라메터 함수 등록 매크로: __setup()        -> __setup_param(,,0)
+ * early 파라메터 함수 등록 매크로: __early_param() -> __setup_param(,,1)
+ * earlycon 파라메터 함수 등록 매크로: EARLYCON_DECLARE() -> __early_param() -> ..
+ */
 	parse_early_param();
 
 	early_paging_init(mdesc, lookup_processor_type(read_cpuid_id()));
