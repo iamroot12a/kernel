@@ -2122,6 +2122,11 @@ static int __init pl011_early_console_setup(struct earlycon_device *device,
 	if (!device->port.membase)
 		return -ENODEV;
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * earlyconsol 디바이스로 동작할 수 있도록 출력만 가능하게 한다.
+ */
 	device->con->write = pl011_early_write;
 	return 0;
 }

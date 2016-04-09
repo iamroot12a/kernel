@@ -780,6 +780,11 @@ static inline void early_init_dt_check_for_initrd(unsigned long node)
 #endif /* CONFIG_BLK_DEV_INITRD */
 
 #ifdef CONFIG_SERIAL_EARLYCON
+
+/* IAMROOT-12AB:
+ * -------------
+ * OF_EARLYCON_DECLARE()로 만들어진 of_device_id 구조체가 있는 테이블
+ */
 extern struct of_device_id __earlycon_of_table[];
 
 static int __init early_init_dt_scan_chosen_serial(void)
@@ -790,40 +795,81 @@ static int __init early_init_dt_scan_chosen_serial(void)
 	const struct of_device_id *match = __earlycon_of_table;
 	const void *fdt = initial_boot_params;
 
+/* IAMROOT-12AB:
+ * -------------
+ * "/chosen" 노드를 찾아온다.
+ */
 	offset = fdt_path_offset(fdt, "/chosen");
 	if (offset < 0)
 		offset = fdt_path_offset(fdt, "/chosen@0");
 	if (offset < 0)
 		return -ENOENT;
 
+/* IAMROOT-12AB:
+ * -------------
+ * "stdout-path" 속성 값을 알아온다.
+ */
 	p = fdt_getprop(fdt, offset, "stdout-path", &l);
 	if (!p)
 		p = fdt_getprop(fdt, offset, "linux,stdout-path", &l);
 	if (!p || !l)
 		return -ENOENT;
 
+/* IAMROOT-12AB:
+ * -------------
+ * "stdout-path" 속성이 가리키는 노드를 찾아온다.
+ */
 	/* Get the node specified by stdout-path */
 	offset = fdt_path_offset(fdt, p);
 	if (offset < 0)
 		return -ENODEV;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 빈 구조체인 __earlycon_of_table_sentinel 구조체가 
+ * __earlycon_of_table_end 위치에 들어간다.
+ */
 	while (match->compatible[0]) {
 		unsigned long addr;
+
+/* IAMROOT-12AB:
+ * -------------
+ * compatible 속성 값에서 문자열 비교: 
+ *	0=match, 1=non-match, 길이=”compatible” 속성이 발견되지 않는 경우
+ */
 		if (fdt_node_check_compatible(fdt, offset, match->compatible)) {
 			match++;
 			continue;
 		}
 
+/* IAMROOT-12AB:
+ * -------------
+ * 매치된 경우 주소를 알아온다.
+ */
 		addr = fdt_translate_address(fdt, offset);
 		if (!addr)
 			return -ENXIO;
 
+/* IAMROOT-12AB:
+ * -------------
+ * match->data에 있는 함수를 실행한다.
+ *	- pl011_early_console_setup()
+ */
 		of_setup_earlycon(addr, match->data);
 		return 0;
 	}
 	return -ENODEV;
 }
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * rpi2: earlycon으로 등록되는 함수가 여러 가지 있다.
+ *	- setup_of_earlycon()
+ *	- pl011_early_console_setup()
+ *	- uart_setup_earlycon()
+ *	- uart8250_setup_earlycon()
+ */
 static int __init setup_of_earlycon(char *buf)
 {
 	if (buf)

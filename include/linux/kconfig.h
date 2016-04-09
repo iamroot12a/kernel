@@ -16,6 +16,12 @@
  * When CONFIG_BOOGER is not defined, we generate a (... 1, 0) pair, and when
  * the last step cherry picks the 2nd arg, we get a zero.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * cfg 인수가 1인 경우만 1로 출력
+ *            0이거나, 없는 경우거나, 다른문자이거나 모두도 0으로 출력하기 위함
+ */
 #define __ARG_PLACEHOLDER_1 0,
 #define config_enabled(cfg) _config_enabled(cfg)
 #define _config_enabled(value) __config_enabled(__ARG_PLACEHOLDER_##value)

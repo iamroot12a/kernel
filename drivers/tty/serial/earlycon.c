@@ -34,6 +34,11 @@ static struct earlycon_device early_console_dev = {
 	.con = &early_con,
 };
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * __earlycon_of_table_end에 빈 구조체를 집어넣어서 그 테이블의 끝으로 한다.
+ */
 static const struct of_device_id __earlycon_of_table_sentinel
 	__used __section(__earlycon_of_table_end);
 
@@ -111,17 +116,43 @@ static int __init parse_options(struct earlycon_device *device,
 	return 0;
 }
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 예) setup_earlycon("ttyS0", "pl011", pl011_early_console_setup);
+ *
+ */
 int __init setup_earlycon(char *buf, const char *match,
 			  int (*setup)(struct earlycon_device *, const char *))
 {
 	int err;
 	size_t len;
+
+/* IAMROOT-12AB:
+ * -------------
+ * uart 디바이스
+ */
 	struct uart_port *port = &early_console_dev.port;
 
 	if (!buf || !match || !setup)
 		return 0;
 
 	len = strlen(match);
+
+/* IAMROOT-12AB:
+ * -------------
+ * console=ttyS0 라고 했을 때 early console이 동작할까? 
+ * -----------------------------------------------------
+ * buf="ttyS0", match="pl011" -> unmatch로 함수를 빠져나간다.
+ *      "             "uart"		"
+ *      "             "uart8250"	"
+ * buf="pl011,mmio,0x7e201000,115200n8", match="pl011" -> 이 때 통과
+ *
+ *  earlycon=uart8250,io,0x3f8,9600n8
+ *  earlycon=uart8250,mmio,0xff5e0000,115200n8
+ *  earlycon=uart8250,mmio32,0xff5e0000,115200n8
+ *  console=uart8250,mmio32,0xff5e0000,115200n8
+ */
 	if (strncmp(buf, match, len))
 		return 0;
 	if (buf[len] && (buf[len] != ','))
@@ -129,6 +160,14 @@ int __init setup_earlycon(char *buf, const char *match,
 
 	buf += len + 1;
 
+/* IAMROOT-12AB:
+ * -------------
+ * early_console_dev->con->data		(&early_console_dev)
+ *                         write        (아래 setup() 호출 시 변경됨)
+ *                    port->membase	(포트주소)
+ *                    options		("115200n8")
+ *                    baud		(115200)
+ */
 	err = parse_options(&early_console_dev, buf);
 	/* On parsing error, pass the options buf to the setup function */
 	if (!err)

@@ -94,6 +94,11 @@ extern void cpu_reset(unsigned long addr) __attribute__((noreturn));
 extern void cpu_do_suspend(void *);
 extern void cpu_do_resume(void *);
 #else
+
+/* IAMROOT-12AB:
+ * -------------
+ * ARMv7은 MULTI_CPU가 정의되어 있어서 아래 매크로를 사용한다.
+ */
 #define cpu_proc_init			processor._proc_init
 #define cpu_proc_fin			processor._proc_fin
 #define cpu_reset			processor.reset

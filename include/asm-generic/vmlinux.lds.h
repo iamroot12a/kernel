@@ -150,7 +150,11 @@
 #define TRACE_SYSCALLS()
 #endif
 
-
+/* IAMROOT-12AB:
+ * -------------
+ * CONFIG_**** 커널 옵션이 설정되어 있지 않은 경우 
+ * 아래 __xxx_of_table이 만들어지지 않는다.
+ */
 #define ___OF_TABLE(cfg, name)	_OF_TABLE_##cfg(name)
 #define __OF_TABLE(cfg, name)	___OF_TABLE(cfg, name)
 #define OF_TABLE(cfg, name)	__OF_TABLE(config_enabled(cfg), name)
@@ -167,6 +171,12 @@
 #define IOMMU_OF_TABLES()	OF_TABLE(CONFIG_OF_IOMMU, iommu)
 #define RESERVEDMEM_OF_TABLES()	OF_TABLE(CONFIG_OF_RESERVED_MEM, reservedmem)
 #define CPU_METHOD_OF_TABLES()	OF_TABLE(CONFIG_SMP, cpu_method)
+
+/* IAMROOT-12AB:
+ * -------------
+ * DTB용 earlycon 구성 테이블
+ *      - CONFIG_SERIAL_EARLYCON=1
+ */
 #define EARLYCON_OF_TABLES()	OF_TABLE(CONFIG_SERIAL_EARLYCON, earlycon)
 
 #define KERNEL_DTB()							\
