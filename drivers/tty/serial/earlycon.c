@@ -146,7 +146,7 @@ int __init setup_earlycon(char *buf, const char *match,
  * buf="ttyS0", match="pl011" -> unmatch로 함수를 빠져나간다.
  *      "             "uart"		"
  *      "             "uart8250"	"
- * buf="pl011,mmio,0x7e201000,115200n8", match="pl011" -> 이 때 통과
+ * buf="pl011,0x3f201000,115200n8", match="pl011" -> 이 때 통과
  *
  *  earlycon=uart8250,io,0x3f8,9600n8
  *  earlycon=uart8250,mmio,0xff5e0000,115200n8
@@ -163,10 +163,11 @@ int __init setup_earlycon(char *buf, const char *match,
 /* IAMROOT-12AB:
  * -------------
  * early_console_dev->con->data		(&early_console_dev)
- *                         write        (아래 setup() 호출 시 변경됨)
- *                    port->membase	(포트주소)
- *                    options		("115200n8")
- *                    baud		(115200)
+ *                  ->con->write        (아래 setup() 호출 시 변경됨)
+ *                  ->port->mapbase	(포트물리주소)
+ *		    ->port->membase     (포트가상주소)
+ *                  ->options		("115200n8")
+ *                  ->baud		(115200)
  */
 	err = parse_options(&early_console_dev, buf);
 	/* On parsing error, pass the options buf to the setup function */
