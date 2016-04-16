@@ -1066,6 +1066,15 @@ void __init debug_ll_io_init(void)
 }
 #endif
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * VMALLOC_END   =   0xff000000UL
+ *                  -0x0f000000UL (240M)
+ * VMALLOC_OFFSET   -0x00800000UL (8M)
+ *                  -------------
+ * vmalloc_min      =0xef800000UL
+ */
 static void * __initdata vmalloc_min =
 	(void *)(VMALLOC_END - (240 << 20) - VMALLOC_OFFSET);
 
@@ -1097,10 +1106,32 @@ early_param("vmalloc", early_vmalloc);
 
 phys_addr_t arm_lowmem_limit __initdata = 0;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 각 memblock들이 왜 PMD align이 되어 있어야 하나???
+ *
+ * sanity_check_meminfo() 함수가 하는 일
+ * =====================================
+ * 1) CONFIG_HIGHMEM이 설정되어 있지 않을 때 lowmem을 초과하는 memblock 영역 삭제
+ * 2) highmem/lownmem 경계 설정
+ *    -물리주소 arm_lowmem_limit
+ *    -가상주소 high_memory
+ * 3) memblock.current_limit
+ * *) PMD 사이즈로 align 되어 있지 않은 경우 lowmem/highmem 경계를 
+ *    문제된 위치에서 round down 한 위치로 설정
+ */
 void __init sanity_check_meminfo(void)
 {
 	phys_addr_t memblock_limit = 0;
 	int highmem = 0;
+
+/* IAMROOT-12AB:
+ * -------------
+ * vmalloc_limit: vmalloc_min을 물리주소로 변환
+ *                __pa() -> lowmem 영역에 대해서만 변환을 보장
+ *                          (-1을 해야 lowmem영역에서 변환함)
+ *                vmalloc_limit = 물리주소에서의 lowmem/highmem의 경계
+ */
 	phys_addr_t vmalloc_limit = __pa(vmalloc_min - 1) + 1;
 	struct memblock_region *reg;
 
@@ -1114,9 +1145,13 @@ void __init sanity_check_meminfo(void)
 		else
 			size_limit = vmalloc_limit - reg->base;
 
-
 		if (!IS_ENABLED(CONFIG_HIGHMEM) || cache_is_vipt_aliasing()) {
 
+/* IAMROOT-12AB:
+ * -------------
+ * CONFIG_HIGHMEM이 설정되어 있지 않은 경우 memblock 영역이 lowmem 없이
+ * highmem만을 포함하는 경우 memblock 한 개를 없앤다.
+ */
 			if (highmem) {
 				pr_notice("Ignoring RAM at %pa-%pa (!CONFIG_HIGHMEM)\n",
 					  &block_start, &block_end);
@@ -1124,6 +1159,12 @@ void __init sanity_check_meminfo(void)
 				continue;
 			}
 
+/* IAMROOT-12AB:
+ * -------------
+ * CONFIG_HIGHMEM이 설정되어 있지 않은 경우 memblock 영역이 lowmem과 
+ * highmem을 모두 포함하는 경우(경계에 걸친 경우) highmem에 해당하는
+ * 공간을 memblock에서 remove한다.
+ */
 			if (reg->size > size_limit) {
 				phys_addr_t overlap_size = reg->size - size_limit;
 
@@ -1134,6 +1175,14 @@ void __init sanity_check_meminfo(void)
 			}
 		}
 
+/* IAMROOT-12AB:
+ * -------------
+ * highem영역이 아닌 경우 각 블럭의 끝이 arm_lowmem_limit를 초과할 때마다
+ * 갱신을 하게 한다. 처음 arm_lowmem_limit는 0부터 시작하여 각 memblock에 대해 
+ * 계산될 때 마다 갱신한다. 각 memblock이 lowmem 공간만을 가지면 arm_lowmem_limit
+ * 는 memblock의 끝이 대입되고 memblock이 lowmem과 highmem이 겹쳐있는 block을
+ * 만나게되면 arm_lowmem_limit는 최대 lowmem.highmem 영역 경계 값이 된다. 
+ */
 		if (!highmem) {
 			if (block_end > arm_lowmem_limit) {
 				if (reg->size > size_limit)
@@ -1161,10 +1210,16 @@ void __init sanity_check_meminfo(void)
 				else if (!IS_ALIGNED(block_end, PMD_SIZE))
 					memblock_limit = arm_lowmem_limit;
 			}
-
 		}
 	}
 
+/* IAMROOT-12AB:
+ * -------------
+ * high_memory:
+ *	가상 주소에서의 lowmem/highmem 영역 경계
+ * arm_lowmem_limit:
+ *	물리 주소에서의 lowmem/highmem 영역 경계
+ */
 	high_memory = __va(arm_lowmem_limit - 1) + 1;
 
 	/*

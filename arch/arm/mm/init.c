@@ -178,6 +178,19 @@ static void __init arm_adjust_dma_zone(unsigned long *size, unsigned long *hole,
 
 void __init setup_dma_zone(const struct machine_desc *mdesc)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * DMA(Direct Memory Access)
+ *     - PC에서는 address에 24비트를 사용한 ISA 버스를 사용하였기 때문에
+ *	 16M 제한이 있었다.
+ *     - 32비트 ARM에서는 machine 설계마다 다르다.
+ *	 - DMA 디바이스 장치가 32bit 주소를 사용하는 경우 ZONE_DMA를 나눌
+ *	   필요가 없다.
+ *	 - DMA 디바이스 장치가 32bit 미만의 주소를 사용하는 경우 
+ *	   ZONE_DMA를 나누어 사용해야 한다.
+ *	   (DMA 디바이스 장치가 20비트 만을 사용하는 경우에는 ZONE_DMA를
+ *	   1M로 설정하여 사용한다.)
+ */
 #ifdef CONFIG_ZONE_DMA
 	if (mdesc->dma_zone_size) {
 		arm_dma_zone_size = mdesc->dma_zone_size;
