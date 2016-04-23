@@ -449,12 +449,23 @@ static u32 of_fdt_crc32;
 static int __init __reserved_mem_reserve_reg(unsigned long node,
 					     const char *uname)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * dt_root_addr_cells, dt_root_size_cells:
+ *	루트노드에 #addr-cells와 #size-cells 값이 담긴다.
+ */
 	int t_len = (dt_root_addr_cells + dt_root_size_cells) * sizeof(__be32);
 	phys_addr_t base, size;
 	int len;
 	const __be32 *prop;
 	int nomap, first = 1;
 
+/* IAMROOT-12AB:
+ * -------------
+ * reg 속성이 있는 경우 시작주소와 사이즈가 주어진다.
+ * reg 속성이 없는 경우 size 속성에서 사이즈 정보만을 가져온다.
+ */
 	prop = of_get_flat_dt_prop(node, "reg", &len);
 	if (!prop)
 		return -ENOENT;
@@ -465,6 +476,11 @@ static int __init __reserved_mem_reserve_reg(unsigned long node,
 		return -EINVAL;
 	}
 
+/* IAMROOT-12AB:
+ * -------------
+ * "no-map" 속성을 만나는 경우 해당 영역을 remove한다.
+ * 그렇지 않은 경우 해당 영역을 reserve memblock에 추가한다.
+ */
 	nomap = of_get_flat_dt_prop(node, "no-map", NULL) != NULL;
 
 	while (len >= t_len) {
@@ -480,6 +496,12 @@ static int __init __reserved_mem_reserve_reg(unsigned long node,
 				uname, &base, (unsigned long)size / SZ_1M);
 
 		len -= t_len;
+
+/* IAMROOT-12AB:
+ * -------------
+ * 전역 reserved_mem[] 배열에 해당 노드당 한 번만 저장시킨다.
+ * reg의 값이 배열인 경우 첫 항목만 reserved_mem[]에 추가한다.
+ */
 		if (first) {
 			fdt_reserved_mem_save_node(node, uname, base, size);
 			first = 0;
@@ -497,14 +519,28 @@ static int __init __reserved_mem_check_root(unsigned long node)
 {
 	const __be32 *prop;
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 루트노드에서 명시한 #size-cells와 reserved-memory에서 명시한 값이 같아야 한다.
+ */
 	prop = of_get_flat_dt_prop(node, "#size-cells", NULL);
 	if (!prop || be32_to_cpup(prop) != dt_root_size_cells)
 		return -EINVAL;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 루트노드에서 명시한 #address-cells와 reserved-memory에서 명시한 값이 같아야 한다.
+ */
 	prop = of_get_flat_dt_prop(node, "#address-cells", NULL);
 	if (!prop || be32_to_cpup(prop) != dt_root_addr_cells)
 		return -EINVAL;
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * reserved-memory 노드에 ranges라는 속성이 있어야 한다.
+ */
 	prop = of_get_flat_dt_prop(node, "ranges", NULL);
 	if (!prop)
 		return -EINVAL;
@@ -521,12 +557,18 @@ static int __init __fdt_scan_reserved_mem(unsigned long node, const char *uname,
 	const char *status;
 	int err;
 
+
 	if (!found && depth == 1 && strcmp(uname, "reserved-memory") == 0) {
 		if (__reserved_mem_check_root(node) != 0) {
 			pr_err("Reserved memory: unsupported node format, ignoring\n");
 			/* break scan */
 			return 1;
 		}
+/* IAMROOT-12AB:
+ * -------------
+ * depth-1, reserved-memory 노드이면서 #size-cells와 #address-cells가 루트노드의
+ * 것과 동일하고 ranges라는 속성을 발견하는 경우에만 성공
+ */
 		found = 1;
 		/* scan next node */
 		return 0;
@@ -535,14 +577,42 @@ static int __init __fdt_scan_reserved_mem(unsigned long node, const char *uname,
 		return 0;
 	} else if (found && depth < 2) {
 		/* scanning of /reserved-memory has been finished */
+
+/* IAMROOT-12AB:
+ * -------------
+ * found된 상태에서 depth가 1인 경우가 되는 case는 모든 reserved-memory의 child
+ * 노드 수행이 완료되었다는 의미이다. (return 1을 하는 경우는 항상 노드 scan이 종료됨)
+ */
 		return 1;
 	}
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * found된 상태에서 depth가 2 이상인 노드인 경우 아래 루틴을 수행한다.
+ * status 속성이 ok인 경우에만 reg 속성을 읽어와서 reserved_mem[]에
+ * 첫 항목만 추가 한다. (reg가 배열인 경우 첫 엔트리만 등록)
+ */
 	status = of_get_flat_dt_prop(node, "status", NULL);
 	if (status && strcmp(status, "okay") != 0 && strcmp(status, "ok") != 0)
 		return 0;
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 두 가지 속성에서 reserve 한다.
+ *    - reg(시작 주소와 사이즈가 지정된) 속성은 함수 내부에서 alloc
+ *    - size 속성은 함수 외부에서 alloc
+ *       .전체 범위 
+ *       .alloc-ranges 속성 사용
+ */
+
 	err = __reserved_mem_reserve_reg(node, uname);
+
+/* IAMROOT-12AB:
+ * -------------
+ * reg 속성이 없는 대신 size 속성이 있는 경우 reserved_mem[]에 zero 영역 추가 
+ */
 	if (err == -ENOENT && of_get_flat_dt_prop(node, "size", NULL))
 		fdt_reserved_mem_save_node(node, uname, 0, 0);
 
@@ -566,10 +636,25 @@ void __init early_init_fdt_scan_reserved_mem(void)
 		return;
 
 	/* Reserve the dtb region */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 1) DTB영역 자체를 reserve memblock에 추가한다.
+ */
 	early_init_dt_reserve_memory_arch(__pa(initial_boot_params),
 					  fdt_totalsize(initial_boot_params),
 					  0);
 
+/* IAMROOT-12AB:
+ * -------------
+ * 2) DTB의 memory reservation block에서 읽어들인 주소와 사이즈로 reserve 한다.
+ * 예: arch/arm/boot/dts/axm516-amarillo.dts 
+ *     /memreserve/ 0x00000000 0x00001000
+ *
+ * memory reservation block은 16바이트(주소+사이즈) array로 구성되는데
+ * 항상 마지막 16바이트는 0으로 되어있다.
+ * memory reservation이 구현되어 있지 않은 DTB는 16바이트의 0으로 구성된다.
+ */
 	/* Process header /memreserve/ fields */
 	for (n = 0; ; n++) {
 		fdt_get_mem_rsv(initial_boot_params, n, &base, &size);
@@ -578,6 +663,11 @@ void __init early_init_fdt_scan_reserved_mem(void)
 		early_init_dt_reserve_memory_arch(base, size, 0);
 	}
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 3) reserved-memory 노드에 등록된 값을 reserve memblock에 추가한다.
+ */
 	of_scan_flat_dt(__fdt_scan_reserved_mem, NULL);
 	fdt_init_reserved_mem();
 }
@@ -603,6 +693,8 @@ int __init of_scan_flat_dt(int (*it)(unsigned long node,
 /* IAMROOT-12A:
  * ------------
  * dtb 처음 위치의 노드부터 하나씩 노드 시작 위치를 읽어온다.
+ * depth: root 노드는 0
+ *        /chosen 노드는 1
  */
         for (offset = fdt_next_node(blob, -1, &depth);
              offset >= 0 && depth >= 0 && !rc;
@@ -754,6 +846,11 @@ static void __init early_init_dt_check_for_initrd(unsigned long node)
 	int len;
 	const __be32 *prop;
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 전역 initrd_start, initrd_end에 /chosen 노드의 initrd와 관련된 속성 값을 저장한다.
+ */
 	pr_debug("Looking for initrd properties... ");
 
 	prop = of_get_flat_dt_prop(node, "linux,initrd-start", &len);
@@ -1066,6 +1163,7 @@ int __init early_init_dt_scan_chosen(unsigned long node, const char *uname,
 /* IAMROOT-12A:
  * ------------
  * 노드가 depth=1인 노드명 chosen만 아래 루틴에 진입한다. 
+ * /chosen 노드의 initrd와 관련된 속성 값을 전역 변수에 저장한다.
  */
 	early_init_dt_check_for_initrd(node);
 
@@ -1084,6 +1182,13 @@ int __init early_init_dt_scan_chosen(unsigned long node, const char *uname,
 	 * managed to set the command line, unless CONFIG_CMDLINE_FORCE
 	 * is set in which case we override whatever was found earlier.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * - CONFIG_CMDLINE_FORCE 옵션에 따라 
+ *   .사용하는 경우 DTB의 bootargs를 무시하고 커널 파라메터를 사용.
+ *   .사용하지 않는 경우 DTB의 bootargs가 없는 경우네만 커널 파라메터를 사용
+ */
 #ifdef CONFIG_CMDLINE
 #ifndef CONFIG_CMDLINE_FORCE
 	if (!((char *)data)[0])

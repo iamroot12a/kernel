@@ -59,6 +59,11 @@ int fdt_check_header(const void *fdt)
 {
 	if (fdt_magic(fdt) == FDT_MAGIC) {
 		/* Complete tree */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 현재 커널이 지원하는 FDT 버전을 벗어나면 에러로 리턴한다.
+ */
 		if (fdt_version(fdt) < FDT_FIRST_SUPPORTED_VERSION)
 			return -FDT_ERR_BADVERSION;
 		if (fdt_last_comp_version(fdt) > FDT_LAST_SUPPORTED_VERSION)

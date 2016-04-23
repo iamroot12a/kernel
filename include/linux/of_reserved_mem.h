@@ -5,6 +5,11 @@ struct device;
 struct of_phandle_args;
 struct reserved_mem_ops;
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * fdt_node: 등록할 당시의 fdt 노드 offset
+ */
 struct reserved_mem {
 	const char			*name;
 	unsigned long			fdt_node;
@@ -24,6 +29,13 @@ struct reserved_mem_ops {
 
 typedef int (*reservedmem_of_init_fn)(struct reserved_mem *rmem);
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * RESERVEDMEM_OF_DECLARE(cma, "shared-dma-pool", rmem_cma_setup)
+ * -> _OF_DECLARE(reservedmem, cma, "shared-dma-pool", rmem_cma_setup, 
+ *    reservedmem_of_init_fn)
+ */
 #define RESERVEDMEM_OF_DECLARE(name, compat, init)			\
 	_OF_DECLARE(reservedmem, name, compat, init, reservedmem_of_init_fn)
 

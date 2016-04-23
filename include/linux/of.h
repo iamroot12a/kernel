@@ -870,6 +870,16 @@ static inline int of_get_available_child_count(const struct device_node *np)
 	return num;
 }
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * _OF_DECLARE(reservedmem, cma, "shared-dma-pool", rmem_cma_setup, 
+ *    reservedmem_of_init_fn)
+ * -> static const struct of_device_id __of_table_cma
+ *    __used __section(__reservedmem_of_table) 
+ *    = { .compatible = "shared-dma-pool",
+ *        .data = rmem_cma_setup }
+ */
 #ifdef CONFIG_OF
 #define _OF_DECLARE(table, name, compat, fn, fn_type)			\
 	static const struct of_device_id __of_table_##name		\

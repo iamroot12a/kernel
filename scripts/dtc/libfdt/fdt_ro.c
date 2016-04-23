@@ -88,6 +88,12 @@ static int _fdt_string_eq(const void *fdt, int stroffset,
 	return (strlen(p) == len) && (memcmp(p, s, len) == 0);
 }
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 8바이트의 주소와 8바이트의 사이즈를 DTB의 헤더 다음에 위치한 
+ * memory reservation block에서 읽어온다.
+ */
 int fdt_get_mem_rsv(const void *fdt, int n, uint64_t *address, uint64_t *size)
 {
 	FDT_CHECK_HEADER(fdt);

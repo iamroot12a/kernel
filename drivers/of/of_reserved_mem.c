@@ -100,6 +100,11 @@ static int __init __reserved_mem_alloc_size(unsigned long node,
 	int nomap;
 	int ret;
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * size 속성 값을 읽어온다.
+ */
 	prop = of_get_flat_dt_prop(node, "size", &len);
 	if (!prop)
 		return -EINVAL;
@@ -113,6 +118,11 @@ static int __init __reserved_mem_alloc_size(unsigned long node,
 
 	nomap = of_get_flat_dt_prop(node, "no-map", NULL) != NULL;
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * alignment 속성값을 읽어온다.
+ */
 	prop = of_get_flat_dt_prop(node, "alignment", &len);
 	if (prop) {
 		if (len != dt_root_addr_cells * sizeof(__be32)) {
@@ -123,6 +133,11 @@ static int __init __reserved_mem_alloc_size(unsigned long node,
 		align = dt_mem_next_cell(dt_root_addr_cells, &prop);
 	}
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * alloc-ranges 속성 값을 읽어온다.
+ */
 	prop = of_get_flat_dt_prop(node, "alloc-ranges", &len);
 	if (prop) {
 
@@ -139,6 +154,10 @@ static int __init __reserved_mem_alloc_size(unsigned long node,
 			end = start + dt_mem_next_cell(dt_root_size_cells,
 						       &prop);
 
+/* IAMROOT-12AB:
+ * -------------
+ * start ~ end 범위에서 size 만큼의 공간을 할당해서 base에 시작 주소를 알아온다.
+ */
 			ret = early_init_dt_alloc_reserved_memory_arch(size,
 					align, start, end, nomap, &base);
 			if (ret == 0) {
@@ -151,6 +170,11 @@ static int __init __reserved_mem_alloc_size(unsigned long node,
 		}
 
 	} else {
+
+/* IAMROOT-12AB:
+ * -------------
+ * 전체 범위에서 size 만큼의 공간을 할당해서 base에 시작 주소를 알아온다.
+ */
 		ret = early_init_dt_alloc_reserved_memory_arch(size, align,
 							0, 0, nomap, &base);
 		if (ret == 0)
@@ -185,9 +209,18 @@ static int __init __reserved_mem_init_node(struct reserved_mem *rmem)
 		reservedmem_of_init_fn initfn = i->data;
 		const char *compat = i->compatible;
 
+/* IAMROOT-12AB:
+ * -------------
+ * reserved_mem[i].fdt_node에서 compatible을 검색하여 i->compatible과 비교
+ */
 		if (!of_flat_dt_is_compatible(rmem->fdt_node, compat))
 			continue;
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 예) RESERVEDMEM_OF_DECLARE(cma, "shared-dma-pool", rmem_cma_setup)에서 등록
+ */
 		if (initfn(rmem) == 0) {
 			pr_info("Reserved memory: initialized node %s, compatible id %s\n",
 				rmem->name, compat);
@@ -210,15 +243,32 @@ void __init fdt_init_reserved_mem(void)
 		const __be32 *prop;
 		int err = 0;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 해당 노드에서 phandle 속성 값을 reserved_mem[i].phandle에 저장한다.
+ */
 		prop = of_get_flat_dt_prop(node, "phandle", &len);
 		if (!prop)
 			prop = of_get_flat_dt_prop(node, "linux,phandle", &len);
 		if (prop)
 			rmem->phandle = of_read_number(prop, len/4);
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * size가 0인 경우 size 속성값을 읽어서 전체 메모리 또는 범위(alloc-ranges)
+ * 에서 할당을 한 후 두 개의 출력 인수 base와 size를 알아온다.
+ */
 		if (rmem->size == 0)
 			err = __reserved_mem_alloc_size(node, rmem->name,
 						 &rmem->base, &rmem->size);
+
+/* IAMROOT-12AB:
+ * -------------
+ * 할당한 메모리에 대해 초기화 루틴을 수행한다. 
+ * (현재 커널에는 2개의 함수가 연결되어 있다.)
+ * 예) RESERVEDMEM_OF_DECLARE(cma, "shared-dma-pool", rmem_cma_setup)에서 등록
+ */
 		if (err == 0)
 			__reserved_mem_init_node(rmem);
 	}

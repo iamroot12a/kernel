@@ -51,9 +51,29 @@ static phys_addr_t size_cmdline = -1;
 static phys_addr_t base_cmdline;
 static phys_addr_t limit_cmdline;
 
+/* IAMROOT-12AB:
+ * -------------
+ * "cma" early 커널 파라메터에서 size_cmdline, base_cmdline, limit_cmdline을
+ * 조정한다.
+ *
+ * cma=nn[MG]@[start[MG][-end[MG]]]
+ *	[ARM,X86,KNL]
+ *	Sets the size of kernel global memory area for
+ *	contiguous memory allocations and optionally the
+ *	placement constraint by the physical address range of
+ *	memory allocations. A value of 0 disables CMA
+ *	altogether. For more information, see
+ *	include/linux/dma-contiguous.h
+ */
 static int __init early_cma(char *p)
 {
 	pr_debug("%s(%s)\n", __func__, p);
+
+/* IAMROOT-12AB:
+ * -------------
+ * "aaa=16K"
+ *   -> 16384
+ */
 	size_cmdline = memparse(p, &p);
 	if (*p != '@')
 		return 0;
@@ -70,6 +90,10 @@ early_param("cma", early_cma);
 
 #ifdef CONFIG_CMA_SIZE_PERCENTAGE
 
+/* IAMROOT-12AB:
+ * -------------
+ * 전체 memory memeblock에 대해 퍼센트로 변환하여 바이트로 리턴한다.
+ */
 static phys_addr_t __init __maybe_unused cma_early_percent_memory(void)
 {
 	struct memblock_region *reg;
@@ -113,6 +137,12 @@ void __init dma_contiguous_reserve(phys_addr_t limit)
 
 	pr_debug("%s(limit %08lx)\n", __func__, (unsigned long)limit);
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * size_cmdline이 -1인 경우는 초기값을 사용하는 경우 
+ * early 커널 파라메터 "cma="를 사용하는 경우는 바뀐다.
+ */
 	if (size_cmdline != -1) {
 		selected_size = size_cmdline;
 		selected_base = base_cmdline;

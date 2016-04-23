@@ -725,6 +725,12 @@ static inline void ftrace_dump(enum ftrace_dump_mode oops_dump_mode) { }
  * @x: value1
  * @y: value2
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 0이 아닌 값에서 가장 작은 값
+ *      둘 다 0인 경우 0
+ */
 #define min_not_zero(x, y) ({			\
 	typeof(x) __x = (x);			\
 	typeof(y) __y = (y);			\

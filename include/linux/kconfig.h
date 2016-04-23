@@ -33,6 +33,11 @@
  * 0 otherwise.
  *
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * (config_enabled(CONFIG_***) || config_enabled(CONFIG_***_MODULE))
+ */
 #define IS_ENABLED(option) \
 	(config_enabled(option) || config_enabled(option##_MODULE))
 

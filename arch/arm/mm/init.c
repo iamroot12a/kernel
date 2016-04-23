@@ -309,12 +309,21 @@ void __init arm_memblock_init(const struct machine_desc *mdesc)
 		phys_initrd_size = initrd_end - initrd_start;
 	}
 	initrd_start = initrd_end = 0;
+
+/* IAMROOT-12AB:
+ * -------------
+ * memory memblock에 전체 initrd 영역이 포함되지 않은 경우 initrd 영역 등록 포기
+ */
 	if (phys_initrd_size &&
 	    !memblock_is_region_memory(phys_initrd_start, phys_initrd_size)) {
 		pr_err("INITRD: 0x%08llx+0x%08lx is not a memory region - disabling initrd\n",
 		       (u64)phys_initrd_start, phys_initrd_size);
 		phys_initrd_start = phys_initrd_size = 0;
 	}
+/* IAMROOT-12AB:
+ * -------------
+ * reserved memblock의 일부라도 이미 initrd 영역을 사용하는 경우 initrd 영역 등록 포기
+ */
 	if (phys_initrd_size &&
 	    memblock_is_region_reserved(phys_initrd_start, phys_initrd_size)) {
 		pr_err("INITRD: 0x%08llx+0x%08lx overlaps in-use memory region - disabling initrd\n",
@@ -330,12 +339,26 @@ void __init arm_memblock_init(const struct machine_desc *mdesc)
 	}
 #endif
 
+/* IAMROOT-12AB:
+ * -------------
+ * 페이지 디렉토리를 reserve에 등록
+ */
 	arm_mm_memblock_reserve();
 
+/* IAMROOT-12AB:
+ * -------------
+ * 머신이 직접 reserve를 하는 case에 호출될 수 있다.
+ */
 	/* reserve any platform specific memblock areas */
 	if (mdesc->reserve)
 		mdesc->reserve();
 
+/* IAMROOT-12AB:
+ * -------------
+ * 1) DTB 영역 자체를 reserve 한다.
+ * 2) DTB의 memory reservation block에서 읽어들인 주소와 사이즈로 reserve 한다.
+ * 3) reserved-memory 노드에 등록된 값을 reserve 한다.
+ */
 	early_init_fdt_scan_reserved_mem();
 
 	/* reserve memory for DMA contiguous allocations */

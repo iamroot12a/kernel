@@ -109,9 +109,19 @@ static inline phys_addr_t memblock_cap_size(phys_addr_t base, phys_addr_t *size)
 static unsigned long __init_memblock memblock_addrs_overlap(phys_addr_t base1, phys_addr_t size1,
 				       phys_addr_t base2, phys_addr_t size2)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * 영역이 일부라도 겹쳐 있는 경우 true
+ */
 	return ((base1 < (base2 + size2)) && (base2 < (base1 + size1)));
 }
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 겹쳐있는 memblock의 인덱스를 리턴한다. 겹쳐있지 않은 경우 -1이 리턴된다.
+ */
 static long __init_memblock memblock_overlaps_region(struct memblock_type *type,
 					phys_addr_t base, phys_addr_t size)
 {
@@ -927,6 +937,11 @@ static int __init_memblock memblock_reserve_region(phys_addr_t base,
 
 int __init_memblock memblock_reserve(phys_addr_t base, phys_addr_t size)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * flags: 0=normal, 1=MEMBLOCK_HOTPLUG
+ */
 	return memblock_reserve_region(base, size, MAX_NUMNODES, 0);
 }
 
@@ -1649,6 +1664,11 @@ void __init memblock_enforce_memory_limit(phys_addr_t limit)
 			      (phys_addr_t)ULLONG_MAX);
 }
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * binary search에 의해 addr이 포함된 memblock의 index를 찾는다.
+ */
 static int __init_memblock memblock_search(struct memblock_type *type, phys_addr_t addr)
 {
 	unsigned int left = 0, right = type->cnt;
@@ -1706,11 +1726,21 @@ int __init_memblock memblock_search_pfn_nid(unsigned long pfn,
  */
 int __init_memblock memblock_is_region_memory(phys_addr_t base, phys_addr_t size)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * base가 포함된 memory memblock의 인덱스를 알아온다.
+ */
 	int idx = memblock_search(&memblock.memory, base);
 	phys_addr_t end = base + memblock_cap_size(base, &size);
 
 	if (idx == -1)
 		return 0;
+
+/* IAMROOT-12AB:
+ * -------------
+ * 영역 전체가 포함된 경우 true를 리턴한다.
+ */
 	return memblock.memory.regions[idx].base <= base &&
 		(memblock.memory.regions[idx].base +
 		 memblock.memory.regions[idx].size) >= end;
@@ -1729,6 +1759,11 @@ int __init_memblock memblock_is_region_memory(phys_addr_t base, phys_addr_t size
 int __init_memblock memblock_is_region_reserved(phys_addr_t base, phys_addr_t size)
 {
 	memblock_cap_size(base, &size);
+
+/* IAMROOT-12AB:
+ * -------------
+ * memblock이 지정된 영역과 일부라도 겹쳐있는 경우 true
+ */
 	return memblock_overlaps_region(&memblock.reserved, base, size) >= 0;
 }
 
