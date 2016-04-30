@@ -6,6 +6,11 @@
  * areas configured in kernel .config.
  */
 #ifdef CONFIG_CMA_AREAS
+
+/* IAMROOT-12AB:
+ * -------------
+ * CMA 영역 등록 최대 수
+ */
 #define MAX_CMA_AREAS	(1 + CONFIG_CMA_AREAS)
 
 #else

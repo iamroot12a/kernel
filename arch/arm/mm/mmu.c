@@ -61,6 +61,11 @@ pmdval_t user_pmd_table = _PAGE_USER_TABLE;
 #define CPOLICY_WRITEBACK	3
 #define CPOLICY_WRITEALLOC	4
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * rpi2: CPOLICY_WRITEALLOC
+ */
 static unsigned int cachepolicy __initdata = CPOLICY_WRITEBACK;
 static unsigned int ecc_mask __initdata = 0;
 pgprot_t pgprot_user;
@@ -126,6 +131,15 @@ static struct cachepolicy cache_policies[] __initdata = {
 };
 
 #ifdef CONFIG_CPU_CP15
+
+/* IAMROOT-12AB:
+ * -------------
+ * rpi2:
+ *	initial_pmd_value = PMD_TYPE_SECT | PMD_SECT_AP_WRITE | 
+ *			    PMD_SECT_AP_READ | PMD_SECT_AF | PMD_FLAGS_SMP 
+ *	(PMD_FLAGS_SMP = PMD_SECT_WBWA | PMD_SECT_S)
+ *	(PMD_SECT_WBWA =PMD_SECT_TEX(1) | PMD_SECT_CACHEABLE | PMD_SECT_BUFFERABLE)
+ */
 static unsigned long initial_pmd_value __initdata = 0;
 
 /*
@@ -272,6 +286,15 @@ __setup("noalign", noalign_setup);
 #define PROT_PTE_DEVICE		L_PTE_PRESENT|L_PTE_YOUNG|L_PTE_DIRTY|L_PTE_XN
 #define PROT_PTE_S2_DEVICE	PROT_PTE_DEVICE
 #define PROT_SECT_DEVICE	PMD_TYPE_SECT|PMD_SECT_AP_WRITE
+
+
+/* IAMROOT-12AB:
+ * -------------
+ * .prot_sect: 1차 테이블에 SECTION 매핑용 속성이 사용될 때 
+ * .prot_l1:   1차 테이블에 2차 테이블을 가리킬 때 사용 
+ * .prot_pte:  2차 테이블 속성 
+ * .prot_pte_s2: 하이퍼 바이저에서 .prot_pte 대신 사용하는 속성
+ */
 
 static struct mem_type mem_types[] = {
 	[MT_DEVICE] = {		  /* Strongly ordered / ARMv6 shared device */
@@ -438,6 +461,11 @@ static void __init build_mem_type_table(void)
 		ecc_mask = 0;
 	}
 
+/* IAMROOT-12AB:
+ * -------------
+ * SMP가 동작하는 경우 cachepolicy = CPOLICY_WRITEALLOC
+ *		       initial_pmd_value |= PMD_SECT_S
+ */
 	if (is_smp()) {
 		if (cachepolicy != CPOLICY_WRITEALLOC) {
 			pr_warn("Forcing write-allocate cache policy for SMP\n");
@@ -457,6 +485,11 @@ static void __init build_mem_type_table(void)
 	if (cpu_arch < CPU_ARCH_ARMv5)
 		for (i = 0; i < ARRAY_SIZE(mem_types); i++)
 			mem_types[i].prot_sect &= ~PMD_SECT_TEX(7);
+
+/* IAMROOT-12AB:
+ * -------------
+ * rpi2: CR_XP(extended page) 기능이 있다.
+ */
 	if ((cpu_arch < CPU_ARCH_ARMv6 || !(cr & CR_XP)) && !cpu_is_xsc3())
 		for (i = 0; i < ARRAY_SIZE(mem_types); i++)
 			mem_types[i].prot_sect &= ~PMD_SECT_S;
@@ -466,6 +499,11 @@ static void __init build_mem_type_table(void)
 	 * "update-able on write" bit on ARM610).  However, Xscale and
 	 * Xscale3 require this bit to be cleared.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 커널 설정에서 xscale이라고 설정하든 CPU를 판단하여 xscale이라 판단하든
+ */
 	if (cpu_is_xscale() || cpu_is_xsc3()) {
 		for (i = 0; i < ARRAY_SIZE(mem_types); i++) {
 			mem_types[i].prot_sect &= ~PMD_BIT4;
@@ -483,7 +521,18 @@ static void __init build_mem_type_table(void)
 	/*
 	 * Mark the device areas according to the CPU/architecture.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * rpi2: SCTLR: CPU_ARCH_ARMv7, CR_XP, CR_TRE
+ *       MMFR0: PXN enabled
+ */
 	if (cpu_is_xsc3() || (cpu_arch >= CPU_ARCH_ARMv6 && (cr & CR_XP))) {
+
+/* IAMROOT-12AB:
+ * -------------
+ * xsc3가 아닌 경우 XN(execute never) 기능을 추가
+ */
 		if (!cpu_is_xsc3()) {
 			/*
 			 * Mark device regions on ARMv6+ as execute-never
@@ -585,6 +634,11 @@ static void __init build_mem_type_table(void)
 		 * set, then we need to do the same here for the same
 		 * reasons given in early_cachepolicy().
 		 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * SHARE 속성 비트를 추가
+ */
 		if (initial_pmd_value & PMD_SECT_S) {
 			user_pgprot |= L_PTE_SHARED;
 			kern_pgprot |= L_PTE_SHARED;
@@ -640,6 +694,10 @@ static void __init build_mem_type_table(void)
 	user_pgprot |= PTE_EXT_PXN;
 #endif
 
+/* IAMROOT-12AB:
+ * -------------
+ * protection_map[] |= user_pgprot
+ */
 	for (i = 0; i < 16; i++) {
 		pteval_t v = pgprot_val(protection_map[i]);
 		protection_map[i] = __pgprot(v | user_pgprot);
@@ -1243,16 +1301,38 @@ static inline void prepare_page_table(void)
 	/*
 	 * Clear out all the mappings below the kernel image.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * rpi2: 0x0000_0000 ~ 0x7f00_000 까지 2M 단위로
+ *       pmd_clear(0x8000_4000),
+ *       pmd_clear(0x8000_4008), ...
+ */
 	for (addr = 0; addr < MODULES_VADDR; addr += PMD_SIZE)
 		pmd_clear(pmd_off_k(addr));
 
+/* IAMROOT-12AB:
+ * -------------
+ * XIP 커널의 경우 모듈영역(0x7f00_0000)부터 시작한다.
+ * 이 XIP 커널이 끝난 위치인 _etext를 addr에 대입하여 XIP 커널영역을
+ * 매핑하지 않도록 skip 한다.
+ */
 #ifdef CONFIG_XIP_KERNEL
 	/* The XIP kernel is mapped in the module area -- skip over it */
 	addr = ((unsigned long)_etext + PMD_SIZE - 1) & PMD_MASK;
 #endif
+
+/* IAMROOT-12AB:
+ * -------------
+ * 모듈영역(XIP 부분은 제외)을 pmd_clear 한다.
+ */
 	for ( ; addr < PAGE_OFFSET; addr += PMD_SIZE)
 		pmd_clear(pmd_off_k(addr));
 
+/* IAMROOT-12AB:
+ * -------------
+ * 첫 번째 memory memblock의 끝까지(단 lowmem/highmem 경계를 넘지 않는)
+ */
 	/*
 	 * Find the end of the first block of lowmem.
 	 */
@@ -1264,6 +1344,12 @@ static inline void prepare_page_table(void)
 	 * Clear out all the kernel space mappings, except for the first
 	 * memory bank, up to the vmalloc region.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 첫 memory block의 끝 부터(lowmem/highmem 까지로 제한) ~ VMALLOC_START를 
+ * pmd_clear 한다.
+ */
 	for (addr = __phys_to_virt(end);
 	     addr < VMALLOC_START; addr += PMD_SIZE)
 		pmd_clear(pmd_off_k(addr));
@@ -1602,6 +1688,11 @@ void __init paging_init(const struct machine_desc *mdesc)
 {
 	void *zero_page;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 커널이 기본 설정해논 메모리 타입별 L1/L2 속성에 대한 테이블 
+ * mem_types[] 배열에 아키텍처가 추가로 설정한다.
+ */
 	build_mem_type_table();
 	prepare_page_table();
 	map_lowmem();

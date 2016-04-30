@@ -35,6 +35,14 @@ static inline pte_t get_top_pte(unsigned long va)
 
 static inline pmd_t *pmd_off_k(unsigned long virt)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * virt에 대응하여 커널용 PMD(PGD) 테이블에서 엔트리 주소를 알아온다.
+ * rpi2 예) pmd_off_k(0x80000000) -> 0x80006000
+ *
+ * 32bit arm의 경우:
+ *      return pgd_offset_k(virt); 과 동일하다.
+ */
 	return pmd_offset(pud_offset(pgd_offset_k(virt), virt), virt);
 }
 

@@ -48,6 +48,11 @@ typedef struct { pteval_t pgprot; } pgprot_t;
 /*
  * .. while these make it easier on the compiler
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 32bit ARM에서는 여길 사용(위에 STRICT_MM_TYPECHECKS이 undefine 되어 있음)
+ */
 typedef pteval_t pte_t;
 typedef pmdval_t pmd_t;
 typedef pmdval_t pgd_t[2];

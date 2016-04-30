@@ -196,6 +196,13 @@ extern bool initcall_debug;
  * can point at the same handler without causing duplicate-symbol build errors.
  */
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 등록된 initcall 함수들은  kernel_init 스레드에서 do_initcalls() 함수에서 
+ * 호출된다.
+ */
+
 #define __define_initcall(fn, id) \
 	static initcall_t __initcall_##fn##id __used \
 	__attribute__((__section__(".initcall" #id ".init"))) = fn; \

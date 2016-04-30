@@ -52,6 +52,11 @@
  * and PAGE_OFFSET - it must be within 32MB of the kernel text.
  */
 #ifndef CONFIG_THUMB2_KERNEL
+
+/* IAMROOT-12AB:
+ * -------------
+ * rpi2: MODULES_VADDR=0x7f00_0000
+ */
 #define MODULES_VADDR		(PAGE_OFFSET - SZ_16M)
 #else
 /* smaller range for Thumb-2 symbols relocation (2^24)*/

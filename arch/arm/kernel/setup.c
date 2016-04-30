@@ -135,6 +135,11 @@ EXPORT_SYMBOL(outer_cache);
  * C code should use the cpu_architecture() function instead of accessing this
  * variable directly.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * rpi2: CPU_ARCH_ARMv7(9)
+ */
 int __cpu_architecture __read_mostly = CPU_ARCH_UNKNOWN;
 
 /* IAMROOT-12A:
@@ -283,6 +288,10 @@ static int __get_cpu_architecture(void)
 }
 #endif
 
+/* IAMROOT-12AB:
+ * -------------
+ * rpi2: CPU_ARCH_ARMv7(9)
+ */
 int __pure cpu_architecture(void)
 {
 	BUG_ON(__cpu_architecture == CPU_ARCH_UNKNOWN);

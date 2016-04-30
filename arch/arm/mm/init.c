@@ -362,6 +362,11 @@ void __init arm_memblock_init(const struct machine_desc *mdesc)
 	early_init_fdt_scan_reserved_mem();
 
 	/* reserve memory for DMA contiguous allocations */
+
+/* IAMROOT-12AB:
+ * -------------
+ * cma 영역을 reserve하고 cma_areas[] 및 dma_mmu_remap[]에도 정보를 추가한다.
+ */
 	dma_contiguous_reserve(arm_dma_limit);
 
 	arm_memblock_steal_permitted = false;

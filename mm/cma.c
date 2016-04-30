@@ -39,6 +39,13 @@ struct cma {
 	unsigned long	base_pfn;
 	unsigned long	count;
 	unsigned long	*bitmap;
+
+/* IAMROOT-12AB:
+ * -------------
+ * 비트 당 페이지 관리: 2^(order_per_bit)
+ * 예) order_per_bit=4, bitmap이 1024개 인경우
+ *	총 관리 사이즈=2^4 x 4K page x 1024 = 64M
+ */
 	unsigned int order_per_bit; /* Order of pages represented by one bit */
 	struct mutex	lock;
 };
@@ -146,6 +153,16 @@ static int __init cma_init_reserved_areas(void)
 {
 	int i;
 
+/* IAMROOT-12AB:
+ * -------------
+ * cma_areas[] 항목은 아래 함수에서 추가된다. 
+ *	setup_arch()
+ *	->arm_memblock_init()
+ *		->dma_contiguous_reserve()
+ *			->dma_contiguous_reserve_area()
+ *				->cma_declare_contiguous()
+ *					->cma_init_reserved_mem()에서 추가
+ */
 	for (i = 0; i < cma_area_count; i++) {
 		int ret = cma_activate_area(&cma_areas[i]);
 
@@ -195,6 +212,11 @@ int __init cma_init_reserved_mem(phys_addr_t base, phys_addr_t size,
 	 * Each reserved area must be initialised later, when more kernel
 	 * subsystems (like slab allocator) are available.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * cma_areas[]에 엔트리를 추가한다.
+ */
 	cma = &cma_areas[cma_area_count];
 	cma->base_pfn = PFN_DOWN(base);
 	cma->count = size >> PAGE_SHIFT;
@@ -243,6 +265,12 @@ int __init cma_declare_contiguous(phys_addr_t base,
 	 */
 	highmem_start = __pa_nodebug(high_memory);
 #else
+
+/* IAMROOT-12AB:
+ * -------------
+ * highmem 영역을 침범하지 않는 memory의 끝
+ * (메모리가 highmem 영역을 포함할 때에는 highmem의 start)
+ */
 	highmem_start = __pa(high_memory);
 #endif
 	pr_debug("%s(size %pa, base %pa, limit %pa alignment %pa)\n",
@@ -256,6 +284,10 @@ int __init cma_declare_contiguous(phys_addr_t base,
 	if (!size)
 		return -EINVAL;
 
+/* IAMROOT-12AB:
+ * -------------
+ * alignment는 2의 누승이어야 한다.
+ */
 	if (alignment && !is_power_of_2(alignment))
 		return -EINVAL;
 
@@ -265,15 +297,34 @@ int __init cma_declare_contiguous(phys_addr_t base,
 	 * migratetype page by page allocator's buddy algorithm. In the case,
 	 * you couldn't get a contiguous memory, which is not what we want.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 32bit arm에서는 HUGETLB를 지원하지 않으므로 MAX_ORDER-1=10이다.
+ * alignment는 4M부터 지정 가능하다.
+ */
 	alignment = max(alignment,
 		(phys_addr_t)PAGE_SIZE << max(MAX_ORDER - 1, pageblock_order));
 	base = ALIGN(base, alignment);
 	size = ALIGN(size, alignment);
+
+/* IAMROOT-12AB:
+ * -------------
+ * limit = round_down(limit, alignment)
+ *     예) alignment=4M -> 0x0040_0000
+ *                   -1 =  0x003F_FFFF
+ *                    ~ =  0xFFC0_0000
+ */
 	limit &= ~(alignment - 1);
 
 	if (!base)
 		fixed = false;
 
+/* IAMROOT-12AB:
+ * -------------
+ * order_per_bit=0으로 주어지는 경우 비트맵의 1비트가 1페이지(4K)를 관리한다.
+ * size는 2^order_per_bit로 align되어 있어야 한다.
+ */
 	/* size should be aligned with order_per_bit */
 	if (!IS_ALIGNED(size >> PAGE_SHIFT, 1 << order_per_bit))
 		return -EINVAL;
@@ -282,6 +333,11 @@ int __init cma_declare_contiguous(phys_addr_t base,
 	 * If allocating at a fixed base the request region must not cross the
 	 * low/high memory boundary.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * fixed 요청 범위가 lowmem/highmem 경계에 걸쳐 요구한 경우 에러
+ */
 	if (fixed && base < highmem_start && base + size > highmem_start) {
 		ret = -EINVAL;
 		pr_err("Region at %pa defined on low/high memory boundary (%pa)\n",
@@ -294,11 +350,22 @@ int __init cma_declare_contiguous(phys_addr_t base,
 	 * value will be the memblock end. Set it explicitly to simplify further
 	 * checks.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 제한 범위가 지정되지 않았거나 메모리를 초과한 주소를 지정한 경우
+ * 메모리의 끝으로 지정한다.
+ */
 	if (limit == 0 || limit > memblock_end)
 		limit = memblock_end;
 
 	/* Reserve memory */
 	if (fixed) {
+
+/* IAMROOT-12AB:
+ * -------------
+ * 요청 영역이 사전에 등록한 영역과 겹치지 않은 경우 reserve 한다.
+ */
 		if (memblock_is_region_reserved(base, size) ||
 		    memblock_reserve(base, size) < 0) {
 			ret = -EBUSY;
@@ -313,12 +380,22 @@ int __init cma_declare_contiguous(phys_addr_t base,
 		 * try allocating from high memory first and fall back to low
 		 * memory in case of failure.
 		 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 먼저 highmem 영역에 할당을 시도한다.
+ */
 		if (base < highmem_start && limit > highmem_start) {
 			addr = memblock_alloc_range(size, alignment,
 						    highmem_start, limit);
 			limit = highmem_start;
 		}
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 실패한 경우 lowmem 영역에 할당을 시도한다.
+ */
 		if (!addr) {
 			addr = memblock_alloc_range(size, alignment, base,
 						    limit);
@@ -336,6 +413,10 @@ int __init cma_declare_contiguous(phys_addr_t base,
 		base = addr;
 	}
 
+/* IAMROOT-12AB:
+ * -------------
+ * cma_areas[] 배열에 엔트리를 추가한다.
+ */
 	ret = cma_init_reserved_mem(base, size, order_per_bit, res_cma);
 	if (ret)
 		goto err;

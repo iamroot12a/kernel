@@ -85,6 +85,12 @@
 #define PMD_SHIFT		21
 #define PGDIR_SHIFT		21
 
+/* IAMROOT-12AB:
+ * -------------
+ * rpi2: PMD_SIZE=2M (2^21) 
+ *       - 리눅스 관리단위는 2M (1M+1M)
+ *       - ARM H/W는 PMD가 1M 단위로 관리
+ */
 #define PMD_SIZE		(1UL << PMD_SHIFT)
 #define PMD_MASK		(~(PMD_SIZE-1))
 #define PGDIR_SIZE		(1UL << PGDIR_SHIFT)
@@ -157,6 +163,10 @@
 #define pud_clear(pudp)		do { } while (0)
 #define set_pud(pud,pudp)	do { } while (0)
 
+/* IAMROOT-12AB:
+ * -------------
+ * 32bit ARM의 경우 PGD=PUD=PMD는 동일하게 사용된다.
+ */
 static inline pmd_t *pmd_offset(pud_t *pud, unsigned long addr)
 {
 	return (pmd_t *)pud;
@@ -172,6 +182,10 @@ static inline pmd_t *pmd_offset(pud_t *pud, unsigned long addr)
 		flush_pmd_entry(pmdpd);	\
 	} while (0)
 
+/* IAMROOT-12AB:
+ * -------------
+ * 4바이트 2개의 엔트리로 되어 있는 pmd 값을 0으로 초기화
+ */
 #define pmd_clear(pmdp)			\
 	do {				\
 		pmdp[0] = __pmd(0);	\

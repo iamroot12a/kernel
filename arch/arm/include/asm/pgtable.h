@@ -174,11 +174,29 @@ extern struct page *empty_zero_page;
 extern pgd_t swapper_pg_dir[PTRS_PER_PGD];
 
 /* to find an entry in a page-table-directory */
+
+/* IAMROOT-12AB:
+ * -------------
+ * pgd_index()는 0~2047
+ */
 #define pgd_index(addr)		((addr) >> PGDIR_SHIFT)
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * pgd: 아래와 같이 pgd_t 타입을 사용하여 8바이트이다.
+ *      typedef struct { pmdval_t pgd[2]; } pgd_t;가 포인터
+ */
 #define pgd_offset(mm, addr)	((mm)->pgd + pgd_index(addr))
 
 /* to find an entry in a kernel page-table-directory */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 가상 주소 addr에 대응하는 커널 PGD에 주소를 알아온다.
+ * 예) rpi2: pgd_offset_k(0x8000_0000)
+ *     -> 0x8000_6000
+ */
 #define pgd_offset_k(addr)	pgd_offset(&init_mm, addr)
 
 #define pmd_none(pmd)		(!pmd_val(pmd))

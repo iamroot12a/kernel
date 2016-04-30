@@ -229,6 +229,14 @@ extern void __cpu_flush_kern_tlb_range(unsigned long, unsigned long);
 
 extern struct cpu_tlb_fns cpu_tlb;
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * setup_arch()->setup_processor()에서 알아온다.
+ * rpi2 예) __cpu_tlb_flags
+ *  (TLB_WB | TLB_BARRIER | TLB_V7_UIS_FULL | TLB_V7_UIS_PAGE | \
+ *   TLB_V7_UIS_ASID | TLB_V7_UIS_BP)
+ */
 #define __cpu_tlb_flags			cpu_tlb.tlb_flags
 
 /*
@@ -286,6 +294,22 @@ extern struct cpu_tlb_fns cpu_tlb;
  * implemented the "%?" method, but this has been discontinued due to too
  * many people getting it wrong.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 해당 아키텍처가 아닌 경우 **_possible_flags=0으로 되어 있고,
+ * **_always_flags=0xffff_ffff로 되어 있다. 따라서 ARMv7의 rpi2의 경우
+ * v7wbi_possible_flags와 v7wbi_always_flags를 참조하면 된다.
+ *
+ *  rpi2 예)
+ *  possible_tlb_flags
+ *      TLB_WB | TLB_BARRIER | TLB_V7_UIS_FULL | TLB_V7_UIS_PAGE |
+ *      TLB_V7_UIS_ASID | TLB_V7_UIS_BP | TLB_DCLEAN | TLB_V6_U_FULL | 
+ *      TLB_V6_U_PAGE | TLB_V6_U_ASID | TLB_V6_BP
+ *
+ *  always_tlb_flags
+ *             TLB_WB | TLB_BARRIER
+ */
 #define possible_tlb_flags	(v4_possible_flags | \
 				 v4wbi_possible_flags | \
 				 fr_possible_flags | \
@@ -304,6 +328,19 @@ extern struct cpu_tlb_fns cpu_tlb;
 
 #define tlb_flag(f)	((always_tlb_flags & (f)) || (__tlb_flag & possible_tlb_flags & (f)))
 
+/* IAMROOT-12AB:
+ * -------------
+ * rpi2 예) 
+ * always_tlb_flags
+ *      TLB_WB | TLB_BARRIER
+ * possible_tlb_flags
+ *      TLB_WB | TLB_BARRIER | TLB_V7_UIS_FULL | TLB_V7_UIS_PAGE |
+ *      TLB_V7_UIS_ASID | TLB_V7_UIS_BP | TLB_DCLEAN | TLB_V6_U_FULL | 
+ *      TLB_V6_U_PAGE | TLB_V6_U_ASID | TLB_V6_BP
+ * __cpu_tlb_flags
+ *      TLB_WB | TLB_BARRIER | TLB_V7_UIS_FULL | TLB_V7_UIS_PAGE | 
+ *      TLB_V7_UIS_ASID | TLB_V7_UIS_BP
+ */
 #define __tlb_op(f, insnarg, arg)					\
 	do {								\
 		if (always_tlb_flags & (f))				\
@@ -316,6 +353,15 @@ extern struct cpu_tlb_fns cpu_tlb;
 			    : "cc");					\
 	} while (0)
 
+/* IAMROOT-12AB:
+ * -------------
+ * tlb_op(TLB_DCLEAN, "c7, c10, 1  @ flush_pmd", pmd);
+ *
+ * 다음 플래그들과 비교하여 조건이 성립되면 실행한다.
+ *   1) always_tlb_flags와 비교 
+ *   2) possible_tlb_flags와 비교
+ *   3) __cpu_tlb_flags와 비교
+ */
 #define tlb_op(f, regs, arg)	__tlb_op(f, "p15, 0, %0, " regs, arg)
 #define tlb_l2_op(f, regs, arg)	__tlb_op(f, "p15, 1, %0, " regs, arg)
 
@@ -584,6 +630,12 @@ static inline void flush_pmd_entry(void *pmd)
 		dsb(ishst);
 }
 
+/* IAMROOT-12AB:
+ * -------------
+ * rpi2 예) __cpu_tlb_flags
+ *           (TLB_WB | TLB_BARRIER | TLB_V7_UIS_FULL | TLB_V7_UIS_PAGE | \
+ *            TLB_V7_UIS_ASID | TLB_V7_UIS_BP)
+ */
 static inline void clean_pmd_entry(void *pmd)
 {
 	const unsigned int __tlb_flag = __cpu_tlb_flags;

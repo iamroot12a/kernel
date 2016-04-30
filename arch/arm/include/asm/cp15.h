@@ -51,6 +51,11 @@
 
 extern unsigned long cr_alignment;	/* defined in entry-armv.S */
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * read SCTLR
+ */
 static inline unsigned long get_cr(void)
 {
 	unsigned long val;

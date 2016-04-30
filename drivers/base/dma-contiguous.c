@@ -46,6 +46,11 @@ struct cma *dma_contiguous_default_area;
  * Users, who want to set the size of global CMA area for their system
  * should use cma= kernel parameter.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * CMA 영역에 대한 시작 주소, 사이즈, 제한
+ */
 static const phys_addr_t size_bytes = CMA_SIZE_MBYTES * SZ_1M;
 static phys_addr_t size_cmdline = -1;
 static phys_addr_t base_cmdline;
@@ -71,8 +76,14 @@ static int __init early_cma(char *p)
 
 /* IAMROOT-12AB:
  * -------------
- * "aaa=16K"
- *   -> 16384
+ *  early 커널 파라메터로 cma 사이즈를 지정할 수 있다.
+ * "cma=4M"
+ * "cma=4M@1G
+ *   -> 4M를 0x40000000 ~ 0xFFFF_FFFF 사이에서 할당을 하도록 한다.
+ *           (range의 시작 범위)
+ * "cma=4M@01G-2G
+ *   -> 4M를 0x40000000 ~ 0x8000_0000 사이에서 할당을 하도록 한다.
+ *           (range의 끝 범위)
  */
 	size_cmdline = memparse(p, &p);
 	if (*p != '@')
@@ -142,6 +153,7 @@ void __init dma_contiguous_reserve(phys_addr_t limit)
  * -------------
  * size_cmdline이 -1인 경우는 초기값을 사용하는 경우 
  * early 커널 파라메터 "cma="를 사용하는 경우는 바뀐다.
+ *	참고: early_cma() 
  */
 	if (size_cmdline != -1) {
 		selected_size = size_cmdline;
@@ -153,6 +165,11 @@ void __init dma_contiguous_reserve(phys_addr_t limit)
 #ifdef CONFIG_CMA_SIZE_SEL_MBYTES
 		selected_size = size_bytes;
 #elif defined(CONFIG_CMA_SIZE_SEL_PERCENTAGE)
+
+/* IAMROOT-12AB:
+ * -------------
+ * 전체 메모리에 대해 CONFIG_CMA_SIZE_PERCENTAGE로 입력된 퍼센트로 결정
+ */
 		selected_size = cma_early_percent_memory();
 #elif defined(CONFIG_CMA_SIZE_SEL_MIN)
 		selected_size = min(size_bytes, cma_early_percent_memory());
@@ -165,6 +182,11 @@ void __init dma_contiguous_reserve(phys_addr_t limit)
 		pr_debug("%s: reserving %ld MiB for global area\n", __func__,
 			 (unsigned long)selected_size / SZ_1M);
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * cma 영역을 할당하고 cma_areas[] 및 dma_mmu_remap[]에 엔트리를 추가한다.
+ */
 		dma_contiguous_reserve_area(selected_size, selected_base,
 					    selected_limit,
 					    &dma_contiguous_default_area,
@@ -195,11 +217,26 @@ int __init dma_contiguous_reserve_area(phys_addr_t size, phys_addr_t base,
 {
 	int ret;
 
+/* IAMROOT-12AB:
+ * -------------
+ * cma 영역을 memblock에 reserve 하고 cma_areas[]에 엔트리를 추가한다.
+ * 추가한 엔트리들은 나중에 이 함수에서 호출되어 초기화한다.
+ *	core_initcall(cma_init_reserved_areas);
+ *	- 등록되는 모든 initcall 함수들은 kernel_init 스레드의 
+ *	  do_initcalls() 함수에서 호출된다.
+ */
 	ret = cma_declare_contiguous(base, size, limit, 0, 0, fixed, res_cma);
 	if (ret)
 		return ret;
 
 	/* Architecture specific contiguous memory fixup. */
+
+/* IAMROOT-12AB:
+ * -------------
+ * dma_mmu_remap[]에 엔트리를 추가한다.
+ * 추가한 엔트리들은 나중에 다음 함수에서 io 리매핑한다.
+ *	setup_arch()->paging_init()->dma_contiguous_remap()
+ */
 	dma_contiguous_early_fixup(cma_get_base(*res_cma),
 				cma_get_size(*res_cma));
 
