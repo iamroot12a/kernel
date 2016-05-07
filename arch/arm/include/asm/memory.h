@@ -39,6 +39,13 @@
  * TASK_SIZE - the maximum size of a user space task.
  * TASK_UNMAPPED_BASE - the lower boundary of the mmap VM area
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 모듈도 커널 코드 영역이므로 
+ *      user space는 커널 space + 모듈(16M)을 제외한 영역이다.
+ * rpi2: 2G-16M
+ */
 #define TASK_SIZE		(UL(CONFIG_PAGE_OFFSET) - UL(SZ_16M))
 #define TASK_UNMAPPED_BASE	ALIGN(TASK_SIZE / 3, SZ_16M)
 

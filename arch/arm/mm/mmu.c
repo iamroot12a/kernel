@@ -761,6 +761,11 @@ EXPORT_SYMBOL(phys_mem_access_prot);
 
 static void __init *early_alloc_aligned(unsigned long sz, unsigned long align)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * 할당 받은 pte 테이블은 0으로 clear한다.
+ */
 	void *ptr = __va(memblock_alloc(sz, align));
 	memset(ptr, 0, sz);
 	return ptr;
@@ -773,6 +778,10 @@ static void __init *early_alloc(unsigned long sz)
 
 static pte_t * __init early_pte_alloc(pmd_t *pmd, unsigned long addr, unsigned long prot)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * pmd 엔트리 값이 비어있는 경우 할당받고 연결(pmd pair 엔트리를 기록)한다.
+ */
 	if (pmd_none(*pmd)) {
 		pte_t *pte = early_alloc(PTE_HWTABLE_OFF + PTE_HWTABLE_SIZE);
 		__pmd_populate(pmd, __pa(pte), prot);
@@ -785,8 +794,17 @@ static void __init alloc_init_pte(pmd_t *pmd, unsigned long addr,
 				  unsigned long end, unsigned long pfn,
 				  const struct mem_type *type)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * pmd 엔트리가 없는 경우 pte 테이블을 할당 받아 연결한다.
+ */
 	pte_t *pte = early_pte_alloc(pmd, addr, type->prot_l1);
 	do {
+/* IAMROOT-12AB:
+ * -------------
+ * pmd부터 pte 엔트리들을 기록한다.
+ * ARMv7: cpu_v7_set_pte_ext - arch/arm/mm/proc-v7-2level.S
+ */
 		set_pte_ext(pte, pfn_pte(pfn, __pgprot(type->prot_pte)), 0);
 		pfn++;
 	} while (pte++, addr += PAGE_SIZE, addr != end);
@@ -811,11 +829,32 @@ static void __init __map_init_section(pmd_t *pmd, unsigned long addr,
 	if (addr & SECTION_SIZE)
 		pmd++;
 #endif
+
+/* IAMROOT-12AB:
+ * -------------
+ *                    pmd          addr         end          phys
+ * __map_init_section(0x8000_6000, 0x8010_0000, 0x8020_0000, 0x1000_0000, 
+ * --> pmd=0x8000_6004 (addr가 홀수 섹션이라서 +4 증가됨) 
+ *
+ *			    pmd          addr         next         phys
+ * __map_init_section(0x8000_6008, 0x8020_0000, 0x8040_0000, 0x1010_0000, 
+ * --> pmd=0x8000_6008 
+ * --> pmd=0x8000_600c 
+ *     
+ *			    pmd          addr         next         phys
+ * __map_init_section(0x8000_6010, 0x8040_0000, 0x8050_0000, 0x1030_0000, 
+ * --> pmd=0x8000_6010
+ */
 	do {
 		*pmd = __pmd(phys | type->prot_sect);
 		phys += SECTION_SIZE;
 	} while (pmd++, addr += SECTION_SIZE, addr != end);
 
+/* IAMROOT-12AB:
+ * -------------
+ * d-cache에서 엔트리 하나를 flush하는 경우 캐시 라인 만큼 삭제하므로
+ * 짝이 되는 다음 엔트리도 flush된다.
+ */
 	flush_pmd_entry(p);
 }
 
@@ -826,6 +865,31 @@ static void __init alloc_init_pmd(pud_t *pud, unsigned long addr,
 	pmd_t *pmd = pmd_offset(pud, addr);
 	unsigned long next;
 
+/* IAMROOT-12AB:
+ * -------------
+ *		  pgd          addr         next(end)    phys 
+ * alloc_init_pud(0x8000_6000, 0x8010_0000, 0x8020_0000, 0x1000_0000, 
+ *                    pud          addr         next         phys
+ * --> alloc_init_pmd(0x8000_6000, 0x8010_0000, 0x8020_0000, 0x1000_0000,
+ *			    pmd          addr         next         phys
+ *   --> __map_init_section(0x8000_6000, 0x8010_0000, 0x8020_0000, 0x1000_0000, 
+ * 
+ *
+ *		  pgd          addr         next(end)    phys 
+ * alloc_init_pud(0x8000_6008, 0x8020_0000, 0x8040_0000, 0x1010_0000, 
+ *                    pud          addr         next         phys
+ * --> alloc_init_pmd(0x8000_6008, 0x8020_0000, 0x8040_0000, 0x1010,0000,
+ *			    pmd          addr         next         phys
+ *   --> __map_init_section(0x8000_6008, 0x8020_0000, 0x8040_0000, 0x1010_0000, 
+ *     
+ *
+ *		  pgd          addr         next(end)    phys 
+ * alloc_init_pud(0x8000_6010, 0x8040_0000, 0x8050_0000, 0x1030_0000,
+ *                    pud          addr         next         phys
+ * --> alloc_init_pmd(0x8000_6010, 0x8040_0000, 0x8050_0000, 0x1030_0000,
+ *			    pmd          addr         next         phys
+ *   --> __map_init_section(0x8000_6010, 0x8040_0000, 0x8050_0000, 0x1030_0000, 
+ */
 	do {
 		/*
 		 * With LPAE, we must loop over to map
@@ -837,6 +901,12 @@ static void __init alloc_init_pmd(pud_t *pud, unsigned long addr,
 		 * Try a section mapping - addr, next and phys must all be
 		 * aligned to a section boundary.
 		 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 메모리 타입이 섹션을 지원하고 요청 메모리가 섹션 align이 되어 있는 경우는
+ * 섹션으로 매핑하고 그렇지 않은 경우는 PTE 매핑을 사용한다.
+ */
 		if (type->prot_sect &&
 				((addr | next | phys) & ~SECTION_MASK) == 0) {
 			__map_init_section(pmd, addr, next, phys, type);
@@ -857,6 +927,25 @@ static void __init alloc_init_pud(pgd_t *pgd, unsigned long addr,
 	pud_t *pud = pud_offset(pgd, addr);
 	unsigned long next;
 
+/* IAMROOT-12AB:
+ * -------------
+ *		  pgd          addr         next(end)    phys 
+ * alloc_init_pud(0x8000_6000, 0x8010_0000, 0x8020_0000, 0x1000_0000, 
+ *                    pud          addr         next         phys
+ * --> alloc_init_pmd(0x8000_6000, 0x8010_0000, 0x8020_0000, 0x1000_0000,
+ *
+ *
+ *		  pgd          addr         next(end)    phys 
+ * alloc_init_pud(0x8000_6008, 0x8020_0000, 0x8040_0000, 0x1010_0000, 
+ *                    pud          addr         next         phys
+ * --> alloc_init_pmd(0x8000_6008, 0x8020_0000, 0x8040_0000, 0x1010,0000,
+ *
+ *
+ *		  pgd          addr         next(end)    phys 
+ * alloc_init_pud(0x8000_6010, 0x8040_0000, 0x8050_0000, 0x1030_0000,
+ *                    pud          addr         next         phys
+ * --> alloc_init_pmd(0x8000_6010, 0x8040_0000, 0x8050_0000, 0x1030_0000,
+ */
 	do {
 		next = pud_addr_end(addr, end);
 		alloc_init_pmd(pud, addr, next, phys, type);
@@ -937,12 +1026,21 @@ static void __init create_mapping(struct map_desc *md)
 	const struct mem_type *type;
 	pgd_t *pgd;
 
+/* IAMROOT-12AB:
+ * -------------
+ * user space에 대한 매핑 요청인 경우 에러
+ *	(low vector 0x0000_0000 제외)
+ */
 	if (md->virtual != vectors_base() && md->virtual < TASK_SIZE) {
 		pr_warn("BUG: not creating mapping for 0x%08llx at 0x%08lx in user region\n",
 			(long long)__pfn_to_phys((u64)md->pfn), md->virtual);
 		return;
 	}
 
+/* IAMROOT-12AB:
+ * -------------
+ * 메모리 타입이 DEVICE와 ROM인 경우 커널 영역중 VMALLOC 영역을 벗어난 경우 에러 출력
+ */
 	if ((md->type == MT_DEVICE || md->type == MT_ROM) &&
 	    md->virtual >= PAGE_OFFSET &&
 	    (md->virtual < VMALLOC_START || md->virtual >= VMALLOC_END)) {
@@ -952,6 +1050,10 @@ static void __init create_mapping(struct map_desc *md)
 
 	type = &mem_types[md->type];
 
+/* IAMROOT-12AB:
+ * -------------
+ * Xscale(ARMv6)의 경우 LPAE가 아니면서 36bit 매핑 사용하는 경우 있다.
+ */
 #ifndef CONFIG_ARM_LPAE
 	/*
 	 * Catch 36-bit addresses
@@ -966,14 +1068,39 @@ static void __init create_mapping(struct map_desc *md)
 	phys = __pfn_to_phys(md->pfn);
 	length = PAGE_ALIGN(md->length + (md->virtual & ~PAGE_MASK));
 
+/* IAMROOT-12AB:
+ * -------------
+ * 메모리 타입이 섹션 매핑만 지원되는 타입이 있다.
+ * 그런 경우 섹션 align 되어 있지 않은 섹션 매핑 요청은 에러
+ */
 	if (type->prot_l1 == 0 && ((addr | phys | length) & ~SECTION_MASK)) {
 		pr_warn("BUG: map for 0x%08llx at 0x%08lx can not be mapped using pages, ignoring.\n",
 			(long long)__pfn_to_phys(md->pfn), addr);
 		return;
 	}
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * pgd: pgd 엔트리 주소 
+ *	rpi2: 0x8000_4000 ~ 0x8000_8000
+ */
 	pgd = pgd_offset_k(addr);
 	end = addr + length;
+
+/* IAMROOT-12AB:
+ * -------------
+ * 가상주소: 0x8010_0000(addr) ~ 0x8050_0000(end), 물리주소: 0x1000_0000(phys)
+ *           pgd=0x8000_6000
+ *	     매핑요청 시 pgdir이 어떻게 변화?
+ *	     alloc_init_pud()는 2M 단위로 align된 크기별로 호출된다.
+ *
+ *	     루프: 
+ *			       pgd          addr         next         phys 
+ *		alloc_init_pud(0x8000_6000, 0x8010_0000, 0x8020_0000, 0x1000_0000, 
+ *		alloc_init_pud(0x8000_6008, 0x8020_0000, 0x8040_0000, 0x1010_0000, 
+ *		alloc_init_pud(0x8000_6010, 0x8040_0000, 0x8050_0000, 0x1030_0000,
+ */
 	do {
 		unsigned long next = pgd_addr_end(addr, end);
 
@@ -1304,7 +1431,7 @@ static inline void prepare_page_table(void)
 
 /* IAMROOT-12AB:
  * -------------
- * rpi2: 0x0000_0000 ~ 0x7f00_000 까지 2M 단위로
+ * rpi2: 0x0000_0000 ~ 0x7f00_0000 까지 2M 단위로
  *       pmd_clear(0x8000_4000),
  *       pmd_clear(0x8000_4008), ...
  */
@@ -1501,6 +1628,11 @@ static void __init kmap_init(void)
 static void __init map_lowmem(void)
 {
 	struct memblock_region *reg;
+
+/* IAMROOT-12AB:
+ * -------------
+ * 커널 코드와 데이터는 섹션 매핑을 사용한다.
+ */
 	phys_addr_t kernel_x_start = round_down(__pa(_stext), SECTION_SIZE);
 	phys_addr_t kernel_x_end = round_up(__pa(__init_end), SECTION_SIZE);
 
@@ -1510,11 +1642,27 @@ static void __init map_lowmem(void)
 		phys_addr_t end = start + reg->size;
 		struct map_desc map;
 
+/* IAMROOT-12AB:
+ * -------------
+ * memblock의 끝이 lowmem을 초과하는 경우 제한
+ */
 		if (end > arm_lowmem_limit)
 			end = arm_lowmem_limit;
+
+/* IAMROOT-12AB:
+ * -------------
+ * lowmem을 초과하는 memblock들은 더 이상 루프를 수행하지 않음.
+ */
 		if (start >= end)
 			break;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 1) memblock이 커널보다 아래에 위치한 경우 RWX로 매핑
+ *    왜 이 영역이 RWX로 매핑되는가???
+ *    추정: - low vector 및 copy_from_user()등 API 코드가 실행되는 영역 
+ *          - 특수 목적의 실행이 되야 하는 디버그 코드
+ */
 		if (end < kernel_x_start) {
 			map.pfn = __phys_to_pfn(start);
 			map.virtual = __phys_to_virt(start);
@@ -1522,6 +1670,11 @@ static void __init map_lowmem(void)
 			map.type = MT_MEMORY_RWX;
 
 			create_mapping(&map);
+
+/* IAMROOT-12AB:
+ * -------------
+ * 2) memblock이 커널보다 위에 위치한 경우 평범하게 RW로 매핑
+ */
 		} else if (start >= kernel_x_end) {
 			map.pfn = __phys_to_pfn(start);
 			map.virtual = __phys_to_virt(start);
@@ -1530,6 +1683,14 @@ static void __init map_lowmem(void)
 
 			create_mapping(&map);
 		} else {
+
+/* IAMROOT-12AB:
+ * -------------
+ * 가장 일반적인 커널이 포함된 memblock으로 커널 부분만 RWX로 매핑하고
+ * 나머지 영역은 RW로 매핑한다.
+ * rpi2: 가장 아래 커널이 위치한 공간이 RWX로 매핑되고
+ *       나머지 공간은 RW로 매핑된다.
+ */
 			/* This better cover the entire kernel */
 			if (start < kernel_x_start) {
 				map.pfn = __phys_to_pfn(start);

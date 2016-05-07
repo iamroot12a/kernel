@@ -297,6 +297,12 @@ phys_addr_t __init arm_memblock_steal(phys_addr_t size, phys_addr_t align)
 void __init arm_memblock_init(const struct machine_desc *mdesc)
 {
 	/* Register the kernel text, kernel data and initrd with memblock. */
+
+/* IAMROOT-12AB:
+ * -------------
+ * XIP 커널인 경우는 ROM에 커널 코드가 들어있어서 코드 부분은 제외하고 
+ * 데이터 부분만 reserve한다.
+ */
 #ifdef CONFIG_XIP_KERNEL
 	memblock_reserve(__pa(_sdata), _end - _sdata);
 #else

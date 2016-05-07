@@ -220,8 +220,11 @@ int __init dma_contiguous_reserve_area(phys_addr_t size, phys_addr_t base,
 /* IAMROOT-12AB:
  * -------------
  * cma 영역을 memblock에 reserve 하고 cma_areas[]에 엔트리를 추가한다.
- * 추가한 엔트리들은 나중에 이 함수에서 호출되어 초기화한다.
+ * 추가한 엔트리들은 나중에 CMA 드라이버가 로드될 때 호출되어 초기화한다.
  *	core_initcall(cma_init_reserved_areas);
+ *	  1) CONFIG_MODULE이 설정된 경우 
+ *	     드라이버가 로드될 때 호출된다.
+ *	  2) CONFIG_MODULE이 설정되지 않은 경우
  *	- 등록되는 모든 initcall 함수들은 kernel_init 스레드의 
  *	  do_initcalls() 함수에서 호출된다.
  */

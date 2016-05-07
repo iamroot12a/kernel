@@ -131,6 +131,14 @@ static inline void pte_free(struct mm_struct *mm, pgtable_t pte)
 static inline void __pmd_populate(pmd_t *pmdp, phys_addr_t pte,
 				  pmdval_t prot)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * PMD 테이블의 엔트리를 기록한다. (32bit ARM: 2개 한 쌍)
+ *
+ * ARM H/W PTE 테이블은 PTE 페이지에서 
+ *    1) +2048 만큼 띄운다.
+ *    2) +3072 만큼 띄운다.
+ */
 	pmdval_t pmdval = (pte + PTE_HWTABLE_OFF) | prot;
 	pmdp[0] = __pmd(pmdval);
 #ifndef CONFIG_ARM_LPAE

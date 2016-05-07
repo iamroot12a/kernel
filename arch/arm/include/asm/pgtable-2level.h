@@ -196,6 +196,11 @@ static inline pmd_t *pmd_offset(pud_t *pud, unsigned long addr)
 /* we don't need complex calculations here as the pmd is folded into the pgd */
 #define pmd_addr_end(addr,end) (end)
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * ARMv7: cpu_v7_set_pte_ext - arch/arm/mm/proc-v7-2level.S
+ */
 #define set_pte_ext(ptep,pte,ext) cpu_set_pte_ext(ptep,pte,ext)
 #define pte_special(pte)	(0)
 static inline pte_t pte_mkspecial(pte_t pte) { return pte; }

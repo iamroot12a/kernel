@@ -42,6 +42,12 @@
 #ifndef __ASSEMBLY__
 
 #if __LINUX_ARM_ARCH__ >= 4
+
+/* IAMROOT-12AB:
+ * -------------
+ * SCTLR.V가 설정된 경우 high vector(0xffff_0000) 사용
+ *           아닌 경우 low vector(0x0000_0000) 사용
+ */
 #define vectors_high()	(get_cr() & CR_V)
 #else
 #define vectors_high()	(0)

@@ -623,9 +623,18 @@ static inline void flush_pmd_entry(void *pmd)
 {
 	const unsigned int __tlb_flag = __cpu_tlb_flags;
 
+/* IAMROOT-12AB:
+ * -------------
+ * clean d-cache
+ */
 	tlb_op(TLB_DCLEAN, "c7, c10, 1	@ flush_pmd", pmd);
 	tlb_l2_op(TLB_L2CLEAN_FR, "c15, c9, 1  @ L2 flush_pmd", pmd);
 
+/* IAMROOT-12AB:
+ * -------------
+ * rpi2: SMP에서는 Write-Back이 지원되고 d-cache clean이 완료될 때 까지
+ * 기다린다.
+ */
 	if (tlb_flag(TLB_WB))
 		dsb(ishst);
 }
@@ -640,6 +649,13 @@ static inline void clean_pmd_entry(void *pmd)
 {
 	const unsigned int __tlb_flag = __cpu_tlb_flags;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 이 루틴에서 TLB 엔트리를 clear 하지 않고 D-Cache를 clear 하는 이유?
+ *  -> 실제 매핑할 가상 주소를 cpu가 사용하여 TLB가 로드된 적이 없다.
+ *  그냥 해당 주소에 대한 페이지 테이블 조작만을 하였기 때문에 
+ *  D-Cache만을 flush한다. 
+ */
 	tlb_op(TLB_DCLEAN, "c7, c10, 1	@ flush_pmd", pmd);
 	tlb_l2_op(TLB_L2CLEAN_FR, "c15, c9, 1  @ L2 flush_pmd", pmd);
 }

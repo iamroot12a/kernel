@@ -280,11 +280,21 @@ static inline pgprot_t pgprot_modify(pgprot_t oldprot, pgprot_t newprot)
  * vma end wraps to 0, rounded up __boundary may wrap to 0 throughout.
  */
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * addr에 PGDIR_SIZE(32bit arm: 2M)를 더한 후 round down한다. 
+ * 단 end를 초과하는 경우 end가 반환된다.
+ */
 #define pgd_addr_end(addr, end)						\
 ({	unsigned long __boundary = ((addr) + PGDIR_SIZE) & PGDIR_MASK;	\
 	(__boundary - 1 < (end) - 1)? __boundary: (end);		\
 })
 
+/* IAMROOT-12AB:
+ * -------------
+ * 32bit arm에서는 위 함수와 동일하게 동작한다.
+ */
 #ifndef pud_addr_end
 #define pud_addr_end(addr, end)						\
 ({	unsigned long __boundary = ((addr) + PUD_SIZE) & PUD_MASK;	\
@@ -292,6 +302,10 @@ static inline pgprot_t pgprot_modify(pgprot_t oldprot, pgprot_t newprot)
 })
 #endif
 
+/* IAMROOT-12AB:
+ * -------------
+ * 32bit arm에서는 위 함수와 동일하게 동작한다.
+ */
 #ifndef pmd_addr_end
 #define pmd_addr_end(addr, end)						\
 ({	unsigned long __boundary = ((addr) + PMD_SIZE) & PMD_MASK;	\
