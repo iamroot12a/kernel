@@ -123,6 +123,28 @@
  * The PTE table pointer refers to the hardware entries; the "Linux"
  * entries are stored 1024 bytes below.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * linux PTE 속성 (L_라는 prefix를 사용한다.)
+ *
+ * L_PTE_VALID & L_PTE_PRESENT
+ *      -L_PTE_NONE과 반대의 속성 
+ * L_PTE_YOUNG
+ *      -페이지에 접근이 된 경우 
+ * L_PTE_DIRTY
+ *      -페이지가 변경된 경우
+ * L_PTE_RDONLY
+ *      읽기 전용(read only). 1=read, 0=read/write
+ * L_PTE_USER
+ *      USER=1 user process 접근 가능하다. USER=0 kernel만 접근 가능하다.
+ * L_PTE_XN
+ *      Excute Never로 실행 금지 속성이다.
+ * L_PTE_SHARED
+ *      공유 속성
+ * L_PTE_NONE
+ *      1=page but not accessable
+ */
 #define L_PTE_VALID		(_AT(pteval_t, 1) << 0)		/* Valid */
 #define L_PTE_PRESENT		(_AT(pteval_t, 1) << 0)
 #define L_PTE_YOUNG		(_AT(pteval_t, 1) << 1)
@@ -136,6 +158,11 @@
 /*
  * These are the memory types, defined to be compatible with
  * pre-ARMv6 CPUs cacheable and bufferable bits:   XXCB
+ */
+
+/* IAMROOT-12AB:
+ * -------------
+ * linux PTE 속성 중 bit[5:2]는 메모리 타입을 구분한다.
  */
 #define L_PTE_MT_UNCACHED	(_AT(pteval_t, 0x00) << 2)	/* 0000 */
 #define L_PTE_MT_BUFFERABLE	(_AT(pteval_t, 0x01) << 2)	/* 0001 */
@@ -184,7 +211,11 @@ static inline pmd_t *pmd_offset(pud_t *pud, unsigned long addr)
 
 /* IAMROOT-12AB:
  * -------------
- * 4바이트 2개의 엔트리로 되어 있는 pmd 값을 0으로 초기화
+ * 4바이트 2개의 엔트리로 되어 있는 pmd 값을 0으로 초기화 후 해당 영역의 
+ * d-cache를 clean한다.
+ *
+ * d-cache를 clean해 놓아야 TLB-cache가 해당 테이블을 직접 access할 때
+ * 정확한 동기가 가능하다.
  */
 #define pmd_clear(pmdp)			\
 	do {				\

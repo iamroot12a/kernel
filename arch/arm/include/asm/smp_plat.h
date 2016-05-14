@@ -49,6 +49,15 @@ static inline unsigned int smp_cpuid_part(int cpu)
 #ifndef CONFIG_MMU
 #define tlb_ops_need_broadcast()	0
 #else
+
+/* IAMROOT-12AB:
+ * -------------
+ * ARMv7의 경우 MMFR3.Maintenance_broadcast=2이므로 이 함수는 false를 반환한다.
+ * 값이 0인 경우는 Cache, BP, TLB 조작 시 local cpu에만 적용된다.
+ *      1인 경우는 Cache, BP 조작 시 다른 cpu에도 broadcast되어 동시에 조작되는데
+ *                 TLB 조작의 경우만 local cpu에 적용된다.
+ *      2인 경우는 Cache, BP, TLB 조작 시 다른 cpu에도 broadcast되어 동시에 조작된다.
+ */
 static inline int tlb_ops_need_broadcast(void)
 {
 	if (!is_smp())

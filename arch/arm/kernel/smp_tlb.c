@@ -203,14 +203,33 @@ void flush_tlb_range(struct vm_area_struct *vma,
 	broadcast_tlb_mm_a15_erratum(vma->vm_mm);
 }
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 해당 영역에 대한 TLB cache를 flush 한다.
+ */
 void flush_tlb_kernel_range(unsigned long start, unsigned long end)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * ARMv7의 경우 tlb_ops_need_broadcast() 함수는 false를 반환한다.
+ *
+ * smp 머신에서 한 cpu에서 TLB를 flush할 때 다른 cpu에 대해서도
+ * TLB를 같이 flush하도록 할 때 사용한다
+ *
+ * IPI(Inter Processor Interrupt): 다른 cpu를 여러 용도로 소프트 인터럽트를 걸때 사용
+ */
 	if (tlb_ops_need_broadcast()) {
 		struct tlb_args ta;
 		ta.ta_start = start;
 		ta.ta_end = end;
 		on_each_cpu(ipi_flush_tlb_kernel_range, &ta, 1);
 	} else
+
+/* IAMROOT-12AB:
+ * -------------
+ * ARMv7: v7wbi_flush_kern_tlb_range()
+ */
 		local_flush_tlb_kernel_range(start, end);
 	broadcast_tlb_a15_erratum();
 }

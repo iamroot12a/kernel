@@ -219,6 +219,11 @@ struct cpu_tlb_fns {
 
 #else
 
+/* IAMROOT-12AB:
+ * -------------
+ * v7wbi_flush_user_tlb_range
+ * v7wbi_flush_kern_tlb_range
+ */
 #define __cpu_flush_user_tlb_range	__glue(_TLB,_flush_user_tlb_range)
 #define __cpu_flush_kern_tlb_range	__glue(_TLB,_flush_kern_tlb_range)
 
@@ -654,7 +659,7 @@ static inline void clean_pmd_entry(void *pmd)
  * 이 루틴에서 TLB 엔트리를 clear 하지 않고 D-Cache를 clear 하는 이유?
  *  -> 실제 매핑할 가상 주소를 cpu가 사용하여 TLB가 로드된 적이 없다.
  *  그냥 해당 주소에 대한 페이지 테이블 조작만을 하였기 때문에 
- *  D-Cache만을 flush한다. 
+ *  D-Cache만을 clean한다. 
  */
 	tlb_op(TLB_DCLEAN, "c7, c10, 1	@ flush_pmd", pmd);
 	tlb_l2_op(TLB_L2CLEAN_FR, "c15, c9, 1  @ L2 flush_pmd", pmd);
@@ -669,6 +674,11 @@ static inline void clean_pmd_entry(void *pmd)
  * Convert calls to our calling convention.
  */
 #define local_flush_tlb_range(vma,start,end)	__cpu_flush_user_tlb_range(start,end,vma)
+
+/* IAMROOT-12AB:
+ * -------------
+ * ARMv7에서 사용
+ */
 #define local_flush_tlb_kernel_range(s,e)	__cpu_flush_kern_tlb_range(s,e)
 
 #ifndef CONFIG_SMP

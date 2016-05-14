@@ -94,6 +94,10 @@ void __init add_static_vm_early(struct static_vm *svm)
 	vm_area_add_early(vm);
 	vaddr = vm->addr;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 등록되어 있던 주소가 더 큰 경우 break (asscending sort)
+ */
 	list_for_each_entry(curr_svm, &static_vmlist, list) {
 		vm = &curr_svm->vm;
 

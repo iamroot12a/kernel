@@ -764,7 +764,8 @@ static void __init *early_alloc_aligned(unsigned long sz, unsigned long align)
 
 /* IAMROOT-12AB:
  * -------------
- * 할당 받은 pte 테이블은 0으로 clear한다.
+ * pte 테이블 할당 받는 상황에서 호출 될 때: 
+ *	-> 할당 받은 pte 테이블은 0으로 clear한다.
  */
 	void *ptr = __va(memblock_alloc(sz, align));
 	memset(ptr, 0, sz);
@@ -1118,11 +1119,22 @@ void __init iotable_init(struct map_desc *io_desc, int nr)
 {
 	struct map_desc *md;
 	struct vm_struct *vm;
+
+/* IAMROOT-12AB:
+ * -------------
+ * vm_struct를 리스트로 연결할 수 있게한 구조
+ */
 	struct static_vm *svm;
 
 	if (!nr)
 		return;
 
+/* IAMROOT-12AB:
+ * -------------
+ * early 할당자인 memblock에서 할당받은 후 0으로 초기화한다.
+ *
+ * __alignof__: 구조체 정렬 사이즈
+ */
 	svm = early_alloc_aligned(sizeof(*svm) * nr, __alignof__(*svm));
 
 	for (md = io_desc; nr; md++, nr--) {

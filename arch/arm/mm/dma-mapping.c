@@ -416,11 +416,19 @@ void __init dma_contiguous_remap(void)
 		struct map_desc map;
 		unsigned long addr;
 
+/* IAMROOT-12AB:
+ * -------------
+ * DMA buffer용도로 사용되는 메모리는 highmem에서 사용할 수 없다.
+ */
 		if (end > arm_lowmem_limit)
 			end = arm_lowmem_limit;
 		if (start >= end)
 			continue;
 
+/* IAMROOT-12AB:
+ * -------------
+ * DMA device가 사용하는 RAM buffer에 대한 타입으로 MT_MEMORY_DMA_READY 사용
+ */
 		map.pfn = __phys_to_pfn(start);
 		map.virtual = __phys_to_virt(start);
 		map.length = end - start;
@@ -435,6 +443,15 @@ void __init dma_contiguous_remap(void)
 		 * (even though they may be rare) can not cause any problems,
 		 * and ensures that this code is architecturally compliant.
 		 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 기존에 lowmem에 대해 1:1 identity mapping되어 있던 가상 주소에 대해 mapping을 
+ * 삭제한다. 
+ * - 이 영역의 align 단위가 2M 또는 4M이기 때문에 pmd 엔트리를 삭제해도 된다.
+ *
+ * 매핑을 조작한 후에는 해당 영역에 대한 TLB 캐시를 flush한다.
+ */
 		for (addr = __phys_to_virt(start); addr < __phys_to_virt(end);
 		     addr += PMD_SIZE)
 			pmd_clear(pmd_off_k(addr));

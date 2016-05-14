@@ -1121,6 +1121,11 @@ void *vm_map_ram(struct page **pages, unsigned int count, int node, pgprot_t pro
 }
 EXPORT_SYMBOL(vm_map_ram);
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * vm_struct들을 단방향 리스트로 관리하는 헤드
+ */
 static struct vm_struct *vmlist __initdata;
 /**
  * vm_area_add_early - add vmap area early during boot
@@ -1136,6 +1141,10 @@ void __init vm_area_add_early(struct vm_struct *vm)
 {
 	struct vm_struct *tmp, **p;
 
+/* IAMROOT-12AB:
+ * -------------
+ * vmlist에 vm을 추가하되 asscending 정렬한다.
+ */
 	BUG_ON(vmap_initialized);
 	for (p = &vmlist; (tmp = *p) != NULL; p = &tmp->next) {
 		if (tmp->addr >= vm->addr) {

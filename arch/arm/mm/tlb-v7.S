@@ -70,6 +70,11 @@ ENDPROC(v7wbi_flush_user_tlb_range)
  */
 ENTRY(v7wbi_flush_kern_tlb_range)
 	dsb	ish
+
+/* IAMROOT-12AB:
+ * -------------
+ * 페이지 단위로 r0(start)와 r1(end) round down
+ */
 	mov	r0, r0, lsr #PAGE_SHIFT		@ align address
 	mov	r1, r1, lsr #PAGE_SHIFT
 	mov	r0, r0, lsl #PAGE_SHIFT
@@ -78,13 +83,34 @@ ENTRY(v7wbi_flush_kern_tlb_range)
 #ifdef CONFIG_ARM_ERRATA_720789
 	ALT_SMP(mcr	p15, 0, r0, c8, c3, 3)	@ TLB invalidate U MVA all ASID (shareable)
 #else
+
+/* IAMROOT-12AB:
+ * -------------
+ * rpi2: ARMv7 Cortex-A7
+ */
 	ALT_SMP(mcr	p15, 0, r0, c8, c3, 1)	@ TLB invalidate U MVA (shareable)
 #endif
 	ALT_UP(mcr	p15, 0, r0, c8, c7, 1)	@ TLB invalidate U MVA
+
+/* IAMROOT-12AB:
+ * -------------
+ * 4K(PAGE_SIZE)단위로 증가하며 r1(end)가 될 때까지 루프를 돌며 TLB 캐시를 flush한다.
+ */
+
 	add	r0, r0, #PAGE_SZ
 	cmp	r0, r1
 	blo	1b
+
+/* IAMROOT-12AB:
+ * -------------
+ * dsb: TLB 등 캐시 조작이 완료될 때까지 대기
+ */
 	dsb	ish
+
+/* IAMROOT-12AB:
+ * -------------
+ * TLB가 조작되면 isb를 사용하여 수행되기 전의 파이프라인을 비우게한다.
+ */
 	isb
 	ret	lr
 ENDPROC(v7wbi_flush_kern_tlb_range)

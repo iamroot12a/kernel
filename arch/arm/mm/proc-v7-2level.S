@@ -74,8 +74,25 @@ ENDPROC(cpu_v7_switch_mm)
  */
 ENTRY(cpu_v7_set_pte_ext)
 #ifdef CONFIG_MMU
+
+/* IAMROOT-12AB:
+ * -------------
+ * PTE는 linux 테이블(version)과 H/W 테이블 두 개로 이루어진다.
+ * 
+ * r0: linux pte 엔트리 주소
+ * r1: linux pte 값
+ * r2: h/w pte에 추가할 속성 값
+ *
+ * r3: linux pte 값 -> 변환된 h/w pte 값
+ *
+ * 먼저 linux 테이블에는 인수로 받은 pte(r1)을 그대로 기록한다.
+ */
 	str	r1, [r0]			@ linux version
 
+/* IAMROOT-12AB:
+ * -------------
+ * bit clear 0x3f3한 후 r2(변환된 h/w pte 속성에 추가할 속성)
+ */
 	bic	r3, r1, #0x000003f0
 	bic	r3, r3, #PTE_TYPE_MASK
 	orr	r3, r3, r2
@@ -100,6 +117,10 @@ ENTRY(cpu_v7_set_pte_ext)
 	tstne	r1, #L_PTE_NONE
 	moveq	r3, #0
 
+/* IAMROOT-12AB:
+ * -------------
+ * H/W PTE(linux PTE + 2048)에 PTE 값이 H/W PTE로 변환시킨 값을 기록한다.
+ */
  ARM(	str	r3, [r0, #2048]! )
  THUMB(	add	r0, r0, #2048 )
  THUMB(	str	r3, [r0] )
