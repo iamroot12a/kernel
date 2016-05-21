@@ -288,6 +288,11 @@ ENTRY(v7_coherent_kern_range)
  */
 ENTRY(v7_coherent_user_range)
  UNWIND(.fnstart		)
+
+/* IAMROOT-12AB:
+ * -------------
+ * r2에 d-cache의 cache line 바이트를 담아온다.
+ */
 	dcache_line_size r2, r3
 	sub	r3, r2, #1
 	bic	r12, r0, r3
@@ -296,6 +301,18 @@ ENTRY(v7_coherent_user_range)
 	ALT_UP(W(nop))
 #endif
 1:
+
+/* IAMROOT-12AB:
+ * -------------
+ * DCCMVAU(Data Cache Clean MVA for PoU)
+ *
+ * start-r2(cache_line-1) ~ end 까지 d-cache clean
+ *
+ * USER()
+ *	D-cache를 clean 처리하다 D-Abort exception이 발생한 경우 아래 
+ *	9001: 레이블로 이동하여 예외 처리를 할 수 있도록 한다.
+ *	--> 참고: __ex_table (extable)
+ */
  USER(	mcr	p15, 0, r12, c7, c11, 1	)	@ clean D line to the point of unification
 	add	r12, r12, r2
 	cmp	r12, r1
@@ -305,10 +322,23 @@ ENTRY(v7_coherent_user_range)
 	sub	r3, r2, #1
 	bic	r12, r0, r3
 2:
+/* IAMROOT-12AB:
+ * -------------
+ * ICIMVAU(Instruction Cache Invalidate MVA for PoU)
+ *
+ * start-r2(cache_line-1) ~ end 까지 i-cache invalidate
+ */
  USER(	mcr	p15, 0, r12, c7, c5, 1	)	@ invalidate I line
 	add	r12, r12, r2
 	cmp	r12, r1
 	blo	2b
+
+/* IAMROOT-12AB:
+ * -------------
+ * BTB(Branch Target Buffer) <- ARMv7 이전에서
+ * BPIALLIS(Branch Predictors Invalidate ALL Inner Share):
+ *	inner shareable 영역에 있는 BP 캐시를 모두 invalidate 한다. 
+ */
 	mov	r0, #0
 	ALT_SMP(mcr	p15, 0, r0, c7, c1, 6)	@ invalidate BTB Inner Shareable
 	ALT_UP(mcr	p15, 0, r0, c7, c5, 6)	@ invalidate BTB
@@ -319,6 +349,12 @@ ENTRY(v7_coherent_user_range)
 /*
  * Fault handling for the cache operation above. If the virtual address in r0
  * isn't mapped, fail with -EFAULT.
+ */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 위에서 사용한 USER() 매크로 수행 시 Data Abort Exception이 발생한 경우
+ * 커널이 정지되지 않도록 예외 처리 루틴으로 아래 루틴이 호출된다.
  */
 9001:
 #ifdef CONFIG_ARM_ERRATA_775420
@@ -396,6 +432,7 @@ ENDPROC(v7_dma_inv_range)
  *	- end     - virtual end address of region
  */
 v7_dma_clean_range:
+
 	dcache_line_size r2, r3
 	sub	r3, r2, #1
 	bic	r0, r0, r3

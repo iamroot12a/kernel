@@ -125,6 +125,11 @@ struct cpu_cache_fns {
 
 extern struct cpu_cache_fns cpu_cache;
 
+/* IAMROOT-12AB:
+ * -------------
+ * armv7: v7_coherent_kern_range (arch/arm/mm/cache-v7.S)
+ */
+
 #define __cpuc_flush_icache_all		cpu_cache.flush_icache_all
 #define __cpuc_flush_kern_all		cpu_cache.flush_kern_all
 #define __cpuc_flush_kern_louis		cpu_cache.flush_kern_louis

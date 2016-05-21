@@ -772,6 +772,11 @@ static void __init *early_alloc_aligned(unsigned long sz, unsigned long align)
 	return ptr;
 }
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 인수 sz(사이즈)로 align도 동일하게 할당하게 요청한다.
+ */
 static void __init *early_alloc(unsigned long sz)
 {
 	return early_alloc_aligned(sz, sz);
@@ -1538,10 +1543,23 @@ static void __init devicemaps_init(const struct machine_desc *mdesc)
 	/*
 	 * Allocate the vector page early.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 벡터 영역(2 pages)을 할당 받고
+ */
 	vectors = early_alloc(PAGE_SIZE * 2);
 
+/* IAMROOT-12AB:
+ * -------------
+ * 리눅스 초기 벡터와 스터브 코드를 할당받은 벡터 2페이지에 복사한다.
+ */
 	early_trap_init(vectors);
 
+/* IAMROOT-12AB:
+ * -------------
+ * VMALLOC_START(highmem+8M) ~ 0xFFFF_FFFF까지 pmd를 clear 한다.
+ */
 	for (addr = VMALLOC_START; addr; addr += PMD_SIZE)
 		pmd_clear(pmd_off_k(addr));
 
@@ -1549,6 +1567,12 @@ static void __init devicemaps_init(const struct machine_desc *mdesc)
 	 * Map the kernel if it is XIP.
 	 * It is always first in the modulearea.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * XIP 커널은 모듈영역의 시작 가상 주소에 MT_ROM 타입으로 매핑된다.
+ * MT_ROM 메모리 타입은 섹션 매핑만 허용한다.
+ */
 #ifdef CONFIG_XIP_KERNEL
 	map.pfn = __phys_to_pfn(CONFIG_XIP_PHYS_ADDR & SECTION_MASK);
 	map.virtual = MODULES_VADDR;
@@ -1560,6 +1584,14 @@ static void __init devicemaps_init(const struct machine_desc *mdesc)
 	/*
 	 * Map the cache flushing regions.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 캐시 플러싱이 필요한 아키텍처에서 사용한다.
+ * 각 영역은 1M씩으로 연달아 사용되기도 한다.
+ *
+ * TODO: 차후 검색 필요
+ */
 #ifdef FLUSH_BASE
 	map.pfn = __phys_to_pfn(FLUSH_BASE_PHYS);
 	map.virtual = FLUSH_BASE;
@@ -1575,6 +1607,21 @@ static void __init devicemaps_init(const struct machine_desc *mdesc)
 	create_mapping(&map);
 #endif
 
+/* IAMROOT-12AB:
+ * -------------
+ * 0xffff_0000에 위치한 하이 벡터는 기본 매핑되고
+ * 0x0000_0000에 위치한 로우 벡터는 cpu의 현 상태가 로우 벡터 모드일때만 매핑한다.
+ *
+ * 하이벡터 영역은 유저 헬퍼 코드를 지원하는 경우에만 벡터 페이지에 
+ * MT_HIGH_VECTORS를 사용한다.
+ *
+ * legacy 하드웨어에서는 보통 0x0000_0000에서 시작하는 ROM에 로우벡터테이블이
+ * 사용된다. (SCTLR.V=0, Security Extension에서 VBAR를 설정하여 로우벡터테이블이
+ * 0x0000_0000이 아닌 다른 주소를 사용하게 할 수 있다.-보안목적-)
+ *
+ * 최근의 ARM 하드웨어는 상위벡터테이블도 사용할 수 있다. (SCTLR.V=1)
+ */
+
 	/*
 	 * Create a mapping for the machine vectors at the high-vectors
 	 * location (0xffff0000).  If we aren't using high-vectors, also
@@ -1584,6 +1631,11 @@ static void __init devicemaps_init(const struct machine_desc *mdesc)
 	map.virtual = 0xffff0000;
 	map.length = PAGE_SIZE;
 #ifdef CONFIG_KUSER_HELPERS
+/* IAMROOT-12AB:
+ * -------------
+ * 유저 헬퍼 코드는 user space에서 호출되기 때문에 user access 권한이 추가적으로
+ * 부여된 MT_HIGH_VECTORS 메모리 타입 매핑을 사용한다. (0xffff_0000 4K page만)
+ */
 	map.type = MT_HIGH_VECTORS;
 #else
 	map.type = MT_LOW_VECTORS;
@@ -1607,10 +1659,28 @@ static void __init devicemaps_init(const struct machine_desc *mdesc)
 	/*
 	 * Ask the machine support to map in the statically mapped devices.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * rpi2: arch/arm/mach-bcm2709/bcm2709.c - bcm2709_map_io() 호출하여
+ *       각종 시리얼포트 등 IO 장치를 MT_DEVICE 타입으로 매핑할 수 있도록 한다.
+ *       io 리매핑을 위해 static_vm에도 추가한다.
+ */
 	if (mdesc->map_io)
 		mdesc->map_io();
 	else
+
+/* IAMROOT-12AB:
+ * -------------
+ * mdesc->map_io가 지정되지 않으면서 CONFIG_DEBUG_LL이 설정된 경우
+ * UART 포트 하나만 매핑을 하도록 요청한다.
+ */
 		debug_ll_io_init();
+
+/* IAMROOT-12AB:
+ * -------------
+ * --> next
+ */
 	fill_pmd_gaps();
 
 	/* Reserve fixed i/o space in VMALLOC region */

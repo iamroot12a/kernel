@@ -69,6 +69,16 @@
  * dcache_line_size - get the minimum D-cache line size from the CTR register
  * on ARMv7.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * d-cache에서 cache line의 바이트 사이즈를 reg에 담아 반환한다.
+ *	rpi2: 64 bytes
+ *
+ * read CTR(Cache Type Register).DminLine. 
+ *	rpi2: DminLine=4  (2^DminLine == 1 << DminLine)
+ *	      (바이트로 환산 시 4 << DminLine = 64 bytes)
+ */
 	.macro	dcache_line_size, reg, tmp
 	mrc	p15, 0, \tmp, c0, c0, 1		@ read ctr
 	lsr	\tmp, \tmp, #16

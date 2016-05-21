@@ -1033,6 +1033,13 @@ __kuser_helper_end:
  * SP points to a minimal amount of processor-private memory, the address
  * of which is copied into r0 for the mode specific abort handler.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 벡터는 다음 위치에 존재하고 벡터 스터브는 그 다음 페이지에 위치한다.
+ *    - 0xffff_0000에 위치하는 high vector
+ *    - 0x0000_0000에 이치하는 low vector
+ */
 	.macro	vector_stub, name, mode, correction=0
 	.align	5
 
@@ -1072,6 +1079,12 @@ ENDPROC(vector_\name)
 1:
 	.endm
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * .stub 섹션에 처음에는 소프트인터럽트 핸들러의 주소가 위치한다.
+ * 그 뒤로 8개의 exception 핸들러들이 위치하고
+ */
 	.section .stubs, "ax", %progbits
 __stubs_start:
 	@ This must be the first word
@@ -1214,6 +1227,15 @@ vector_addrexcptn:
 	.globl	vector_fiq_offset
 	.equ	vector_fiq_offset, vector_fiq
 
+/* IAMROOT-12AB:
+ * -------------
+ * 8개의 exception 벡터 중 소프트인터럽트의 핸들러는 원거리에 위치하므로
+ * __vectors_start+0x1000에 위치한 주소(소프트인터럽트 핸들러 주소가 담긴)로
+ * 이동하게 한다.
+ *
+ * 나머지 7개의 벡터는 branch 코드를 직접 사용하여 해당 핸들러로 jump 한다.
+ * 해당 핸들러는 근거리(다음 페이지)에 위치한다. 
+ */
 	.section .vectors, "ax", %progbits
 __vectors_start:
 	W(b)	vector_rst

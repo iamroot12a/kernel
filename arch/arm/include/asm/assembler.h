@@ -225,6 +225,16 @@
 	.endm
 #endif
 
+/* IAMROOT-12AB:
+ * -------------
+ * Data Abort Exception이 발생 -> vector_dabt: -> __dabt_svc: 
+ * 핸들러 코드 내부에서 __ex_table을 검색하여 exception을 설치한 경우
+ * 해당 fixup 코드로 jump 한다.
+ *
+ * __ex_table에 담기는 두 워드
+ *     - inst 주소
+ *     - fixup 주소
+ */
 #define USER(x...)				\
 9999:	x;					\
 	.pushsection __ex_table,"a";		\

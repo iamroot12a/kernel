@@ -835,12 +835,29 @@ static void __init kuser_init(void *vectors)
 	extern char __kuser_helper_start[], __kuser_helper_end[];
 	int kuser_sz = __kuser_helper_end - __kuser_helper_start;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 벡터 페이지의 상단에 유저 헬퍼 코드를 복사한다.
+ */
 	memcpy(vectors + 0x1000 - kuser_sz, __kuser_helper_start, kuser_sz);
 
 	/*
 	 * vectors + 0xfe0 = __kuser_get_tls
 	 * vectors + 0xfe8 = hardware TLS instruction at 0xffff0fe8
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * TLS(Thread Local Storage): 스레드 전용 기억 영역으로 각 스레드는 각자의 
+ * 영역에 접근하기 위한 접근(base or offset) 주소를 사용하는데 이 주소가
+ * 메모리 있는 값을 사용하거나 H/W가 지원하는 경우 TLS 레지스터에 담아 
+ * 사용할 수도 있다.
+ *
+ * 아래 코드는 
+ * 하드웨어 TLS를 지원하는 경우 0xffff_0fe8 주소에 위치한 mrc 명령을 사용하고
+ * 그렇지 않은 경우 그냥 원래 함수 코드를 사용한다. 원래 함수 코드는 메모리에서
+ * TLB 접근 주소(base or offseti)를 가져와서 사용한다.
+ */
 	if (tls_emu || has_tls_reg)
 		memcpy(vectors + 0xfe0, vectors + 0xfe8, 4);
 }
@@ -866,6 +883,16 @@ void __init early_trap_init(void *vectors_base)
 	 * ISAs.  The Thumb version is an undefined instruction with a
 	 * branch back to the undefined instruction.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * arm과 thumb 명령어로 사용하지 않는 4byte 코드로 1 page의 벡터 페이지를 
+ * 초기화 한다. 이걸 리눅스에서 poison 이라하는데 동일하게 리눅스에서
+ * 메모리의 디버깅에 poison을 사용한다.
+ *
+ * pc가 인터럽트 벡터 테이블에 설치된 poison으로 점프되는 경우 undefined 
+ * exception이 발생하여 해당 핸들러가 호출되게 한다.
+ */
 	for (i = 0; i < PAGE_SIZE / sizeof(u32); i++)
 		((u32 *)vectors_base)[i] = 0xe7fddef1;
 
@@ -874,12 +901,30 @@ void __init early_trap_init(void *vectors_base)
 	 * into the vector page, mapped at 0xffff0000, and ensure these
 	 * are visible to the instruction stream.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 할당 받은 2개의 페이지에 벡터(8개 엔트리 x 4 = 32 bytes)와 스터브 코드를 복사한다.
+ */
 	memcpy((void *)vectors, __vectors_start, __vectors_end - __vectors_start);
 	memcpy((void *)vectors + 0x1000, __stubs_start, __stubs_end - __stubs_start);
 
+/* IAMROOT-12AB:
+ * -------------
+ * 벡터 페이지 상단에 유저 헬퍼 코드를 복사한다.
+ */
 	kuser_init(vectors_base);
 
+/* IAMROOT-12AB:
+ * -------------
+ * d-cache clean, i-cache invalidate, BP invalidate를 수행한다.
+ */
 	flush_icache_range(vectors, vectors + PAGE_SIZE * 2);
+
+/* IAMROOT-12AB:
+ * -------------
+ * user 도메인(00~15까지 중 01번)에 client 권한을 부여한다. 
+ */
 	modify_domain(DOMAIN_USER, DOMAIN_CLIENT);
 #else /* ifndef CONFIG_CPU_V7M */
 	/*
