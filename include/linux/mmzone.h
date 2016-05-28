@@ -1057,13 +1057,37 @@ static inline unsigned long early_pfn_to_nid(unsigned long pfn)
  * PFN_SECTION_SHIFT		pfn to/from section number
  */
 #define PA_SECTION_SHIFT	(SECTION_SIZE_BITS)
+
+/* IAMROOT-12AB:
+ * -------------
+ * 섹션: Sparse 메모리 모델에서 page 구조체로 되어있는 mem_map[] 배열을
+ *      실제 전체 메모리보다 더 작은크기의 단위로 할당하여 관리
+ * SECTION_SIZE_BITS: Sparse 메모리 모델에서 page 구조체로 되어있는 mem_map[]
+ *      배열을 작은단위로 할당하여 관리메모리 관리 단위
+ * PFN_SECTION_SHIFT: 페이지 단위를 섹션 단위로 변환하기 위해 필요한 비트 수
+ */
 #define PFN_SECTION_SHIFT	(SECTION_SIZE_BITS - PAGE_SHIFT)
 
+/* IAMROOT-12AB:
+ * -------------
+ * SECTION_SHIFT: 물리메모리를 섹션단위로 나눌 때 필요 관리 비트 수
+ * NR_MEM_SECTIONS: 섹션 수
+ */
 #define NR_MEM_SECTIONS		(1UL << SECTIONS_SHIFT)
 
+/* IAMROOT-12AB:
+ * -------------
+ * PAGES_PER_SECTION: 한 개의 섹션에 허용하는 페이지 수
+ */
 #define PAGES_PER_SECTION       (1UL << PFN_SECTION_SHIFT)
 #define PAGE_SECTION_MASK	(~(PAGES_PER_SECTION-1))
 
+/* IAMROOT-12AB:
+ * -------------
+ * 한 개의 섹션에 필요한 pageblock(mobility를 관리)의 사용하는 비트 수
+ * 예) 섹션=1G
+ *      -> SECTION_BLOCKFLAGS_BITS=1024 bits
+ */
 #define SECTION_BLOCKFLAGS_BITS \
 	((1UL << (PFN_SECTION_SHIFT - pageblock_order)) * NR_PAGEBLOCK_BITS)
 
@@ -1110,12 +1134,24 @@ struct mem_section {
 	 */
 };
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 하나의 루트(페이지)에 들어갈 수 있는 mem_section 수
+ *
+ * EXTREME: mem_section 구조체가 dynamic하게 페이지 크기 단위로 생성된다.
+ * STATIC:  한꺼번에 mem_section이 static으로 생성된다.
+ */
 #ifdef CONFIG_SPARSEMEM_EXTREME
 #define SECTIONS_PER_ROOT       (PAGE_SIZE / sizeof (struct mem_section))
 #else
 #define SECTIONS_PER_ROOT	1
 #endif
 
+/* IAMROOT-12AB:
+ * -------------
+ * 섹션 번호로 루트 번호를 산출한다.
+ */
 #define SECTION_NR_TO_ROOT(sec)	((sec) / SECTIONS_PER_ROOT)
 #define NR_SECTION_ROOTS	DIV_ROUND_UP(NR_MEM_SECTIONS, SECTIONS_PER_ROOT)
 #define SECTION_ROOT_MASK	(SECTIONS_PER_ROOT - 1)

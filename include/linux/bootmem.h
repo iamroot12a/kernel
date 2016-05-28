@@ -208,6 +208,12 @@ static inline void * __init memblock_virt_alloc_from_nopanic(
 static inline void * __init memblock_virt_alloc_node(
 						phys_addr_t size, int nid)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * BOOTMEM을 사용하지 않고 바로 memeblock을 사용하는 경우 BOOTMEM_LOW_LIMIT=0
+ * BOOTMEM을 사용하는 경우 DMA 영역을 제외한 공간부터 할당 가능하다.
+ */
 	return memblock_virt_alloc_try_nid(size, 0, BOOTMEM_LOW_LIMIT,
 					    BOOTMEM_ALLOC_ACCESSIBLE, nid);
 }

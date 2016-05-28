@@ -35,6 +35,11 @@ enum page_ext_flags {
  * All page_ext are allocated at boot or memory hotplug event,
  * then the page_ext for pfn always exists.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 확장된 페이지 구조체
+ */
 struct page_ext {
 	unsigned long flags;
 #ifdef CONFIG_PAGE_OWNER

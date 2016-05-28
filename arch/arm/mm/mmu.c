@@ -1434,6 +1434,11 @@ void __init sanity_check_meminfo(void)
 	if (!memblock_limit)
 		memblock_limit = arm_lowmem_limit;
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * memblock의 current_limit에 lowmem/highmem 영역 경계를 설정한다.
+ */
 	memblock_set_current_limit(memblock_limit);
 }
 
@@ -1698,11 +1703,21 @@ static void __init devicemaps_init(const struct machine_desc *mdesc)
 
 static void __init kmap_init(void)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * PKMAP용 L2 테이블을 생성하고 전역 변수에 저장한다.
+ */
 #ifdef CONFIG_HIGHMEM
 	pkmap_page_table = early_pte_alloc(pmd_off_k(PKMAP_BASE),
 		PKMAP_BASE, _PAGE_KERNEL_TABLE);
 #endif
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * FIXMAP용 L2 테이블을 생성한다.
+ */
 	early_pte_alloc(pmd_off_k(FIXADDR_START), FIXADDR_START,
 			_PAGE_KERNEL_TABLE);
 }
@@ -1947,6 +1962,11 @@ void __init paging_init(const struct machine_desc *mdesc)
 	top_pmd = pmd_off_k(0xffff0000);
 
 	/* allocate the zero page. */
+
+/* IAMROOT-12AB:
+ * -------------
+ * zero 페이지
+ */
 	zero_page = early_alloc(PAGE_SIZE);
 
 	bootmem_init();

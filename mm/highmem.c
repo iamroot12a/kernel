@@ -130,6 +130,11 @@ unsigned int nr_free_highpages (void)
 static int pkmap_count[LAST_PKMAP];
 static  __cacheline_aligned_in_smp DEFINE_SPINLOCK(kmap_lock);
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * PKMAP L2 테이블을 가리키는 주소
+ */
 pte_t * pkmap_page_table;
 
 /*

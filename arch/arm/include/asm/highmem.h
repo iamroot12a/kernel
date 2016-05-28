@@ -3,10 +3,31 @@
 
 #include <asm/kmap_types.h>
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * PKMAP 공간은 PAGE_OFFSET 바로 밑에 있는 PMD_SIZE(2M)만큼의 공간을 사용하여
+ *       커널에서 himem 페이지에 접근을 한다.
+ */
 #define PKMAP_BASE		(PAGE_OFFSET - PMD_SIZE)
 #define LAST_PKMAP		PTRS_PER_PTE
 #define LAST_PKMAP_MASK		(LAST_PKMAP - 1)
+
+/* IAMROOT-12AB:
+ * -------------
+ * pkmap 공간의 가상주소값으로 pkmap 인덱스 번호를 알아온다.
+ * rpi2: PKMAP_NR(0x7fff_e000), (0x7fff_ffff)
+ *      -> 0x1fe (510),         0x1ff (511)
+ *       
+ */
 #define PKMAP_NR(virt)		(((virt) - PKMAP_BASE) >> PAGE_SHIFT)
+
+/* IAMROOT-12AB:
+ * -------------
+ * pkmap 인덱스 번호로 pkmap 공간의 가상주소값을 산출한다.
+ * rpi2: PKMAP_ADDR(0)
+ *      -> 0x7fe0_0000
+ */
 #define PKMAP_ADDR(nr)		(PKMAP_BASE + ((nr) << PAGE_SHIFT))
 
 #define kmap_prot		PAGE_KERNEL

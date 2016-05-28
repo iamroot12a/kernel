@@ -46,8 +46,9 @@ static struct memblock_region memblock_physmem_init_regions[INIT_PHYSMEM_REGIONS
  *
  * bottom_up: true=메모리 할당 요청시 아래에서 위로 영역을 검색
  * current_limit: 메모리 영역 제한 시 설정된다.
- *                초기 값 MEMBLOCK_ALLOC_ANYWHERE의 경우 물리 주소 한계 값을 가진다.
- *                        MEMBLOCK_ALLOC_ACCESSIBLE의 경우 전체 메모리를 의미한다.
+ *                초기 값 MEMBLOCK_ALLOC_ANYWHERE의 경우 물리 주소 
+ *				한계 값(0xffff_ffff)을 가진다.
+ *                        MEMBLOCK_ALLOC_ACCESSIBLE의 경우 current_limit까지 
  *
  * cnt <- 시작 부터 1로 설정(empty)
  */
@@ -1445,6 +1446,10 @@ static void * __init memblock_virt_alloc_internal(
 	if (WARN_ON_ONCE(slab_is_available()))
 		return kzalloc_node(size, GFP_NOWAIT, nid);
 
+/* IAMROOT-12AB:
+ * -------------
+ * align=0인 경우 L1 캐시 사이즈만큼 align한다. (rpi2: 64 bytes)
+ */
 	if (!align)
 		align = SMP_CACHE_BYTES;
 
@@ -1452,11 +1457,22 @@ static void * __init memblock_virt_alloc_internal(
 		max_addr = memblock.current_limit;
 
 again:
+
+/* IAMROOT-12AB:
+ * -------------
+ * 1st round: 지정된 노드의 지정된 범위에서 free 영역을 검색
+ * 2nd round: 지정된 노드의 0~max_addr 범위에서 free 영역을 검색
+ */
 	alloc = memblock_find_in_range_node(size, align, min_addr, max_addr,
 					    nid);
 	if (alloc)
 		goto done;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 1st round: 노드에 관계없이 지정된 범위에서 free 영역을 검색
+ * 2nd round: 노드에 관계없이 0~max_addr 범위에서 free 영역을 검색
+ */
 	if (nid != NUMA_NO_NODE) {
 		alloc = memblock_find_in_range_node(size, align, min_addr,
 						    max_addr,  NUMA_NO_NODE);
@@ -1464,6 +1480,10 @@ again:
 			goto done;
 	}
 
+/* IAMROOT-12AB:
+ * -------------
+ * 검색 범위로 min_addr가 지정되어 있는 경우 min_addr=0으로 하고 다시 시도
+ */
 	if (min_addr) {
 		min_addr = 0;
 		goto again;
@@ -1472,6 +1492,13 @@ again:
 	}
 
 done:
+
+/* IAMROOT-12AB:
+ * -------------
+ * 찾은 영역을 할당받고 0으로 클리어한다.
+ * 할당 받은 주소는 가상주소를 반환한다.
+ */
+
 	memblock_reserve(alloc, size);
 	ptr = phys_to_virt(alloc);
 	memset(ptr, 0, size);
@@ -1547,6 +1574,14 @@ void * __init memblock_virt_alloc_try_nid(
 	memblock_dbg("%s: %llu bytes align=0x%llx nid=%d from=0x%llx max_addr=0x%llx %pF\n",
 		     __func__, (u64)size, (u64)align, nid, (u64)min_addr,
 		     (u64)max_addr, (void *)_RET_IP_);
+
+/* IAMROOT-12AB:
+ * -------------
+ * 메모리를 memblock에서 할당받고 할당받은 가상 주소를 반환한다.
+ * 할당 순서:
+ *	지정된 노드와 범위 -> 노드관계없이 지정된 범위 -> 
+ *	지정된 노드와 0~max 범위 -> 노드관계없이 0~max 범위로 할당을 받아온다.
+ */
 	ptr = memblock_virt_alloc_internal(size, align,
 					   min_addr, max_addr, nid);
 	if (ptr)

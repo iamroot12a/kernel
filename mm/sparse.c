@@ -21,6 +21,17 @@
  *
  * 1) mem_section	- memory sections, mem_map's for valid memory
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * mem_section이 null인 경우 hole 영역을 의미한다.
+ *	EXTREME: 1차 *mem_section[] 포인터 배열이 static하게 생성되고,
+ *		     2차 mem_section[] 배열의 처음을 가리킨다.
+ *		 2차 mem_section[] 배열은 dynamic 하게 생성된다.
+ *		 (주로 64bit 시스템에서 사용)
+ *	STATIC:  1차 mem_section[] 배열은 static 하게 생성된다.
+ *		 (주로 32bit 시스템에서 사용)
+ */
 #ifdef CONFIG_SPARSEMEM_EXTREME
 struct mem_section *mem_section[NR_SECTION_ROOTS]
 	____cacheline_internodealigned_in_smp;
@@ -62,6 +73,11 @@ static inline void set_section_nid(unsigned long section_nr, int nid)
 static struct mem_section noinline __init_refok *sparse_index_alloc(int nid)
 {
 	struct mem_section *section = NULL;
+
+/* IAMROOT-12AB:
+ * -------------
+ * array_size는 페이지 사이즈에 가까운 크기
+ */
 	unsigned long array_size = SECTIONS_PER_ROOT *
 				   sizeof(struct mem_section);
 
@@ -71,6 +87,11 @@ static struct mem_section noinline __init_refok *sparse_index_alloc(int nid)
 		else
 			section = kzalloc(array_size, GFP_KERNEL);
 	} else {
+
+/* IAMROOT-12AB:
+ * -------------
+ * 가능하면 지정된 노드 및 범위에서 메모리를 할당받아온다.
+ */
 		section = memblock_virt_alloc_node(array_size, nid);
 	}
 
@@ -82,6 +103,10 @@ static int __meminit sparse_index_init(unsigned long section_nr, int nid)
 	unsigned long root = SECTION_NR_TO_ROOT(section_nr);
 	struct mem_section *section;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 1차 mem_section[] 포인터 배열이 이미 초기화된 경우는 종료
+ */
 	if (mem_section[root])
 		return -EEXIST;
 
@@ -144,12 +169,22 @@ static inline int sparse_early_nid(struct mem_section *section)
 void __meminit mminit_validate_memmodel_limits(unsigned long *start_pfn,
 						unsigned long *end_pfn)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * Sparse에서 최대 관리 가능한 메모리 페이지 번호
+ */
 	unsigned long max_sparsemem_pfn = 1UL << (MAX_PHYSMEM_BITS-PAGE_SHIFT);
 
 	/*
 	 * Sanity checks - do not allow an architecture to pass
 	 * in larger pfns than the maximum scope of sparsemem:
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 시작 주소가 최대 관리 가능한 pfn을 초과하는 경우 포기
+ */
 	if (*start_pfn > max_sparsemem_pfn) {
 		mminit_dprintk(MMINIT_WARNING, "pfnvalidation",
 			"Start of range %lu -> %lu exceeds SPARSEMEM max %lu\n",
@@ -157,6 +192,10 @@ void __meminit mminit_validate_memmodel_limits(unsigned long *start_pfn,
 		WARN_ON_ONCE(1);
 		*start_pfn = max_sparsemem_pfn;
 		*end_pfn = max_sparsemem_pfn;
+/* IAMROOT-12AB:
+ * -------------
+ * 끝 주소가 최대 관리 가능한 pfn을 초과하는 경우 max_sparsemem_pfn 값으로 자른다.
+ */
 	} else if (*end_pfn > max_sparsemem_pfn) {
 		mminit_dprintk(MMINIT_WARNING, "pfnvalidation",
 			"End of range %lu -> %lu exceeds SPARSEMEM max %lu\n",
@@ -167,12 +206,31 @@ void __meminit mminit_validate_memmodel_limits(unsigned long *start_pfn,
 }
 
 /* Record a memory area against a node. */
+
+/* IAMROOT-12AB:
+ * -------------
+ * Sparse 메모리 모델에서 사용되는 메모리 영역에 대해 섹션 단위 관리를 준비한다.
+ */
 void __init memory_present(int nid, unsigned long start, unsigned long end)
 {
 	unsigned long pfn;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 시작 주소에 대해 섹션 단위로 round down
+ */
 	start &= PAGE_SECTION_MASK;
+
+/* IAMROOT-12AB:
+ * -------------
+ * start ~ end 까지가 최대 섹션 관리 영역에 들어가는 것만 아래 루프 수행
+ */
 	mminit_validate_memmodel_limits(&start, &end);
+
+/* IAMROOT-12AB:
+ * -------------
+ * 섹션 단위로 증가하며 관련 구조 생성
+ */
 	for (pfn = start; pfn < end; pfn += PAGES_PER_SECTION) {
 		unsigned long section = pfn_to_section_nr(pfn);
 		struct mem_section *ms;

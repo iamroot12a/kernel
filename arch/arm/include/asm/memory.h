@@ -128,6 +128,11 @@
  * locations
  */
 #ifdef CONFIG_HAVE_TCM
+
+/* IAMROOT-12AB:
+ * -------------
+ * ARM에서 사용하는 TCM의 가상 주소
+ */
 #define ITCM_OFFSET	UL(0xfffe0000)
 #define DTCM_OFFSET	UL(0xfffe8000)
 #endif

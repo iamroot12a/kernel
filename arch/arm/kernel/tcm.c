@@ -47,6 +47,11 @@ static struct resource itcm_res = {
 	.flags = IORESOURCE_MEM
 };
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * TCM 매핑영 데이터
+ */
 static struct map_desc dtcm_iomap[] __initdata = {
 	{
 		.virtual	= DTCM_OFFSET,
@@ -190,6 +195,13 @@ void __init tcm_init(void)
 	char *ram;
 	int ret;
 	int i;
+
+/* IAMROOT-12AB:
+ * -------------
+ * TCM(Tighy Coupled Memory)
+ *	- SRAM으로 만들어진 고속 RAM
+ *	- 주소가 부여된다.
+ */
 
 	/*
 	 * Prior to ARMv5 there is no TCM, and trying to read the status

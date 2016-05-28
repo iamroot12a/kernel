@@ -24,6 +24,13 @@
 #ifdef CONFIG_SPARSEMEM
 #include <asm/sparsemem.h>
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * SECTION_SHIFT: 물리메모리를 섹션단위로 나눌 때 필요 관리 비트 수
+ * 예) MAX_PHYSMEM_BITS=32 (4GB), SECTION_SIZE_BITS=28 (256MB)
+ *     -> SECTION_SHIFT=4 (2^4=16개의 섹션)
+ */
 /* SECTION_SHIFT	#bits space required to store a section # */
 #define SECTIONS_SHIFT	(MAX_PHYSMEM_BITS - SECTION_SIZE_BITS)
 

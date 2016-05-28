@@ -51,6 +51,10 @@
 #define INTERNODE_CACHE_SHIFT L1_CACHE_SHIFT
 #endif
 
+/* IAMROOT-12AB:
+ * -------------
+ * rpi2: 64 (L1 데이터 캐시 사이즈)
+ */
 #if !defined(____cacheline_internodealigned_in_smp)
 #if defined(CONFIG_SMP)
 #define ____cacheline_internodealigned_in_smp \
