@@ -1682,10 +1682,6 @@ static void __init devicemaps_init(const struct machine_desc *mdesc)
  */
 		debug_ll_io_init();
 
-/* IAMROOT-12AB:
- * -------------
- * --> next
- */
 	fill_pmd_gaps();
 
 	/* Reserve fixed i/o space in VMALLOC region */

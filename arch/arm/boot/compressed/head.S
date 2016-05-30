@@ -720,13 +720,13 @@ restart:	adr	r0, LC0
  *   사용되면서 그 영역에 DTB 데이터가 존재한다면 DTB가 손상이 갈 것이다.
  * - 그렇기 때문에 bss 영역에 relocation 코드가 오는 것은 상관이 없지만 DTB 코드영역까지
  *   따라오면 안되기 때문에 이러한 영역을 보호하기 위해 bss 사이즈가 relocation 영역보다
- *   큰 경우에는 차라리 relocation 코드 사이즈만큼 r9(decompressed 커널 사이즈)를 
+ *   큰 경우에는 bss 크기를 넘어가는 영역 만큼을 r9(decompressed 커널 사이즈)에 
  *   추가하여 relocation 코드가 더 위쪽으로 자리할 수 있도록 한다.
  *
  * decompressed 커널이 사용해야 하는 bss의 사이즈를 r5에 로드
- * r1(추가할 space): DTB를 제외한 zImage 대부분(_edata - addr(wont_overwrite))
- * r5(decompressed 커널 bss 사이즈)가 r1(추가할 space)보다 큰 경우 
- * r9(decompressed 커널 사이즈)에 r1(추가할 space)를 더한다.
+ * r1(.bss와 비교할 size): DTB를 제외한 zImage 대부분(_edata - addr(wont_overwrite))
+ * r5(decompressed 커널 bss 사이즈)가 r1(비교할 size)보다 큰 경우 
+ * r9(decompressed 커널 사이즈)에 초과 영역 만큼을 더한다.
  */
 		/*
 		 * Make sure that the DTB doesn't end up in the final
