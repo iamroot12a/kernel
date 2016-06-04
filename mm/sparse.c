@@ -47,6 +47,11 @@ EXPORT_SYMBOL(mem_section);
  * do a lookup in the section_to_node_table in order to find which
  * node the page belongs to.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 섹션별로 노드 id가 기록되어 있는 테이블
+ */
 #if MAX_NUMNODES <= 256
 static u8 section_to_node_table[NR_MEM_SECTIONS] __cacheline_aligned;
 #else
@@ -61,6 +66,10 @@ EXPORT_SYMBOL(page_to_nid);
 
 static void set_section_nid(unsigned long section_nr, int nid)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * 섹션 별로 노드 id를 기록한다.
+ */
 	section_to_node_table[section_nr] = nid;
 }
 #else /* !NODE_NOT_IN_PAGE_FLAGS */
@@ -70,6 +79,17 @@ static inline void set_section_nid(unsigned long section_nr, int nid)
 #endif
 
 #ifdef CONFIG_SPARSEMEM_EXTREME
+
+/* IAMROOT-12AB:
+ * -------------
+ * __init_refok:
+ *	.ref.text 섹션에 저장한다.
+ *	이렇게 한 이유는 컴파일러(modpost 스크립트)로 하여금 .init 섹션에서
+ *	없어질 코드를 레퍼런스해도 경고 메시지 출력을 하지 않게끔 한다.
+ *	(아래 코드에서 memblock_virt_alloc_node() 함수를 사용했는데
+ *	이 함수는 나중에 커널이 초기화된 후 DISCARD 옵션에 따라 free되어
+ *	없어질 수도 있다)
+ */
 static struct mem_section noinline __init_refok *sparse_index_alloc(int nid)
 {
 	struct mem_section *section = NULL;
@@ -105,11 +125,16 @@ static int __meminit sparse_index_init(unsigned long section_nr, int nid)
 
 /* IAMROOT-12AB:
  * -------------
- * 1차 mem_section[] 포인터 배열이 이미 초기화된 경우는 종료
+ * EXTREME: 1차 mem_section[] 포인터 배열이 이미 초기화된 경우는 종료
+ * STATIC: 1차 mem_section[] 배열의 값이 이미 초기화된 경우는 종료
  */
 	if (mem_section[root])
 		return -EEXIST;
 
+/* IAMROOT-12AB:
+ * -------------
+ * EXTREME: 2차 mem_section[] 배열을 할당 받는다.
+ */
 	section = sparse_index_alloc(nid);
 	if (!section)
 		return -ENOMEM;
@@ -154,6 +179,13 @@ int __section_nr(struct mem_section* ms)
  * mem_map, we use section_mem_map to store the section's NUMA
  * node.  This keeps us from having to use another data structure.  The
  * node information is cleared just before we store the real mem_map.
+ */
+
+/* IAMROOT-12AB:
+ * -------------
+ * section_mem_map의 bit2부터 노드 id를 기록한다.
+ * 실제 이 멤버 변수가 섹션이 사용하는 mem_map을 가리키기 전까지
+ * 커널이 early boot 과정에 있는 동안 잠시 사용되고 지워진다.
  */
 static inline unsigned long sparse_encode_early_nid(int nid)
 {
@@ -235,10 +267,27 @@ void __init memory_present(int nid, unsigned long start, unsigned long end)
 		unsigned long section = pfn_to_section_nr(pfn);
 		struct mem_section *ms;
 
+/* IAMROOT-12AB:
+ * -------------
+ * SPARSE_EXTREAM: 메모리가 있는 섹션인 경우
+ *		   루트별 mem_section 영역을 할당 받고 *mem_section[]과 연결한다.
+ *		   (실제 할당된 영역은 mem_section[][]과 같이 2차원 배열로 연결된다.)
+ */
 		sparse_index_init(section, nid);
+
+/* IAMROOT-12AB:
+ * -------------
+ * 섹션별로 노드 id를 기록한다.
+ */
 		set_section_nid(section, nid);
 
 		ms = __nr_to_section(section);
+
+/* IAMROOT-12AB:
+ * -------------
+ * section_mem_map이 null인 경우 노드 id와 섹션에 메모리 존재 플래그를 설정한다.
+ * 노드 id는 나중에 섹션에 mem_map이 연결되어 사용되어질 때 삭제된다.
+ */
 		if (!ms->section_mem_map)
 			ms->section_mem_map = sparse_encode_early_nid(nid) |
 							SECTION_MARKED_PRESENT;
@@ -291,17 +340,35 @@ static int __meminit sparse_init_one_section(struct mem_section *ms,
 		unsigned long pnum, struct page *mem_map,
 		unsigned long *pageblock_bitmap)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * 메모리가 없는 섹션인 경우 에러 리턴
+ */
 	if (!present_section(ms))
 		return -EINVAL;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 2개 비트만 남기고(기존에 노드 정보를 bit3 이상에 기록하였었던) 
+ *  section_mem_map을 클리어한 다음에 xxxxxx + valid 표식(bit1)
+ */
 	ms->section_mem_map &= ~SECTION_MAP_MASK;
 	ms->section_mem_map |= sparse_encode_mem_map(mem_map, pnum) |
 							SECTION_HAS_MEM_MAP;
+
+/* IAMROOT-12AB:
+ * -------------
+ * usemap을 가리키게 한다.
+ */
  	ms->pageblock_flags = pageblock_bitmap;
 
 	return 1;
 }
 
+/* IAMROOT-12AB:
+ * -------------
+ * usemap의 크기는 섹션 및 pageblock 크기에 따라 영향을 받고 바이트 수로 반환한다.
+ */
 unsigned long usemap_size(void)
 {
 	unsigned long size_bytes;
@@ -319,6 +386,11 @@ static unsigned long *__kmalloc_section_usemap(void)
 
 #ifdef CONFIG_MEMORY_HOTREMOVE
 static unsigned long * __init
+
+/* IAMROOT-12AB:
+ * -------------
+ * 이 함수 대신 아래에 있는 함수로 분석한다.
+ */
 sparse_early_usemaps_alloc_pgdat_section(struct pglist_data *pgdat,
 					 unsigned long size)
 {
@@ -359,17 +431,36 @@ static void __init check_usemap_section_nr(int nid, unsigned long *usemap)
 
 	usemap_snr = pfn_to_section_nr(__pa(usemap) >> PAGE_SHIFT);
 	pgdat_snr = pfn_to_section_nr(__pa(pgdat) >> PAGE_SHIFT);
+
+/* IAMROOT-12AB:
+ * -------------
+ * usemap과 pgdat가 같은 섹션에 있는 경우 ok
+ */
 	if (usemap_snr == pgdat_snr)
 		return;
 
+/* IAMROOT-12AB:
+ * -------------
+ * usemap에 대한 섹션번호가 변경되지 않았으면 한 번 출력된 에러메시지를 
+ * 반복해서 출력하지 않기 위해 사용
+ */
 	if (old_usemap_snr == usemap_snr && old_pgdat_snr == pgdat_snr)
 		/* skip redundant message */
 		return;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 바뀐 섹션 번호를 기억한다. (같은 섹션에 대한 메시지 반복 출력을 막기 위해)
+ */
 	old_usemap_snr = usemap_snr;
 	old_pgdat_snr = pgdat_snr;
 
 	usemap_nid = sparse_early_nid(__nr_to_section(usemap_snr));
+
+/* IAMROOT-12AB:
+ * -------------
+ * usemap이 nid와 다른 노드에 할당 받은 경우 경고 메시지를 출력한다.
+ */
 	if (usemap_nid != nid) {
 		printk(KERN_INFO
 		       "node %d must be removed before remove section %ld\n",
@@ -392,6 +483,10 @@ static unsigned long * __init
 sparse_early_usemaps_alloc_pgdat_section(struct pglist_data *pgdat,
 					 unsigned long size)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * CONFIG_MEMORY_HOTREMOVE가 없는 경우
+ */
 	return memblock_virt_alloc_node_nopanic(size, pgdat->node_id);
 }
 
@@ -400,6 +495,12 @@ static void __init check_usemap_section_nr(int nid, unsigned long *usemap)
 }
 #endif /* CONFIG_MEMORY_HOTREMOVE */
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * pnum_begin: 지정된 노드에 처음 발견된 메모리가 있는 섹션 번호
+ * usemap_count: 지정된 노드에 존재하는 메모리가 있는 섹션 수
+ */
 static void __init sparse_early_usemaps_alloc_node(void *data,
 				 unsigned long pnum_begin,
 				 unsigned long pnum_end,
@@ -408,8 +509,23 @@ static void __init sparse_early_usemaps_alloc_node(void *data,
 	void *usemap;
 	unsigned long pnum;
 	unsigned long **usemap_map = (unsigned long **)data;
+
+/* IAMROOT-12AB:
+ * -------------
+ * size: usemap 사이즈(바이트 단위)
+ *	한 섹션에 들어갈 pageblock 수 x pageblock flags 비트 수(4) / 8 bits
+ *	(align 생략)
+ */
 	int size = usemap_size();
 
+/* IAMROOT-12AB:
+ * -------------
+ * 지정된 노드에 대한 usemap을 할당해야하는데 가능하면 NODE_DATA(nodeid)가 
+ * 생성되어 있는 노드에서 할당받는다. (왜냐하면 usemap이 같은 노드에 있지
+ * 않은 경우 메모리 탈착이 가능한 hotplug memory를 지원하는 시스템에서
+ * 서로 circular dependency 문제가 발생하여 노드의 메모리를 제거할 수 
+ * 없게 되는 문제가 있다.)
+ */
 	usemap = sparse_early_usemaps_alloc_pgdat_section(NODE_DATA(nodeid),
 							  size * usemap_count);
 	if (!usemap) {
@@ -417,11 +533,22 @@ static void __init sparse_early_usemaps_alloc_node(void *data,
 		return;
 	}
 
+/* IAMROOT-12AB:
+ * -------------
+ * usemap_map에 대한 초기화를 수행한다.
+ *	usemap_map[]은 할당받은 usemap의 적절한 위치를 가리킨다.
+ *	(섹션들은 할당받은 주소에 usemap 사이즈만큼 계속 증가한 위치를 가리킨다)
+ */
 	for (pnum = pnum_begin; pnum < pnum_end; pnum++) {
 		if (!present_section_nr(pnum))
 			continue;
 		usemap_map[pnum] = usemap;
 		usemap += size;
+
+/* IAMROOT-12AB:
+ * -------------
+ * usemap과 NODE_DATA()가 다른 노드에 위치한 경우 경고 메시지를 출력한다.
+ */
 		check_usemap_section_nr(nodeid, usemap_map[pnum]);
 	}
 }
@@ -432,10 +559,19 @@ struct page __init *sparse_mem_map_populate(unsigned long pnum, int nid)
 	struct page *map;
 	unsigned long size;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 특정 아키텍처(tile)에서 수행된다. 
+ * arm에서는 null로 리턴된다.
+ */
 	map = alloc_remap(nid, sizeof(struct page) * PAGES_PER_SECTION);
 	if (map)
 		return map;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 한 개의 섹션에 허용되는 페이지 수 만큼 struct page 공간을 할당한다.
+ */
 	size = PAGE_ALIGN(sizeof(struct page) * PAGES_PER_SECTION);
 	map = memblock_virt_alloc_try_nid(size,
 					  PAGE_SIZE, __pa(MAX_DMA_ADDRESS),
@@ -510,6 +646,11 @@ static struct page __init *sparse_early_mem_map_alloc(unsigned long pnum)
 	struct mem_section *ms = __nr_to_section(pnum);
 	int nid = sparse_early_nid(ms);
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 지정된 노드에 한 개의 섹션에 허용되는 페이지 수 만큼 struct page 공간을 할당한다.
+ */
 	map = sparse_mem_map_populate(pnum, nid);
 	if (map)
 		return map;
@@ -538,16 +679,40 @@ static void __init alloc_usemap_and_memmap(void (*alloc_func)
 	int nodeid_begin = 0;
 	unsigned long pnum_begin = 0;
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 아래 처음 루프는 메모리가 있는 처음 섹션을 알아내어
+ * 섹션번호와 노드id를 기억한다.
+ *
+ * map_count: 각 노드에서 메모리가 있는 섹션의 갯수
+ */
+
 	for (pnum = 0; pnum < NR_MEM_SECTIONS; pnum++) {
 		struct mem_section *ms;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 섹션에 메모리가 없는 경우 현재 섹션은 skip한다.
+ */
 		if (!present_section_nr(pnum))
 			continue;
 		ms = __nr_to_section(pnum);
+
+/* IAMROOT-12AB:
+ * -------------
+ * 처음 만난 메모리가 있는 섹션의 노드와 섹션 번호를 저장한다.
+ */
 		nodeid_begin = sparse_early_nid(ms);
 		pnum_begin = pnum;
 		break;
 	}
+
+/* IAMROOT-12AB:
+ * -------------
+ * 아래 루프는 노드가 바뀔 때 기존 노드에 대한 섹션 갯수를 알아내고
+ * alloc_func() 함수를 호출한다.
+ */
 	map_count = 1;
 	for (pnum = pnum_begin + 1; pnum < NR_MEM_SECTIONS; pnum++) {
 		struct mem_section *ms;
@@ -557,14 +722,30 @@ static void __init alloc_usemap_and_memmap(void (*alloc_func)
 			continue;
 		ms = __nr_to_section(pnum);
 		nodeid = sparse_early_nid(ms);
+
+/* IAMROOT-12AB:
+ * -------------
+ * 읽어들인 섹션에서 노드가 동일한 경우 map_count++ 증가시키고 계속한다.
+ */
 		if (nodeid == nodeid_begin) {
 			map_count++;
 			continue;
 		}
+
+/* IAMROOT-12AB:
+ * -------------
+ * 한 개 노드가 끝날 때마다 alloc_func()를 호출한다.
+ */
 		/* ok, we need to take cake of from pnum_begin to pnum - 1*/
 		alloc_func(data, pnum_begin, pnum,
 						map_count, nodeid_begin);
 		/* new start, update count etc*/
+
+/* IAMROOT-12AB:
+ * -------------
+ * 노드가 변경되었으므로 변경된 노드로 다시 루프를 돌기위해 준비한다.
+ * 바뀐 노드와 섹션 번호를 다시 기억하고 map_count도 1로 대입한다.
+ */
 		nodeid_begin = nodeid;
 		pnum_begin = pnum;
 		map_count = 1;
@@ -607,13 +788,31 @@ void __init sparse_init(void)
 	 * powerpc need to call sparse_init_one_section right after each
 	 * sparse_early_mem_map_alloc, so allocate usemap_map at first.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * usemap_map의 크기는 포인터 사이즈 x 섹션 수로 이루어진다.
+ */
 	size = sizeof(unsigned long *) * NR_MEM_SECTIONS;
+
+/* IAMROOT-12AB:
+ * -------------
+ * usemap: pageblock 단위마다 4bits의 mobility를 담는다.
+ *         pageblock은 커널 설정마다 다르다. (default=2^(MAX-ORDER-1) pages=4MB)
+ *         rpi2: pageblock_order=10, pageblock_nr_pages=1024
+ *
+ * usemap_map: 섹션마다 usemap을 가리킨다.
+ */
 	usemap_map = memblock_virt_alloc(size, 0);
 	if (!usemap_map)
 		panic("can not allocate usemap_map\n");
 	alloc_usemap_and_memmap(sparse_early_usemaps_alloc_node,
 							(void *)usemap_map);
 
+/* IAMROOT-12AB:
+ * -------------
+ * 아래 커널 옵션은 x86_64에서만 동작한다.
+ */
 #ifdef CONFIG_SPARSEMEM_ALLOC_MEM_MAP_TOGETHER
 	size2 = sizeof(struct page *) * NR_MEM_SECTIONS;
 	map_map = memblock_virt_alloc(size2, 0);
@@ -624,9 +823,18 @@ void __init sparse_init(void)
 #endif
 
 	for (pnum = 0; pnum < NR_MEM_SECTIONS; pnum++) {
+
+/* IAMROOT-12AB:
+ * -------------
+ * 메모리가 없는 섹션은 생략한다.
+ */
 		if (!present_section_nr(pnum))
 			continue;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 섹션과 관련있는 usemap의 주소를 알아온다.
+ */
 		usemap = usemap_map[pnum];
 		if (!usemap)
 			continue;
@@ -634,11 +842,20 @@ void __init sparse_init(void)
 #ifdef CONFIG_SPARSEMEM_ALLOC_MEM_MAP_TOGETHER
 		map = map_map[pnum];
 #else
+/* IAMROOT-12AB:
+ * -------------
+ * 지정된 노드에 현재 섹션에 대한 mem_map을 할당받는다.
+ * (한 개의 섹션에 허용되는 페이지 수 만큼 struct page 공간을 할당)
+ */
 		map = sparse_early_mem_map_alloc(pnum);
 #endif
 		if (!map)
 			continue;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 섹션 초기화를 수행한다.
+ */
 		sparse_init_one_section(__nr_to_section(pnum), pnum, map,
 								usemap);
 	}

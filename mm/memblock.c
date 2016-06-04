@@ -1542,6 +1542,12 @@ void * __init memblock_virt_alloc_try_nid_nopanic(
 	memblock_dbg("%s: %llu bytes align=0x%llx nid=%d from=0x%llx max_addr=0x%llx %pF\n",
 		     __func__, (u64)size, (u64)align, nid, (u64)min_addr,
 		     (u64)max_addr, (void *)_RET_IP_);
+
+/* IAMROOT-12AB:
+ * -------------
+ * 최대 4번의 검색을 통해 할당되지 않는 경우 null을 리턴한다.
+ * (UMA를 사용하는 arm에서는 free 메모리 검색을 1회 한다.)
+ */
 	return memblock_virt_alloc_internal(size, align, min_addr,
 					     max_addr, nid);
 }

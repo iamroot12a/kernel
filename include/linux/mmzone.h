@@ -1095,7 +1095,16 @@ static inline unsigned long early_pfn_to_nid(unsigned long pfn)
 #error Allocator MAX_ORDER exceeds SECTION_SIZE
 #endif
 
+/* IAMROOT-12AB:
+ * -------------
+ * pfn 값으로 섹션 번호를 산출한다.
+ */
 #define pfn_to_section_nr(pfn) ((pfn) >> PFN_SECTION_SHIFT)
+
+/* IAMROOT-12AB:
+ * -------------
+ * 섹션 번호로 pfn 값을 산출한다.
+ */
 #define section_nr_to_pfn(sec) ((sec) << PFN_SECTION_SHIFT)
 
 #define SECTION_ALIGN_UP(pfn)	(((pfn) + PAGES_PER_SECTION - 1) & PAGE_SECTION_MASK)
@@ -1116,15 +1125,30 @@ struct mem_section {
 	 * Making it a UL at least makes someone do a cast
 	 * before using it wrong.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * section별로되어 있는 mem_map을 가리킨다.
+ */
 	unsigned long section_mem_map;
 
 	/* See declaration of similar field in struct zone */
+
+/* IAMROOT-12AB:
+ * -------------
+ * usemap을 가리킨다. (usemap: pageblock단위로 mobility등을 관리)
+ */
 	unsigned long *pageblock_flags;
 #ifdef CONFIG_PAGE_EXTENSION
 	/*
 	 * If !SPARSEMEM, pgdat doesn't have page_ext pointer. We use
 	 * section. (see page_ext.h about this.)
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * page를 확장시킨 page_ext를 가리킨다.
+ */
 	struct page_ext *page_ext;
 	unsigned long pad;
 #endif
@@ -1164,8 +1188,19 @@ extern struct mem_section mem_section[NR_SECTION_ROOTS][SECTIONS_PER_ROOT];
 
 static inline struct mem_section *__nr_to_section(unsigned long nr)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * 섹션 번호로 mem_section을 알아온다.
+ */
 	if (!mem_section[SECTION_NR_TO_ROOT(nr)])
 		return NULL;
+
+/* IAMROOT-12AB:
+ * -------------
+ * CONFIG_SPARSEMEM_EXTREME 방식을 사용하는 경우 1차원 배열로 구성된 
+ * *mem_section[]을 통해 할당 받은 *mem_section[]을 찾고 두 번째 배열[]을
+ * 통해 마지막 엔트리를 결정하게 된다.
+ */
 	return &mem_section[SECTION_NR_TO_ROOT(nr)][nr & SECTION_ROOT_MASK];
 }
 extern int __section_nr(struct mem_section* ms);
@@ -1175,6 +1210,12 @@ extern unsigned long usemap_size(void);
  * We use the lower bits of the mem_map pointer to store
  * a little bit of information.  There should be at least
  * 3 bits here due to 32-bit alignment.
+ */
+
+/* IAMROOT-12AB:
+ * -------------
+ * section_mem_section 포인터의 하위 비트를 이용해서 약간의 정보를 담고 있다.
+ *                     bit3부터 노드 id를 저장
  */
 #define	SECTION_MARKED_PRESENT	(1UL<<0)
 #define SECTION_HAS_MEM_MAP	(1UL<<1)
@@ -1191,32 +1232,57 @@ static inline struct page *__section_mem_map_addr(struct mem_section *section)
 
 static inline int present_section(struct mem_section *section)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * section_mem_map의 bit0를 이용하여 섹션의 존재 여부를 확인한다.
+ */
 	return (section && (section->section_mem_map & SECTION_MARKED_PRESENT));
 }
 
 static inline int present_section_nr(unsigned long nr)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * 섹션 번호로 섹션의 존재 여부를 확인한다.
+ */
 	return present_section(__nr_to_section(nr));
 }
 
 static inline int valid_section(struct mem_section *section)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * section_mem_map의 bit1을 이용하여 섹션의 유효(동작가능) 여부를 알아온다.
+ */
 	return (section && (section->section_mem_map & SECTION_HAS_MEM_MAP));
 }
 
 static inline int valid_section_nr(unsigned long nr)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * 섹션 번호로 섹션의 유효(동작가능) 여부를 알아온다.
+ */
 	return valid_section(__nr_to_section(nr));
 }
 
 static inline struct mem_section *__pfn_to_section(unsigned long pfn)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * pfn으로 mem_section을 반환한다.
+ */
 	return __nr_to_section(pfn_to_section_nr(pfn));
 }
 
 #ifndef CONFIG_HAVE_ARCH_PFN_VALID
 static inline int pfn_valid(unsigned long pfn)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * pfn으로 섹션의 유효(동작가능) 여부를 알아온다.
+ */
 	if (pfn_to_section_nr(pfn) >= NR_MEM_SECTIONS)
 		return 0;
 	return valid_section(__nr_to_section(pfn_to_section_nr(pfn)));
@@ -1225,6 +1291,10 @@ static inline int pfn_valid(unsigned long pfn)
 
 static inline int pfn_present(unsigned long pfn)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * pfn으로 섹션의 존재 여부를 알아온다.
+ */
 	if (pfn_to_section_nr(pfn) >= NR_MEM_SECTIONS)
 		return 0;
 	return present_section(__nr_to_section(pfn_to_section_nr(pfn)));

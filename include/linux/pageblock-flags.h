@@ -39,6 +39,14 @@ enum pageblock_bits {
 	NR_PAGEBLOCK_BITS
 };
 
+/* IAMROOT-12AB:
+ * -------------
+ * TLB(Translation Lookaside Buffer): MMU에서 사용하는 페이지 테이블 변환에
+ * 사용하는 캐시
+ *
+ * HUGETLB: 주로 64비트 아키텍처에서 사용되며 한 개의 엔트리로 보다 더 큰
+ * 변환을 담당한다. (사이즈는 아키텍처마다 다르다. 보통 2M 근처)
+ */
 #ifdef CONFIG_HUGETLB_PAGE
 
 #ifdef CONFIG_HUGETLB_PAGE_SIZE_VARIABLE
@@ -49,6 +57,11 @@ extern int pageblock_order;
 #else /* CONFIG_HUGETLB_PAGE_SIZE_VARIABLE */
 
 /* Huge pages are a constant size */
+
+/* IAMROOT-12AB:
+ * -------------
+ * HUGETLB가 2M일때 pageblock_order=9
+ */
 #define pageblock_order		HUGETLB_PAGE_ORDER
 
 #endif /* CONFIG_HUGETLB_PAGE_SIZE_VARIABLE */
@@ -56,10 +69,20 @@ extern int pageblock_order;
 #else /* CONFIG_HUGETLB_PAGE */
 
 /* If huge pages are not used, group by MAX_ORDER_NR_PAGES */
+
+/* IAMROOT-12AB:
+ * -------------
+ * rpi2 에서 default로 사용: pageblock_order=MAX_ORDER-1=10
+ */
 #define pageblock_order		(MAX_ORDER-1)
 
 #endif /* CONFIG_HUGETLB_PAGE */
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * rpi2: pageblock_nr_pages=1024 pages (4MB)
+ */
 #define pageblock_nr_pages	(1UL << pageblock_order)
 
 /* Forward declaration */

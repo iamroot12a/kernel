@@ -288,6 +288,12 @@ static void __init arm_memory_present(void)
 {
 	struct memblock_region *reg;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 메모리가 존재하는 섹션(mem_section[])을 초기화한다.
+ * 노드 id와 섹션별 메모리 존재 플래그 비트만으로 section_mem_map을 초기화한다.
+ * (추후 섹션별 생성되는 mem_map과 연결될 때 노드 id를 삭제한다.)
+ */
 	for_each_memblock(memory, reg)
 		memory_present(0, memblock_region_memory_base_pfn(reg),
 			       memblock_region_memory_end_pfn(reg));
@@ -415,6 +421,11 @@ void __init bootmem_init(void)
 	 * Sparsemem tries to allocate bootmem in memory_present(),
 	 * so must be done after the fixed reservations
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 메모리가 존재하는 섹션(mem_section[])을 초기화한다.
+ */
 	arm_memory_present();
 
 	/*

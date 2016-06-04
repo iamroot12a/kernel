@@ -4796,6 +4796,10 @@ void __paginginit set_pageblock_order(void)
 	if (pageblock_order)
 		return;
 
+/* IAMROOT-12AB:
+ * -------------
+ * HUGETLB가 PAGE 크기보다 큰 경우 GUGETLB_PAGE_ORDER를 사용한다.
+ */
 	if (HPAGE_SHIFT > PAGE_SHIFT)
 		order = HUGETLB_PAGE_ORDER;
 	else

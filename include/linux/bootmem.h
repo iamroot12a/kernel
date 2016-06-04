@@ -108,6 +108,10 @@ extern void *__alloc_bootmem_low_node(pg_data_t *pgdat,
 				      unsigned long align,
 				      unsigned long goal);
 
+/* IAMROOT-12AB:
+ * -------------
+ * 최근의 arm은 bootmem을 사용하지 않는다.
+ */
 #ifdef CONFIG_NO_BOOTMEM
 /* We are using top down, so it is safe to use 0 here */
 #define BOOTMEM_LOW_LIMIT 0
@@ -162,6 +166,15 @@ void __memblock_free_late(phys_addr_t base, phys_addr_t size);
 static inline void * __init memblock_virt_alloc(
 					phys_addr_t size,  phys_addr_t align)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * 메모리를 memblock에서 할당받고 할당받은 가상 주소를 반환한다.
+ * 할당 순서:
+ *	노드관계없이 지정된 범위 -> 
+ *	노드관계없이 0~max 범위로 할당을 받아온다.
+ */
+
 	return memblock_virt_alloc_try_nid(size, align, BOOTMEM_LOW_LIMIT,
 					    BOOTMEM_ALLOC_ACCESSIBLE,
 					    NUMA_NO_NODE);
@@ -221,6 +234,11 @@ static inline void * __init memblock_virt_alloc_node(
 static inline void * __init memblock_virt_alloc_node_nopanic(
 						phys_addr_t size, int nid)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * arm의 경우 bootmem을 사용하지 않으므로 BOOTMEM_LOW_LIMIT는 0이다.
+ * (bootmem은 최근의 커널에서 대부분의 아키텍처에서 제거된 상태이다.)
+ */
 	return memblock_virt_alloc_try_nid_nopanic(size, 0, BOOTMEM_LOW_LIMIT,
 						    BOOTMEM_ALLOC_ACCESSIBLE,
 						    nid);
