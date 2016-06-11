@@ -184,6 +184,12 @@ static void __init arm_adjust_dma_zone(unsigned long *size, unsigned long *hole,
 	if (size[0] <= dma_size)
 		return;
 
+/* IAMROOT-12AB:
+ * -------------
+ * sparse 메모리 모델에서
+ *	DMA 사이즈만큼 ZONE_NORMAL에 대해 조정을 한다.
+ *	ZONE_HIGHMEM에 대해서는 DMA가 영향을 주지 않으므로 조정하지 않는다.
+ */
 	size[ZONE_NORMAL] = size[0] - dma_size;
 	size[ZONE_DMA] = dma_size;
 	hole[ZONE_NORMAL] = hole[0];
@@ -232,8 +238,18 @@ static void __init zone_sizes_init(unsigned long min, unsigned long max_low,
 	 * to do anything fancy with the allocation of this memory
 	 * to the zones, now is the time to do it.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 먼저 ZONE_NORMAL 영역에 대한 페이지 수를 계산한다.(hole을 포함)
+ */
 	zone_size[0] = max_low - min;
 #ifdef CONFIG_HIGHMEM
+
+/* IAMROOT-12AB:
+ * -------------
+ * ZONE_HIGHMEM 영역에 대한 페이지 수를 계산한다.(hole을 포함)
+ */
 	zone_size[ZONE_HIGHMEM] = max_high - max_low;
 #endif
 
@@ -241,6 +257,11 @@ static void __init zone_sizes_init(unsigned long min, unsigned long max_low,
 	 * Calculate the size of the holes.
 	 *  holes = node_size - sum(bank_sizes)
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 각 ZONE의 hole의 페이지 수를 계산한다.
+ */
 	memcpy(zhole_size, zone_size, sizeof(zhole_size));
 	for_each_memblock(memory, reg) {
 		unsigned long start = memblock_region_memory_base_pfn(reg);
@@ -263,11 +284,21 @@ static void __init zone_sizes_init(unsigned long min, unsigned long max_low,
 	 * Adjust the sizes according to any special requirements for
 	 * this machine type.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * DMA를 사용하는 경우 ZONE_NORMAL은 DMA_SIZE 만큼 감소시킨다.
+ */
 	if (arm_dma_zone_size)
 		arm_adjust_dma_zone(zone_size, zhole_size,
 			arm_dma_zone_size >> PAGE_SHIFT);
 #endif
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 노드 0에 대해서만 초기화를 수행한다.
+ */
 	free_area_init_node(0, zone_size, min, zhole_size);
 }
 
@@ -431,6 +462,11 @@ void __init bootmem_init(void)
 	/*
 	 * sparse_init() needs the bootmem allocator up and running.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * mem_section[]과 연결된 usemap과 mem_map 공간을 할당받고 연결시킨다.
+ */
 	sparse_init();
 
 	/*

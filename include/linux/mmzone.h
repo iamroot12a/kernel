@@ -903,6 +903,12 @@ extern char numa_zonelist_order[];
 #ifndef CONFIG_NEED_MULTIPLE_NODES
 
 extern struct pglist_data contig_page_data;
+
+/* IAMROOT-12AB:
+ * -------------
+ * NODE_DATA() 매크로가 Flat 메모리 시스템에서는 노드가 하나이기 때문에
+ * 전역 contig_page_data를 사용한다.
+ */
 #define NODE_DATA(nid)		(&contig_page_data)
 #define NODE_MEM_MAP(nid)	mem_map
 

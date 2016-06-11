@@ -718,6 +718,10 @@ static void __init alloc_usemap_and_memmap(void (*alloc_func)
 		struct mem_section *ms;
 		int nodeid;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 메모리가 없는 섹션은 skip
+ */
 		if (!present_section_nr(pnum))
 			continue;
 		ms = __nr_to_section(pnum);
@@ -775,6 +779,15 @@ void __init sparse_init(void)
 	BUILD_BUG_ON(!is_power_of_2(sizeof(struct mem_section)));
 
 	/* Setup pageblock_order for HUGETLB_PAGE_SIZE_VARIABLE */
+
+/* IAMROOT-12AB:
+ * -------------
+ * HUGETLB_PAGE_SIZE_VARIABLE 커널 옵션을 사용하는 경우에 pageblock_order
+ * 를 변수로 선언하여 값을 계산하여 사용하게 한다.
+ *
+ * 보통 pageblock_order는 매크로 상수로 define되어 사용한다.
+ * (default로 MAX_ORDER-1)
+ */
 	set_pageblock_order();
 
 	/*
@@ -806,6 +819,12 @@ void __init sparse_init(void)
 	usemap_map = memblock_virt_alloc(size, 0);
 	if (!usemap_map)
 		panic("can not allocate usemap_map\n");
+
+/* IAMROOT-12AB:
+ * -------------
+ * alloc_usemap_and_memmap()에서 첫 번째 인수에 주어진
+ * usemap 또는 mem_map 할당자를 노드마다 호출한다.
+ */
 	alloc_usemap_and_memmap(sparse_early_usemaps_alloc_node,
 							(void *)usemap_map);
 
@@ -862,6 +881,11 @@ void __init sparse_init(void)
 
 	vmemmap_populate_print_last();
 
+/* IAMROOT-12AB:
+ * -------------
+ * map_map[] 배열 영역과 usemap_map[] 배열 영역을 free 시킨다.
+ * 할당받은 각 usemap은 섹션 별로 mem_section의 멤버 pageblock_flags에 연결된다.
+ */
 #ifdef CONFIG_SPARSEMEM_ALLOC_MEM_MAP_TOGETHER
 	memblock_free_early(__pa(map_map), size2);
 #endif

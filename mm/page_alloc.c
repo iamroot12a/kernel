@@ -227,6 +227,11 @@ EXPORT_SYMBOL(movable_zone);
 #endif /* CONFIG_HAVE_MEMBLOCK_NODE_MAP */
 
 #if MAX_NUMNODES > 1
+
+/* IAMROOT-12AB:
+ * -------------
+ * 사용가능한 노드 id + 1
+ */
 int nr_node_ids __read_mostly = MAX_NUMNODES;
 int nr_online_nodes __read_mostly = 1;
 EXPORT_SYMBOL(nr_node_ids);
@@ -4546,6 +4551,10 @@ void __meminit get_pfn_range_for_nid(unsigned int nid,
 	*start_pfn = -1UL;
 	*end_pfn = 0;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 지정된 노드에 대해서 시작 pfn과 끝 pfn을 알아낸다.
+ */
 	for_each_mem_pfn_range(i, nid, &this_start_pfn, &this_end_pfn, NULL) {
 		*start_pfn = min(*start_pfn, this_start_pfn);
 		*end_pfn = max(*end_pfn, this_end_pfn);
@@ -4563,6 +4572,10 @@ void __meminit get_pfn_range_for_nid(unsigned int nid,
 static void __init find_usable_zone_for_movable(void)
 {
 	int zone_index;
+/* IAMROOT-12AB:
+ * -------------
+ * populate(사용가능한) zone 중에서 가장 높은 zone을 찾아 리턴
+ */
 	for (zone_index = MAX_NR_ZONES - 1; zone_index >= 0; zone_index--) {
 		if (zone_index == ZONE_MOVABLE)
 			continue;
@@ -4703,6 +4716,10 @@ static inline unsigned long __meminit zone_spanned_pages_in_node(int nid,
 					unsigned long node_end_pfn,
 					unsigned long *zones_size)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * NUMA가 아닌 시스템에서 사용된다.
+ */
 	return zones_size[zone_type];
 }
 
@@ -4712,6 +4729,10 @@ static inline unsigned long __meminit zone_absent_pages_in_node(int nid,
 						unsigned long node_end_pfn,
 						unsigned long *zholes_size)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * NUMA가 아닌 시스템에서 사용된다.
+ */
 	if (!zholes_size)
 		return 0;
 
@@ -4729,6 +4750,11 @@ static void __meminit calculate_node_totalpages(struct pglist_data *pgdat,
 	unsigned long realtotalpages, totalpages = 0;
 	enum zone_type i;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 지정된 노드에서 zone별로 spanned_pages(hole을 포함한)를 산출한다.
+ * 산출하여 노드->node_spanned_pages에 저장한다.
+ */
 	for (i = 0; i < MAX_NR_ZONES; i++)
 		totalpages += zone_spanned_pages_in_node(pgdat->node_id, i,
 							 node_start_pfn,
@@ -4736,6 +4762,12 @@ static void __meminit calculate_node_totalpages(struct pglist_data *pgdat,
 							 zones_size);
 	pgdat->node_spanned_pages = totalpages;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 지정된 노드에서 zone별로 absent_pages(hole 페이지-메모리가 없는 영역)를 
+ * 산출하고 realtotalpages에서 감소시킨다.
+ * 산출하여 노드->node_present_pages에 저장한다.
+ */
 	realtotalpages = totalpages;
 	for (i = 0; i < MAX_NR_ZONES; i++)
 		realtotalpages -=
@@ -4961,6 +4993,11 @@ static void __init_refok alloc_node_mem_map(struct pglist_data *pgdat)
 	if (!pgdat->node_spanned_pages)
 		return;
 
+/* IAMROOT-12AB:
+ * -------------
+ * Flat 메모리 시스템에서는 아래의 루틴으로 노드별로 mem_map을 만들고,
+ * Sparse 메모리 시스템에서는 mem_section을 통해서 section_mem_map을 접근한다.
+ */
 #ifdef CONFIG_FLAT_NODE_MEM_MAP
 	/* ia64 gets its own node_mem_map, before this, without bootmem */
 	if (!pgdat->node_mem_map) {
@@ -4972,6 +5009,12 @@ static void __init_refok alloc_node_mem_map(struct pglist_data *pgdat)
 		 * aligned but the node_mem_map endpoints must be in order
 		 * for the buddy allocator to function correctly.
 		 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 지정된 노드의 범위를 mem_map으로 만들 때 mem_map[]의 갯수가 
+ * 1024개 페이지 단위로 정렬한다. 
+ */
 		start = pgdat->node_start_pfn & ~(MAX_ORDER_NR_PAGES - 1);
 		end = pgdat_end_pfn(pgdat);
 		end = ALIGN(end, MAX_ORDER_NR_PAGES);
@@ -4980,6 +5023,13 @@ static void __init_refok alloc_node_mem_map(struct pglist_data *pgdat)
 		if (!map)
 			map = memblock_virt_alloc_node_nopanic(size,
 							       pgdat->node_id);
+/* IAMROOT-12AB:
+ * -------------
+ * mem_map의 사이즈가 위/아래로 1024개 단위로 정렬되어 할당받으므로
+ * 실제 노드의 시작 주소를 가리킬 때에는 mem_map에서 그 오차 페이지
+ * 수 만큼 위를 가리키게 해야 한다.
+ * (따라서 mem_map[]의 위아래는 사용안되는 영역이 있을 수 있다.)
+ */
 		pgdat->node_mem_map = map + (pgdat->node_start_pfn - start);
 	}
 #ifndef CONFIG_NEED_MULTIPLE_NODES
@@ -5010,10 +5060,19 @@ void __paginginit free_area_init_node(int nid, unsigned long *zones_size,
 	pgdat->node_id = nid;
 	pgdat->node_start_pfn = node_start_pfn;
 #ifdef CONFIG_HAVE_MEMBLOCK_NODE_MAP
+/* IAMROOT-12AB:
+ * -------------
+ * 지정된 노드에 대해서 시작 pfn과 끝 pfn을 알아낸다.
+ */
 	get_pfn_range_for_nid(nid, &start_pfn, &end_pfn);
 	pr_info("Initmem setup node %d [mem %#018Lx-%#018Lx]\n", nid,
 		(u64)start_pfn << PAGE_SHIFT, ((u64)end_pfn << PAGE_SHIFT) - 1);
 #endif
+
+/* IAMROOT-12AB:
+ * -------------
+ * 노드->node_spanned_pages와 노드->node_present_pages를 산출한다.
+ */
 	calculate_node_totalpages(pgdat, start_pfn, end_pfn,
 				  zones_size, zholes_size);
 
@@ -5102,6 +5161,10 @@ static unsigned long __init find_min_pfn_for_node(int nid)
 	unsigned long start_pfn;
 	int i;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 지정된 노드의 가장 낮은 페이지 pfn을 반환한다.
+ */
 	for_each_mem_pfn_range(i, nid, &start_pfn, NULL, NULL)
 		min_pfn = min(min_pfn, start_pfn);
 
@@ -5122,6 +5185,10 @@ static unsigned long __init find_min_pfn_for_node(int nid)
  */
 unsigned long __init find_min_pfn_with_active_regions(void)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * 모든 노드 중에서 가장 낮은 페이지 pfn을 반환한다.
+ */
 	return find_min_pfn_for_node(MAX_NUMNODES);
 }
 
@@ -5152,6 +5219,14 @@ static unsigned long __init early_calculate_totalpages(void)
  * memory. When they don't, some nodes will have more kernelcore than
  * others
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 노드별로 ZONE_MOVABLE이 가능한 시작 pfn을 zone_movable_pfn[] 배열에 저장
+ * (저장된 값은 MAX_ORDER_NR_PAGES 단위로 정렬된다.)
+ *
+ * movable_zone에는 movable이 가능한 가장 높은 zone이 저장된다.
+ */
 static void __init find_zone_movable_pfns_for_nodes(void)
 {
 	int i, nid;
@@ -5164,17 +5239,32 @@ static void __init find_zone_movable_pfns_for_nodes(void)
 	struct memblock_region *r;
 
 	/* Need to find movable_zone earlier when movable_node is specified. */
+
+/* IAMROOT-12AB:
+ * -------------
+ * zone 중에서 movable이 가능한 zone(가장 높은)을 찾는다.
+ */
 	find_usable_zone_for_movable();
 
 	/*
 	 * If movable_node is specified, ignore kernelcore and movablecore
 	 * options.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * CONFIG_MOVABLE_NODE 커널 옵션과 "movable_node" 커널 파라메터가 동시에 제공되면
+ * 아래 movable_node_is_enabled() 함수가 true가 된다.
+ */
 	if (movable_node_is_enabled()) {
 		for_each_memblock(memory, r) {
 			if (!memblock_is_hotpluggable(r))
 				continue;
 
+/* IAMROOT-12AB:
+ * -------------
+ * memblock이 hotplug 가능한 메모리이면 이 루틴을 수행한다.
+ */
 			nid = r->nid;
 
 			usable_startpfn = PFN_DOWN(r->base);
@@ -5305,6 +5395,11 @@ restart:
 
 out2:
 	/* Align start of ZONE_MOVABLE on all nids to MAX_ORDER_NR_PAGES */
+
+/* IAMROOT-12AB:
+ * -------------
+ * zone_movable_pfn[] 값들을 MAX_ORDER_NR_PAGES 단위로 정렬한다.
+ */
 	for (nid = 0; nid < MAX_NUMNODES; nid++)
 		zone_movable_pfn[nid] =
 			roundup(zone_movable_pfn[nid], MAX_ORDER_NR_PAGES);
@@ -5357,8 +5452,21 @@ void __init free_area_init_nodes(unsigned long *max_zone_pfn)
 				sizeof(arch_zone_lowest_possible_pfn));
 	memset(arch_zone_highest_possible_pfn, 0,
 				sizeof(arch_zone_highest_possible_pfn));
+/* IAMROOT-12AB:
+ * -------------
+ * arch_zone_lowest_possible_pfn[0] 
+ *	모든 노드 중에서 가장 낮은 페이지 pfn
+ */
 	arch_zone_lowest_possible_pfn[0] = find_min_pfn_with_active_regions();
 	arch_zone_highest_possible_pfn[0] = max_zone_pfn[0];
+
+/* IAMROOT-12AB:
+ * -------------
+ * 인수로 제공된 zone 별 max pfn을 이용하여 zone 별 low pfn 값까지 계산하여
+ * arch_zone_lowest_possible_pfn[]과 arch_zone_highest_possible_pfn[]에 저장
+ * (ZONE_MOVABLE은 min=max=0)
+ *
+ */
 	for (i = 1; i < MAX_NR_ZONES; i++) {
 		if (i == ZONE_MOVABLE)
 			continue;
@@ -5372,6 +5480,11 @@ void __init free_area_init_nodes(unsigned long *max_zone_pfn)
 
 	/* Find the PFNs that ZONE_MOVABLE begins at in each node */
 	memset(zone_movable_pfn, 0, sizeof(zone_movable_pfn));
+
+/* IAMROOT-12AB:
+ * -------------
+ * 노드별로 ZONE_MOVABLE이 가능한 시작 pfn을 zone_movable_pfn[] 배열에 담아온다.
+ */
 	find_zone_movable_pfns_for_nodes();
 
 	/* Print out the zone ranges */
@@ -5408,6 +5521,11 @@ void __init free_area_init_nodes(unsigned long *max_zone_pfn)
 
 	/* Initialise every node */
 	mminit_verify_pageflags_layout();
+
+/* IAMROOT-12AB:
+ * -------------
+ * 전역 변수 nr_node_ids에 사용가능한 노드 id + 1을 저장한다.
+ */
 	setup_nr_node_ids();
 	for_each_online_node(nid) {
 		pg_data_t *pgdat = NODE_DATA(nid);
