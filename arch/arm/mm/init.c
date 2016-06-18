@@ -298,6 +298,9 @@ static void __init zone_sizes_init(unsigned long min, unsigned long max_low,
 /* IAMROOT-12AB:
  * -------------
  * 노드 0에 대해서만 초기화를 수행한다.
+ *	zone_size[]:	zone별로 hole을 포함한 page 갯수
+ *	zhole_size[]:	zone별로 hole page 갯수
+ *	min:		시작 메모리 pfn (노드별)
  */
 	free_area_init_node(0, zone_size, min, zhole_size);
 }
@@ -474,6 +477,15 @@ void __init bootmem_init(void)
 	 * the sparse mem_map arrays initialized by sparse_init()
 	 * for memmap_init_zone(), otherwise all PFNs are invalid.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * - 노드별 zone 구획을 설정하고 present/spanned page 수를 설정한다.
+ *   (NUMA 시스템의 경우 ZONE_HIGHMEM 포함)
+ * - 노드별 정보 초기화 
+ *   .node_mem_map 할당 및 초기화 
+ *   .usemap 할당 및 초기화
+ */
 	zone_sizes_init(min, max_low, max_high);
 
 	/*

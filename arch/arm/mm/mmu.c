@@ -1965,6 +1965,13 @@ void __init paging_init(const struct machine_desc *mdesc)
  */
 	zero_page = early_alloc(PAGE_SIZE);
 
+/* IAMROOT-12AB:
+ * -------------
+ * - lowmem/highmem 영역 지정
+ * - sparse 메모리 모델을 사용하는 경우 mem_section, usemap 등을 할당 및 초기화
+ * - 노드 정보(노드에서 사용하는 zone 구획 및 정보 포함) 초기화 
+ *   .flat 메모리 모델을 사용하는 경우 node_mem_map 및 usemap 영역 할당 및 초기화
+ */
 	bootmem_init();
 
 	empty_zero_page = virt_to_page(zero_page);

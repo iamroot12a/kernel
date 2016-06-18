@@ -4607,6 +4607,13 @@ static void __meminit adjust_zone_range_for_zone_movable(int nid,
 					unsigned long *zone_end_pfn)
 {
 	/* Only adjust if ZONE_MOVABLE is on this node */
+
+/* IAMROOT-12AB:
+ * -------------
+ * NUMA 시스템에서 movable_node 또는 kernelcore/movablecore 커널 파라메터가
+ * 설정된 경우 아래 zone_movable_pfn[]이 노드별로 값이 지정된다.
+ * 0이 들어있는 경우는 해당 노드에 대해서는 ZONE_MOVABLE을 설정하지 않는다.
+ */
 	if (zone_movable_pfn[nid]) {
 		/* Size ZONE_MOVABLE */
 		if (zone_type == ZONE_MOVABLE) {
@@ -4638,8 +4645,20 @@ static unsigned long __meminit zone_spanned_pages_in_node(int nid,
 	unsigned long zone_start_pfn, zone_end_pfn;
 
 	/* Get the start and end of the zone */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 아래 두 변수에는 전체 노드에 대한 zone별 pfn 값이 들어있다.(ZONE_MOVABLE만 제외)
+ *	- arch_zone_lowest_possible_pfn[]
+ *	- arch_zone_highest_possible_pfn[]
+ */
 	zone_start_pfn = arch_zone_lowest_possible_pfn[zone_type];
 	zone_end_pfn = arch_zone_highest_possible_pfn[zone_type];
+
+/* IAMROOT-12AB:
+ * -------------
+ * last zone을 ZONE_MOVABLE 영역과 나눈다(조절한다).
+ */
 	adjust_zone_range_for_zone_movable(nid, zone_type,
 				node_start_pfn, node_end_pfn,
 				&zone_start_pfn, &zone_end_pfn);
@@ -4668,6 +4687,11 @@ unsigned long __meminit __absent_pages_in_range(int nid,
 	unsigned long start_pfn, end_pfn;
 	int i;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 주어진 영역(spanned pages)에서 지정된 노드의 memblock 페이지를 제거하면
+ * hole size(absent pages)가 산출된다.
+ */
 	for_each_mem_pfn_range(i, nid, &start_pfn, &end_pfn, NULL) {
 		start_pfn = clamp(start_pfn, range_start_pfn, range_end_pfn);
 		end_pfn = clamp(end_pfn, range_start_pfn, range_end_pfn);
@@ -4706,6 +4730,11 @@ static unsigned long __meminit zone_absent_pages_in_node(int nid,
 	adjust_zone_range_for_zone_movable(nid, zone_type,
 			node_start_pfn, node_end_pfn,
 			&zone_start_pfn, &zone_end_pfn);
+
+/* IAMROOT-12AB:
+ * -------------
+ * hole size(absent_pages)를 산출한다.
+ */
 	return __absent_pages_in_range(nid, zone_start_pfn, zone_end_pfn);
 }
 
@@ -4871,6 +4900,14 @@ static unsigned long __paginginit calc_memmap_size(unsigned long spanned_pages,
 	 * populated regions may not naturally algined on page boundary.
 	 * So the (present_pages >> 4) heuristic is a tradeoff for that.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * spanned_pages가 present_pages * 106%(~107%)와 비교하여
+ *  - 큰 경우 present_pages로 
+ *  - 작은 경우 spanned_pages로 
+ * freesize 계산을 위해 mem_map용 페이지 수를 알아온다.
+ */
 	if (spanned_pages > present_pages + (present_pages >> 4) &&
 	    IS_ENABLED(CONFIG_SPARSEMEM))
 		pages = present_pages;
@@ -4903,12 +4940,21 @@ static void __paginginit free_area_init_core(struct pglist_data *pgdat,
 #endif
 	init_waitqueue_head(&pgdat->kswapd_wait);
 	init_waitqueue_head(&pgdat->pfmemalloc_wait);
+
+/* IAMROOT-12AB:
+ * -------------
+ * page_ext를 사용하는 경우 사용된다. (초기값은 null)
+ */
 	pgdat_page_ext_init(pgdat);
 
 	for (j = 0; j < MAX_NR_ZONES; j++) {
 		struct zone *zone = pgdat->node_zones + j;
 		unsigned long size, realsize, freesize, memmap_pages;
 
+/* IAMROOT-12AB:
+ * -------------
+ * arm에서는 다시 한 번 realsize(freesize)를 알아온다.
+ */
 		size = zone_spanned_pages_in_node(nid, j, node_start_pfn,
 						  node_end_pfn, zones_size);
 		realsize = freesize = size - zone_absent_pages_in_node(nid, j,
@@ -4942,6 +4988,14 @@ static void __paginginit free_area_init_core(struct pglist_data *pgdat,
 					zone_names[0], dma_reserve);
 		}
 
+/* IAMROOT-12AB:
+ * -------------
+ * nr_kernel_pages= lowmem pages - mem_map pages(highmem 제외) - dma_reserve
+ *                         조건: highmem memmap 비중이 lowmem의 절반 이하일 때
+ *                               - mem_map pages(highmem)
+ * nr_all_pages=    lowmem pages - mem_map pages(highmem 제외) - dma_reserve
+ *		  + highmem pages 	
+ */
 		if (!is_highmem_idx(j))
 			nr_kernel_pages += freesize;
 		/* Charge for highmem memmap if there are enough kernel pages */
@@ -4956,6 +5010,12 @@ static void __paginginit free_area_init_core(struct pglist_data *pgdat,
 		 * when the bootmem allocator frees pages into the buddy system.
 		 * And all highmem pages will be managed by the buddy system.
 		 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * ---> here
+ */
+
 		zone->managed_pages = is_highmem_idx(j) ? realsize : freesize;
 #ifdef CONFIG_NUMA
 		zone->node = nid;
@@ -5076,6 +5136,10 @@ void __paginginit free_area_init_node(int nid, unsigned long *zones_size,
 	calculate_node_totalpages(pgdat, start_pfn, end_pfn,
 				  zones_size, zholes_size);
 
+/* IAMROOT-12AB:
+ * -------------
+ * node_mem_map을 할당받고 초기화한다.
+ */
 	alloc_node_mem_map(pgdat);
 #ifdef CONFIG_FLAT_NODE_MEM_MAP
 	printk(KERN_DEBUG "free_area_init_node: node %d, pgdat %08lx, node_mem_map %08lx\n",
@@ -5083,6 +5147,12 @@ void __paginginit free_area_init_node(int nid, unsigned long *zones_size,
 		(unsigned long)pgdat->node_mem_map);
 #endif
 
+/* IAMROOT-12AB:
+ * -------------
+ * 노드 정보 초기화 
+ *    .
+ *
+ */
 	free_area_init_core(pgdat, start_pfn, end_pfn,
 			    zones_size, zholes_size);
 }
@@ -5203,11 +5273,21 @@ static unsigned long __init early_calculate_totalpages(void)
 	unsigned long start_pfn, end_pfn;
 	int i, nid;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 전체 가용 페이지 수를 리턴한다.
+ */
 	for_each_mem_pfn_range(i, MAX_NUMNODES, &start_pfn, &end_pfn, &nid) {
 		unsigned long pages = end_pfn - start_pfn;
 
 		totalpages += pages;
 		if (pages)
+
+/* IAMROOT-12AB:
+ * -------------
+ * 해당 노드에 가용 페이지가 있는 경우 노드의 메모리 존재 여부 비트맵에 
+ * 지정된 노드의 비트를 설정한다.
+ */
 			node_set_state(nid, N_MEMORY);
 	}
 	return totalpages;
@@ -5233,8 +5313,23 @@ static void __init find_zone_movable_pfns_for_nodes(void)
 	unsigned long usable_startpfn;
 	unsigned long kernelcore_node, kernelcore_remaining;
 	/* save the state before borrow the nodemask */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 노드별 메모리 존재 여부 비트맵
+ */
 	nodemask_t saved_node_state = node_states[N_MEMORY];
+
+/* IAMROOT-12AB:
+ * -------------
+ * 전체 가용 메모리 페이지 수
+ */
 	unsigned long totalpages = early_calculate_totalpages();
+
+/* IAMROOT-12AB:
+ * -------------
+ * 메모리를 소유한 노드의 수
+ */
 	int usable_nodes = nodes_weight(node_states[N_MEMORY]);
 	struct memblock_region *r;
 
@@ -5242,7 +5337,7 @@ static void __init find_zone_movable_pfns_for_nodes(void)
 
 /* IAMROOT-12AB:
  * -------------
- * zone 중에서 movable이 가능한 zone(가장 높은)을 찾는다.
+ * 전역변수 movable_zone에 zone 중에서 movable이 가능한 zone(가장 높은)을 찾는다.
  */
 	find_usable_zone_for_movable();
 
@@ -5268,6 +5363,11 @@ static void __init find_zone_movable_pfns_for_nodes(void)
 			nid = r->nid;
 
 			usable_startpfn = PFN_DOWN(r->base);
+
+/* IAMROOT-12AB:
+ * -------------
+ * zone_movable_pfn[]: 노드별 ZONE_MOVABLE이 시작하는 pfn
+ */
 			zone_movable_pfn[nid] = zone_movable_pfn[nid] ?
 				min(usable_startpfn, zone_movable_pfn[nid]) :
 				usable_startpfn;
@@ -5295,6 +5395,18 @@ static void __init find_zone_movable_pfns_for_nodes(void)
 			roundup(required_movablecore, MAX_ORDER_NR_PAGES);
 		corepages = totalpages - required_movablecore;
 
+/* IAMROOT-12AB:
+ * -------------
+ * kernelcore 영역을 산출한다.
+ *
+ * 1) movablecore 영역만 지정되는 경우 전체 메모리 - movablecore 영역이 
+ *    kernelcore 영역이된다.
+ *
+ * 2) kernlecore와 movablecore가 동시에 지정이 되는 경우
+ *   kernelcore 영역이 movablecore 영역보다 우선된다.
+ *
+ * 3) kernelcore 영역만 지정되는 경우 그 영역을 그대로 사용한다.
+ */
 		required_kernelcore = max(required_kernelcore, corepages);
 	}
 
@@ -5303,8 +5415,30 @@ static void __init find_zone_movable_pfns_for_nodes(void)
 		goto out;
 
 	/* usable_startpfn is the lowest possible pfn ZONE_MOVABLE can be at */
+
+/* IAMROOT-12AB:
+ * -------------
+ * arch_zone_lowest_possible_pfn[]: ZONE_MOVABLE을 제외한 각 zone의 시작 pfn
+ * movable_zone (보통 ZONE_HIGHMEM 또는 ZONE_NORMAL이 사용되고, 이론적으로
+ * 최악의 경우 ZONE_DMA32나 ZONE_DMA도 사용될 수 있다)
+ *
+ * usable_startpfn: 마지막 zone의 시작 (MOVABLE_ZONE이 가능한 zone)
+ */
 	usable_startpfn = arch_zone_lowest_possible_pfn[movable_zone];
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 다음의 환경에서 설정되는 zone_movable_pfn[]
+ * -------------------------------------------
+ * node 1: ZONE_HIGHMEM=2G
+ * node 0: ZONE_HIGHMEM=1.3GB
+ *         ZONE_NORMAL=	700M (approx.)
+ * "kernelcore=256K" pages = (1G)
+ * -------------------------------------------
+ * zone_movable_pfn[0]=node 0 시작주소 + 850M에 해당하는 PFN 
+ * zone_movable_pfn[1]=node 1 시작주소 + 150M에 해당하는 PFN 
+ */
 restart:
 	/* Spread kernelcore memory as evenly as possible throughout nodes */
 	kernelcore_node = required_kernelcore / usable_nodes;
@@ -5572,6 +5706,15 @@ static int __init cmdline_parse_movablecore(char *p)
 	return cmdline_parse_core(p, &required_movablecore);
 }
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * "kernelcore=<pages>"  -> 지정된 메모리 공간을 노드 수로 나누고 사용하고
+ *                          나머지 공간을 ZONE_MOVABLE에서 사용한다.
+ * "movablecore=<pages>" -> 전체 메모리 공간에서 movablecore로 지정한 영역을
+ *                          뺀 공간을 kernelcore 영역으로 만들어 사용하고 
+ *                          계산은 kernelcore=에서 한것과 동일하다.
+ */
 early_param("kernelcore", cmdline_parse_kernelcore);
 early_param("movablecore", cmdline_parse_movablecore);
 

@@ -1568,6 +1568,12 @@ static int __init cmdline_parse_movable_node(char *p)
 	 * allocate memory near the kernel image to try the best to keep
 	 * the kernel away from hotpluggable memory.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 메모리 할당을 bottom up 방향으로 구성한다.
+ * (초기화 과정에서 ZONE_MOVABLE 영역에 할당이 되지 않게 하기 위함)
+ */
 	memblock_set_bottom_up(true);
 	movable_node_enabled = true;
 #else
@@ -1575,6 +1581,12 @@ static int __init cmdline_parse_movable_node(char *p)
 #endif
 	return 0;
 }
+
+/* IAMROOT-12AB:
+ * -------------
+ * "movable_node" 커널 파라메터를 설정한는 경우 memblock의 flags가 설정된
+ * 노드가 memory hotplug에서 사용되며 ZONE_MOVABLE로 구성된다.
+ */
 early_param("movable_node", cmdline_parse_movable_node);
 
 /* check which state of node_states will be changed when offline memory */

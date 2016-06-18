@@ -622,6 +622,13 @@ asmlinkage __visible void __init start_kernel(void)
 	/*
 	 * Set up the the initial canary ASAP:
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * CONFIG_CC_STACKPROTECTOR
+ * -fstack-protector-all 옵션을 사용하면 기능이 활성화된다.
+ */
+
 	boot_init_stack_canary();
 
 	cgroup_init_early();

@@ -147,9 +147,19 @@ void __next_mem_range_rev(u64 *idx, int nid, struct memblock_type *type_a,
 #ifdef CONFIG_MOVABLE_NODE
 static inline bool memblock_is_hotpluggable(struct memblock_region *m)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * "movable_node" 커널 파라메터를 허용하려는 경우 사용
+ */
 	return m->flags & MEMBLOCK_HOTPLUG;
 }
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * "movable_node" 커널 파라메터를 사용하여 hotplug 메모리를 위해 ZONE_MOVABLE
+ * 영역을 설정할 수 있다.
+ */
 static inline bool movable_node_is_enabled(void)
 {
 	return movable_node_enabled;
