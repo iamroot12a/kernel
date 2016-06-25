@@ -11,6 +11,11 @@
  * are used to select a priority ordered list of memory zones which
  * match the requested limits. See gfp_zone() in include/linux/gfp.h
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * zone을 표현하는 비트는 zone이 1=0, 2=1bit, 3~4=2bit, 5이상은 에러
+ */
 #if MAX_NR_ZONES < 2
 #define ZONES_SHIFT 0
 #elif MAX_NR_ZONES <= 2
@@ -51,14 +56,27 @@
  *      " plus space for last_cpupid: | SECTION | NODE | ZONE | LAST_CPUPID ... | FLAGS |
  * classic sparse no space for node:  | SECTION |     ZONE    | ... | FLAGS |
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 섹션을 포현하는데 사용하는 비트 수
+ */
 #if defined(CONFIG_SPARSEMEM) && !defined(CONFIG_SPARSEMEM_VMEMMAP)
 #define SECTIONS_WIDTH		SECTIONS_SHIFT
 #else
 #define SECTIONS_WIDTH		0
 #endif
 
+/* IAMROOT-12AB:
+ * -------------
+ * zone을 표현하는 비트는 zone이 1=0, 2=1bit, 3~4=2bit, 5이상은 에러
+ */
 #define ZONES_WIDTH		ZONES_SHIFT
 
+/* IAMROOT-12AB:
+ * -------------
+ * 노드를 표현하는 비트 수
+ */
 #if SECTIONS_WIDTH+ZONES_WIDTH+NODES_SHIFT <= BITS_PER_LONG - NR_PAGEFLAGS
 #define NODES_WIDTH		NODES_SHIFT
 #else
@@ -75,6 +93,11 @@
 #define LAST__CPU_SHIFT NR_CPUS_BITS
 #define LAST__CPU_MASK  ((1 << LAST__CPU_SHIFT)-1)
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 8(PID) + n(CPU)를 표현하는데 사용하는 비트 수
+ */
 #define LAST_CPUPID_SHIFT (LAST__PID_SHIFT+LAST__CPU_SHIFT)
 #else
 #define LAST_CPUPID_SHIFT 0

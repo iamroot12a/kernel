@@ -89,6 +89,10 @@ void lruvec_init(struct lruvec *lruvec)
 {
 	enum lru_list lru;
 
+/* IAMROOT-12AB:
+ * -------------
+ * zone->lruvec를 초기화한다.
+ */
 	memset(lruvec, 0, sizeof(struct lruvec));
 
 	for_each_lru(lru)

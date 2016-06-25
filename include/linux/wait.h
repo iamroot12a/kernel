@@ -71,11 +71,12 @@ struct task_struct;
 
 extern void __init_waitqueue_head(wait_queue_head_t *q, const char *name, struct lock_class_key *);
 
-/* IAMROOT-12A:
- * ------------
+/* IAMROOT-12AB:
+ * -------------
+ * waitqueue에서 사용하는 리스트와 spinlock을 초기화한다.
+ *
  *  #q의 의미 : q를 문자열 그대로 처리해 달라. 
  */
-
 #define init_waitqueue_head(q)				\
 	do {						\
 		static struct lock_class_key __key;	\

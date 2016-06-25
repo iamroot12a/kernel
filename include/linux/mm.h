@@ -478,6 +478,11 @@ static inline struct page *compound_head_fast(struct page *page)
  * both from it and to it can be tracked, using atomic_inc_and_test
  * and atomic_add_negative(-1).
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 매핑 카운트는 -1부터 시작한다.
+ */
 static inline void page_mapcount_reset(struct page *page)
 {
 	atomic_set(&(page)->_mapcount, -1);
@@ -568,6 +573,12 @@ static inline struct page *virt_to_head_page(const void *x)
  */
 static inline void init_page_count(struct page *page)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * page->_count에 1을 기록하여 초기화. (0=unuse, 1~참조횟수)
+ * (커널 초기화 또는 hotplug로 메모리 초기화시에만 사용한다.)
+ */
 	atomic_set(&page->_count, 1);
 }
 
@@ -864,6 +875,10 @@ static inline int page_cpupid_last(struct page *page)
 }
 static inline void page_cpupid_reset_last(struct page *page)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * LAST_CPUPID 영역의 비트를 모두 set 한다. 
+ */
 	page->_last_cpupid = -1 & LAST_CPUPID_MASK;
 }
 #else
@@ -936,6 +951,10 @@ static inline struct zone *page_zone(const struct page *page)
 #ifdef SECTION_IN_PAGE_FLAGS
 static inline void set_page_section(struct page *page, unsigned long section)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * page->flags에서 섹션 영역을 clear하고 section 값을 기록
+ */
 	page->flags &= ~(SECTIONS_MASK << SECTIONS_PGSHIFT);
 	page->flags |= (section & SECTIONS_MASK) << SECTIONS_PGSHIFT;
 }
@@ -948,12 +967,20 @@ static inline unsigned long page_to_section(const struct page *page)
 
 static inline void set_page_zone(struct page *page, enum zone_type zone)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * page->flags에서 zone 영역을 clear하고 zone 값을 기록
+ */
 	page->flags &= ~(ZONES_MASK << ZONES_PGSHIFT);
 	page->flags |= (zone & ZONES_MASK) << ZONES_PGSHIFT;
 }
 
 static inline void set_page_node(struct page *page, unsigned long node)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * 노드 영역을 clear하고 node 값을 기록
+ */
 	page->flags &= ~(NODES_MASK << NODES_PGSHIFT);
 	page->flags |= (node & NODES_MASK) << NODES_PGSHIFT;
 }
@@ -961,6 +988,11 @@ static inline void set_page_node(struct page *page, unsigned long node)
 static inline void set_page_links(struct page *page, enum zone_type zone,
 	unsigned long node, unsigned long pfn)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * page->flags에서 zone, node, section 값을 기록한다.
+ */
 	set_page_zone(page, zone);
 	set_page_node(page, node);
 #ifdef SECTION_IN_PAGE_FLAGS

@@ -299,6 +299,13 @@ static inline int constant_fls(int x)
  * the number of leading zeros, zero input will return 32, and
  * 0x80000000 will return 0.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * count leading zero
+ * 예) __clz(0x10)  ->  0b 0000_0000 0000_0000 0000_0000 0001_0000 -> 27
+ *                      (0이 앞에서부터 27개)
+ */
 static inline unsigned int __clz(unsigned int x)
 {
 	unsigned int ret;
@@ -312,6 +319,14 @@ static inline unsigned int __clz(unsigned int x)
  * fls() returns zero if the input is zero, otherwise returns the bit
  * position of the last set bit, where the LSB is 1 and MSB is 32.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * find last set (1~32)
+ * 예) fls(0xf0)    ->  0b 0000_0000 0000_0000 0000_0000 1111_0000
+ *                                                       ^
+ *                                                       8
+ */
 static inline int fls(int x)
 {
 	if (__builtin_constant_p(x))
@@ -324,6 +339,13 @@ static inline int fls(int x)
  * __fls() returns the bit position of the last bit set, where the
  * LSB is 0 and MSB is 31.  Zero input is undefined.
  */
+/* IAMROOT-12AB:
+ * -------------
+ * find last set (0~31)
+ * 예) fls(0xf0)    ->  0b 0000_0000 0000_0000 0000_0000 1111_0000
+ *                                                       ^
+ *                                                       7
+ */
 static inline unsigned long __fls(unsigned long x)
 {
 	return fls(x) - 1;
@@ -332,6 +354,14 @@ static inline unsigned long __fls(unsigned long x)
 /*
  * ffs() returns zero if the input was zero, otherwise returns the bit
  * position of the first set bit, where the LSB is 1 and MSB is 32.
+ */
+
+/* IAMROOT-12AB:
+ * -------------
+ * find first set (1~32, 없으면 0)
+ * 예) ffs(0xf0)    ->  0b 0000_0000 0000_0000 0000_0000 1111_0000
+ *                                                          ^
+ *                                                          5
  */
 static inline int ffs(int x)
 {
@@ -342,11 +372,27 @@ static inline int ffs(int x)
  * __ffs() returns the bit position of the first bit set, where the
  * LSB is 0 and MSB is 31.  Zero input is undefined.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * find first set (0~31)
+ * 예) __ffs(0xf0)    ->  0b 0000_0000 0000_0000 0000_0000 1111_0000
+ *                                                          ^
+ *                                                          4
+ */
 static inline unsigned long __ffs(unsigned long x)
 {
 	return ffs(x) - 1;
 }
 
+/* IAMROOT-12AB:
+ * -------------
+ * find first zero (0~31)
+ * 예) ffz(0xf0)    ->  0b 0000_0000 0000_0000 0000_0000 1111_0000
+ *     __ffs(~0xf0)     0b 1111_1111 1111_1111 1111_1111 0000_1111
+ *                                                               ^
+ *                                                               0
+ */
 #define ffz(x) __ffs( ~(x) )
 
 #endif

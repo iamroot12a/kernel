@@ -3609,11 +3609,22 @@ int zone_reclaim_mode __read_mostly;
  * Percentage of pages in a zone that must be unmapped for zone_reclaim to
  * occur.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * unmapped 페이지가 1%를 초과할 경우 reclaim 요구 조건 만족
+ */
 int sysctl_min_unmapped_ratio = 1;
 
 /*
  * If the number of slab pages in a zone grows beyond this percentage then
  * slab reclaim needs to occur.
+ */
+
+/* IAMROOT-12AB:
+ * -------------
+ * slab object가 free 메모리(memmap, dma_size를 제외한)의 5%를 초과할 경우
+ * reclaim 요구 조건 만족
  */
 int sysctl_min_slab_ratio = 5;
 

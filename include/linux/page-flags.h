@@ -169,6 +169,21 @@ static inline int TestClearPage##uname(struct page *page)		\
 static inline int __TestClearPage##uname(struct page *page)		\
 		{ return __test_and_clear_bit(PG_##lname, &page->flags); }
 
+/* IAMROOT-12AB:
+ * -------------
+ * PAGEFLAG(uname, lname) 매크로 하나에 3개의 인라인 함수가 만들어진다.
+ *      - Page##uname()
+ *      - SetPage##uname()
+ *      - ClearPage##uname()                        
+ *
+ * 예) PAGEFLAG(Reserved, reserved)
+ *      - PageReserved()
+ *      - SetPageReserved()
+ *      - ClearPageReserved()
+ *
+ * 호출 예) SetPageReserved(page);
+ *              -> { set_bit(PG_reserved, page->flags); }
+ */
 #define PAGEFLAG(uname, lname) TESTPAGEFLAG(uname, lname)		\
 	SETPAGEFLAG(uname, lname) CLEARPAGEFLAG(uname, lname)
 

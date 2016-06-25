@@ -218,6 +218,17 @@ void set_pgdat_percpu_threshold(pg_data_t *pgdat,
  * or when we know that preemption is disabled and that
  * particular counter cannot be updated from interrupt context.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * vm_stat[]은 3단계로 관리된다.
+ *	- global에 있는 vm_stat[]
+ *	- zone->vm_stat[]
+ *	- zone->pcp->vm_stat_diff[]
+ *
+ * zone->pcp->vm_stat_diff[]를 증/감 시키는데 threshold 값을 벗어나는
+ * 경우 zone->vm_stat[] & vm_stat[]에 zone->pcp->vm_stat_diff[] + delta를 더한다.
+ */
 void __mod_zone_page_state(struct zone *zone, enum zone_stat_item item,
 				int delta)
 {
@@ -383,12 +394,23 @@ EXPORT_SYMBOL(dec_zone_page_state);
 /*
  * Use interrupt disable to serialize counter updates
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * vm_stat[] 통계 증/감 함수들
+ */
+
 void mod_zone_page_state(struct zone *zone, enum zone_stat_item item,
 					int delta)
 {
 	unsigned long flags;
 
 	local_irq_save(flags);
+
+/* IAMROOT-12AB:
+ * -------------
+ * pcp->vm_stat_diff[]에 delta를 추가
+ */
 	__mod_zone_page_state(zone, item, delta);
 	local_irq_restore(flags);
 }

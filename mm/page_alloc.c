@@ -193,6 +193,11 @@ int sysctl_lowmem_reserve_ratio[MAX_NR_ZONES-1] = {
 
 EXPORT_SYMBOL(totalram_pages);
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * Zone 명칭
+ */
 static char * const zone_names[MAX_NR_ZONES] = {
 #ifdef CONFIG_ZONE_DMA
 	 "DMA",
@@ -3962,6 +3967,16 @@ static inline unsigned long wait_table_hash_nr_entries(unsigned long pages)
 {
 	unsigned long size = 1;
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 4 ~ 4096 범위내에서 zone에 대한 크기를 256으로 나누어 wait_table에 대한 
+ * 해쉬 엔트리 수를 결정한다.
+ *
+ * 예) pages= 128k (512M)
+ *            128k / 256 = 512
+ */
+
 	pages /= PAGES_PER_WAITQUEUE;
 
 	while (size < pages)
@@ -3996,6 +4011,12 @@ static inline unsigned long wait_table_hash_nr_entries(unsigned long pages)
  */
 static inline unsigned long wait_table_hash_nr_entries(unsigned long pages)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * hotplug 메모리 페이지를 예측할 수 없어서 wiat_table용 해시 엔트리로
+ * 최대 사이즈 4096을 반환한다.
+ */
 	return 4096UL;
 }
 #endif
@@ -4007,6 +4028,15 @@ static inline unsigned long wait_table_hash_nr_entries(unsigned long pages)
  */
 static inline unsigned long wait_table_bits(unsigned long size)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * find first zero (0~31)
+ * 
+ * 예) size=512
+ * ffz(~0x200)    0b 1111_1111 1111_1111 1111_1101 1111_1111
+ *                                              ^
+ *                                              9
+ */
 	return ffz(~size);
 }
 
@@ -4134,6 +4164,11 @@ void __meminit memmap_init_zone(unsigned long size, int nid, unsigned long zone,
 	unsigned long pfn;
 	struct zone *z;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 전역 highest_memmap_pfn 값 갱신 (end_pfn -1, 실제 마지막 pfn)
+ *
+ */
 	if (highest_memmap_pfn < end_pfn - 1)
 		highest_memmap_pfn = end_pfn - 1;
 
@@ -4150,12 +4185,44 @@ void __meminit memmap_init_zone(unsigned long size, int nid, unsigned long zone,
 			if (!early_pfn_in_nid(pfn, nid))
 				continue;
 		}
+
+/* IAMROOT-12AB:
+ * -------------
+ * 실제 메모리가 있는 page 구조체 주소를 알아와서 초기화를 수행한다.
+ */
 		page = pfn_to_page(pfn);
+
+/* IAMROOT-12AB:
+ * -------------
+ * page->flags에서 zone, node, section 값을 기록한다.
+ */
 		set_page_links(page, zone, nid, pfn);
 		mminit_verify_page_links(page, zone, nid, pfn);
+
+/* IAMROOT-12AB:
+ * -------------
+ * page->_count = 1로 초기 설정 (참조 카운트)
+ * 추후 실제 free 페이지는 버디 시스템으로 등록될때 free되면서 등록된다.
+ * 그 때 free 되면서 page_count가 0으로 바뀐다.
+ */
 		init_page_count(page);
+
+/* IAMROOT-12AB:
+ * -------------
+ * page->_mapcount = -1로 초기 설정 (매핑 카운트)
+ */
 		page_mapcount_reset(page);
+
+/* IAMROOT-12AB:
+ * -------------
+ * page->_last_cpupid <- last_cpupid 영역의 비트를 모두 1로 설정
+ */
 		page_cpupid_reset_last(page);
+
+/* IAMROOT-12AB:
+ * -------------
+ * page->flags에서 PG_reserved 플래그 비트를 세팅한다.
+ */
 		SetPageReserved(page);
 		/*
 		 * Mark the block movable so that blocks are reserved for
@@ -4171,14 +4238,31 @@ void __meminit memmap_init_zone(unsigned long size, int nid, unsigned long zone,
 		 * check here not to call set_pageblock_migratetype() against
 		 * pfn out of zone.
 		 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * pageblock 단위의 첫 페이지의 migratetype(page->flags)을 MIGRATE_MOVABLE로 설정한다.
+ */
 		if ((z->zone_start_pfn <= pfn)
 		    && (pfn < zone_end_pfn(z))
 		    && !(pfn & (pageblock_nr_pages - 1)))
 			set_pageblock_migratetype(page, MIGRATE_MOVABLE);
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 리스트 연결 엔트리를 초기화한다.
+ */
 		INIT_LIST_HEAD(&page->lru);
 #ifdef WANT_PAGE_VIRTUAL
 		/* The shift won't overflow because ZONE_NORMAL is below 4G. */
+
+/* IAMROOT-12AB:
+ * -------------
+ * WANT_PAGE_VIRTUAL이 사용되는 경우 ZONE_HIGHMEM이 아닌 영역에 대해 
+ *	page->virtual에 가상주소를 저장한다.
+ * x86, arm, arm64: 사용하지 않음
+ */
 		if (!is_highmem_idx(zone))
 			set_page_address(page, __va(pfn << PAGE_SHIFT));
 #endif
@@ -4188,6 +4272,13 @@ void __meminit memmap_init_zone(unsigned long size, int nid, unsigned long zone,
 static void __meminit zone_init_free_lists(struct zone *zone)
 {
 	unsigned int order, t;
+/* IAMROOT-12AB:
+ * -------------
+ * 2 개의 루프로 구성되어
+ * 바깥쪽 loop: order 0 ~ MAX_ORDER-1 까지
+ * 안쪽   loop: migratetype 0 ~ MIGRATE_TYPES-1 까지
+ * 버디 시스템의 free_area[].free_list[]를 초기화한다.
+ */
 	for_each_migratetype_order(order, t) {
 		INIT_LIST_HEAD(&zone->free_area[order].free_list[t]);
 		zone->free_area[order].nr_free = 0;
@@ -4364,10 +4455,27 @@ int zone_wait_table_init(struct zone *zone, unsigned long zone_size_pages)
 	 * The per-page waitqueue mechanism uses hashed waitqueues
 	 * per zone.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 4 ~ 4096 범위내에서 zone에 대한 크기를 256으로 나누어 wait_table에 대한 
+ * 해쉬 엔트리 수를 결정한다.
+ */
 	zone->wait_table_hash_nr_entries =
 		 wait_table_hash_nr_entries(zone_size_pages);
+
+/* IAMROOT-12AB:
+ * -------------
+ * 계산된 wait_table에 대한 해시 엔트리에 필요한 비트 수
+ * 예) wait_table_hash_nr_entries=512      -> 9 
+ */
 	zone->wait_table_bits =
 		wait_table_bits(zone->wait_table_hash_nr_entries);
+
+/* IAMROOT-12AB:
+ * -------------
+ * wait_table에 사용할 해시 엔트리 수 만큼 메모리 할당 
+ */
 	alloc_size = zone->wait_table_hash_nr_entries
 					* sizeof(wait_queue_head_t);
 
@@ -4391,6 +4499,11 @@ int zone_wait_table_init(struct zone *zone, unsigned long zone_size_pages)
 	if (!zone->wait_table)
 		return -ENOMEM;
 
+/* IAMROOT-12AB:
+ * -------------
+ * wait_table 해시 엔트리 수 만큼 
+ * waitqueue에서 사용하는 리스트와 spinlock을 초기화한다.
+ */
 	for (i = 0; i < zone->wait_table_hash_nr_entries; ++i)
 		init_waitqueue_head(zone->wait_table + i);
 
@@ -4406,6 +4519,10 @@ static __meminit void zone_pcp_init(struct zone *zone)
 	 */
 	zone->pageset = &boot_pageset;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 노드별로 zone이 존재하지만 실제 메모리가 배치된 zone인지 여부를 확인한다.
+ */
 	if (populated_zone(zone))
 		printk(KERN_DEBUG "  %s zone: %lu pages, LIFO batch:%u\n",
 			zone->name, zone->present_pages,
@@ -4419,9 +4536,24 @@ int __meminit init_currently_empty_zone(struct zone *zone,
 {
 	struct pglist_data *pgdat = zone->zone_pgdat;
 	int ret;
+/* IAMROOT-12AB:
+ * -------------
+ * wait table에 대한 해시 엔트리 수를 결정하고 관련 메모리를 할당 받은 후
+ * 초기화(waitqueue 및 spinlock) 한다.
+ */
 	ret = zone_wait_table_init(zone, size);
 	if (ret)
 		return ret;
+
+/* IAMROOT-12AB:
+ * -------------
+ * 현재 zone 인덱스(based 1)
+ * 예) 노드에 3개의 zone이 있고 3개의 zone을 초기화하는 경우
+ *     ZONE_DMA, ZONE_NORMAL, ZONE_MOVABLE -> pgdat->nr_zones = 3
+ *
+ * 주의: 노드에 대한 nr_zones에는 마지막 호출된 zone 초기화 함수로 인해 
+ *       마지막 zone 인덱스 + 1이 대입된다.
+ */
 	pgdat->nr_zones = zone_idx(zone) + 1;
 
 	zone->zone_start_pfn = zone_start_pfn;
@@ -4432,6 +4564,10 @@ int __meminit init_currently_empty_zone(struct zone *zone,
 			(unsigned long)zone_idx(zone),
 			zone_start_pfn, (zone_start_pfn + size));
 
+/* IAMROOT-12AB:
+ * -------------
+ * 버디시스템에서 사용하는 free_area[].free_list[]를 초기화한다. 
+ */
 	zone_init_free_lists(zone);
 
 	return 0;
@@ -4453,6 +4589,11 @@ int __meminit __early_pfn_to_nid(unsigned long pfn)
 	static unsigned long __meminitdata last_start_pfn, last_end_pfn;
 	static int __meminitdata last_nid;
 
+/* IAMROOT-12AB:
+ * -------------
+ * pfn이 속한 노드가 바뀌기 전까지 빠르게 검색을 하기 위해 검색한 마지막 노드의
+ * 범위를 static 변수에 기억해두어 사용한다.
+ */
 	if (last_start_pfn <= pfn && pfn < last_end_pfn)
 		return last_nid;
 
@@ -4483,6 +4624,10 @@ bool __meminit early_pfn_in_nid(unsigned long pfn, int node)
 {
 	int nid;
 
+/* IAMROOT-12AB:
+ * -------------
+ * pfn이 속한 노드를 빠르게 알아온다.
+ */
 	nid = __early_pfn_to_nid(pfn);
 	if (nid >= 0 && nid != node)
 		return false;
@@ -4820,6 +4965,17 @@ static unsigned long __init usemap_size(unsigned long zone_start_pfn, unsigned l
 {
 	unsigned long usemapsize;
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * usemap은 pageblock 단위로 필요한데 시작 주소와 끝 주소가 pageblock 단위로
+ * align되지 않은 경우 위 아래 정렬되지 않은 주소도 pageblock에 해당하는 
+ * usemap을 각각 배정하게 해준다.
+ * 예) start_pfn=1023, size=1026 으로 하는 경우
+ *     zonesize = 1026+1023= 2049가 된 후 
+ *     roundup하여 usemapsize로 변환하게 된다. (usemapsize=3072)
+ *     마지막으로 usemapsize = 32 (bit)가 되고 바이트로 환산하면 4를 반환한다.
+ */
 	zonesize += zone_start_pfn & (pageblock_nr_pages-1);
 	usemapsize = roundup(zonesize, pageblock_nr_pages);
 	usemapsize = usemapsize >> pageblock_order;
@@ -4834,6 +4990,10 @@ static void __init setup_usemap(struct pglist_data *pgdat,
 				unsigned long zone_start_pfn,
 				unsigned long zonesize)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * Sparse 메모리 모델을 사용하지 않을 때 zone별로 usemap을 할당한다.
+ */
 	unsigned long usemapsize = usemap_size(zone_start_pfn, zonesize);
 	zone->pageblock_flags = NULL;
 	if (usemapsize)
@@ -4954,6 +5114,9 @@ static void __paginginit free_area_init_core(struct pglist_data *pgdat,
 /* IAMROOT-12AB:
  * -------------
  * arm에서는 다시 한 번 realsize(freesize)를 알아온다.
+ *
+ * realsize: 실제 메모리 페이지 수
+ * freesize: realsize-메타데이터(memmap, dma_reserve)
  */
 		size = zone_spanned_pages_in_node(nid, j, node_start_pfn,
 						  node_end_pfn, zones_size);
@@ -4994,7 +5157,11 @@ static void __paginginit free_area_init_core(struct pglist_data *pgdat,
  *                         조건: highmem memmap 비중이 lowmem의 절반 이하일 때
  *                               - mem_map pages(highmem)
  * nr_all_pages=    lowmem pages - mem_map pages(highmem 제외) - dma_reserve
- *		  + highmem pages 	
+ *		  + highmem pages 
+ *
+ * 두 개의 변수는 alloc_large_system_hash()에서 해쉬의 크기를 결정할 때
+ * 엔트리 크기가 지정되지 않을 경우 메모리의 크기에 비례하여 만들기 위해 사용된다.
+ * 예) uhash_entries=, ihash_entries=, dhash_entries=, mhash_entries=
  */
 		if (!is_highmem_idx(j))
 			nr_kernel_pages += freesize;
@@ -5013,35 +5180,93 @@ static void __paginginit free_area_init_core(struct pglist_data *pgdat,
 
 /* IAMROOT-12AB:
  * -------------
- * ---> here
+ * zone->managed_pages:
+ *	- ZONE_HIGHMEM: realsize(실제 페이지 수)
+ *	- 기타 ZONE:	freesize(실제 페이지 수 - 메타데이터(memmap, dma_reserve)
  */
-
 		zone->managed_pages = is_highmem_idx(j) ? realsize : freesize;
 #ifdef CONFIG_NUMA
 		zone->node = nid;
+
+/* IAMROOT-12AB:
+ * -------------
+ * default로 min_unmapped_pages를 freesize의 1%로 배정한다.
+ */
 		zone->min_unmapped_pages = (freesize*sysctl_min_unmapped_ratio)
 						/ 100;
+/* IAMROOT-12AB:
+ * -------------
+ * default로 min_slab_pages를 freesize의 5%로 배정한다.
+ */
 		zone->min_slab_pages = (freesize * sysctl_min_slab_ratio) / 100;
 #endif
 		zone->name = zone_names[j];
 		spin_lock_init(&zone->lock);
 		spin_lock_init(&zone->lru_lock);
+
+/* IAMROOT-12AB:
+ * -------------
+ * zone->span_seqlock
+ */
 		zone_seqlock_init(zone);
+
+/* IAMROOT-12AB:
+ * -------------
+ * 노드를 가리킨다.
+ */
 		zone->zone_pgdat = pgdat;
+
+/* IAMROOT-12AB:
+ * -------------
+ * 버디 시스템에서 0 order 할당 요청에 대응하여 동작하는
+ * Per-CPU Page Frame Cache (zone->pageset)를 초기화한다.
+ * pcp는 0 order 할당에 대한 속도를 향상시키기 위해 각 cpu에서 동작한다.
+ */
 		zone_pcp_init(zone);
 
 		/* For bootup, initialized properly in watermark setup */
+
+/* IAMROOT-12AB:
+ * -------------
+ * NR_ALLOC_BATCH 통계 항목에 <- zone->managed_pages를 대입
+ */
 		mod_zone_page_state(zone, NR_ALLOC_BATCH, zone->managed_pages);
 
+/* IAMROOT-12AB:
+ * -------------
+ * zone->lruvec를 초기화한다.
+ */
 		lruvec_init(&zone->lruvec);
 		if (!size)
 			continue;
 
+/* IAMROOT-12AB:
+ * -------------
+ * CONFIG_HUGETLB_PAGE_SIZE_VARIABLE이 설정된 경우에 pageblock_order를 설정한다.
+ * rpi2: 빈 함수
+ */
 		set_pageblock_order();
+
+/* IAMROOT-12AB:
+ * -------------
+ * Sparse 메모리 모델을 사용하지 않을 때 zone별로 usemap을 할당한다.
+ */
 		setup_usemap(pgdat, zone, zone_start_pfn, size);
+
+/* IAMROOT-12AB:
+ * -------------
+ * wait table에 대한 해시 엔트리 수를 결정하고 관련 메모리를 할당 받은 후
+ * 초기화(waitqueue 및 spinlock) 하고
+ * 버디시스템에서 사용하는 free_area[].free_list[]를 초기화한다. 
+ */
 		ret = init_currently_empty_zone(zone, zone_start_pfn,
 						size, MEMMAP_EARLY);
 		BUG_ON(ret);
+
+/* IAMROOT-12AB:
+ * -------------
+ * mem_map의 각 멤버를 초기화한다.
+ */
 		memmap_init(size, nid, j, zone_start_pfn);
 		zone_start_pfn += size;
 	}
@@ -5149,9 +5374,12 @@ void __paginginit free_area_init_node(int nid, unsigned long *zones_size,
 
 /* IAMROOT-12AB:
  * -------------
- * 노드 정보 초기화 
- *    .
- *
+ * 노드 및 노드에 포함된 각 zone 정보 초기화 
+ *    - usemap 할당
+ *    - pcp 초기화
+ *    - lruvec 초기화
+ *    - free_area[] 초기화
+ *    - memmap 초기화 (각 멤버변수 초기화)
  */
 	free_area_init_core(pgdat, start_pfn, end_pfn,
 			    zones_size, zholes_size);

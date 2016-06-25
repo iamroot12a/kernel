@@ -13,6 +13,11 @@
 
 void __init_waitqueue_head(wait_queue_head_t *q, const char *name, struct lock_class_key *key)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * waitqueue에서 사용하는 리스트와 spinlock을 초기화한다.
+ */
 	spin_lock_init(&q->lock);
 	lockdep_set_class_and_name(&q->lock, key, name);
 	INIT_LIST_HEAD(&q->task_list);

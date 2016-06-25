@@ -69,6 +69,12 @@ enum {
 #  define is_migrate_cma(migratetype) false
 #endif
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 바깥쪽 loop: order 0 ~ MAX_ORDER-1 까지
+ * 안쪽   loop: migratetype 0 ~ MIGRATE_TYPES-1 까지
+ */
 #define for_each_migratetype_order(order, type) \
 	for (order = 0; order < MAX_ORDER; order++) \
 		for (type = 0; type < MIGRATE_TYPES; type++)
@@ -213,6 +219,11 @@ struct zone_reclaim_stat {
 	unsigned long		recent_scanned[2];
 };
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 최소 빈도로 사용되는 페이지를 회수할 수 있도록 관리
+ */
 struct lruvec {
 	struct list_head lists[NR_LRU_LISTS];
 	struct zone_reclaim_stat reclaim_stat;
@@ -249,7 +260,21 @@ enum zone_watermarks {
 #define low_wmark_pages(z) (z->watermark[WMARK_LOW])
 #define high_wmark_pages(z) (z->watermark[WMARK_HIGH])
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * pcp는 버디 시스템의 free_area[0]번과 주고 받는다.
+ */
 struct per_cpu_pages {
+
+/* IAMROOT-12AB:
+ * -------------
+ * count:   현재 cpu의 pcp에 있는 free page(4K) 수
+ * high:    high 워터마크로 count가 이 숫자를 초과하는 경우 
+ *          버디 시스템으로 되돌려준다.
+ * batch:   버디 시스템과 주고 받을 페이지 수
+ *          (항상 한 번에 batch 수 만큼 주거나 받는 양)
+ */
 	int count;		/* number of pages in the list */
 	int high;		/* high watermark, emptying needed */
 	int batch;		/* chunk size for buddy add/remove */
@@ -265,6 +290,11 @@ struct per_cpu_pageset {
 #endif
 #ifdef CONFIG_SMP
 	s8 stat_threshold;
+
+/* IAMROOT-12AB:
+ * -------------
+ * cpu별 zone 통계
+ */
 	s8 vm_stat_diff[NR_VM_ZONE_STAT_ITEMS];
 #endif
 };
@@ -1321,6 +1351,11 @@ static inline int pfn_present(unsigned long pfn)
 #define pfn_to_nid(pfn)		(0)
 #endif
 
+/* IAMROOT-12AB:
+ * -------------
+ * pfn이 유효한지 알아오기 위해 Sparse 메모리 모델에서는 
+ * 섹션의 유효(동작가능) 여부로 판단한다.
+ */
 #define early_pfn_valid(pfn)	pfn_valid(pfn)
 void sparse_init(void);
 #else
@@ -1329,11 +1364,19 @@ void sparse_init(void);
 #endif /* CONFIG_SPARSEMEM */
 
 #ifdef CONFIG_NODES_SPAN_OTHER_NODES
+/* IAMROOT-12AB:
+ * -------------
+ * pfn이 속한 노드를 빠르게 알아온다.
+ */
 bool early_pfn_in_nid(unsigned long pfn, int nid);
 #else
 #define early_pfn_in_nid(pfn, nid)	(1)
 #endif
 
+/* IAMROOT-12AB:
+ * -------------
+ * pfn이 유효한지 알아오기 위해 Sparse 메모리 모델이 아닌 경우는 항상 1을 리턴
+ */
 #ifndef early_pfn_valid
 #define early_pfn_valid(pfn)	(1)
 #endif
