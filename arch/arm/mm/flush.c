@@ -23,6 +23,14 @@
 
 #ifdef CONFIG_CPU_CACHE_VIPT
 
+/* IAMROOT-12AB:
+ * -------------
+ * ARMv6 이하의 VIPT cache aliasing을 사용하는 아키텍처에서는 이 함수를 사용한다.
+ * (예: 캐시 단면적이 16K인 경우 페이지 사이즈 4K 보다 4배 더 크다.
+ * 이러한 경우 0 ~ 3개의 캐시 컬러를 갖는 페이지가 발생하고 그 페이지들을
+ * 플러시 할 때 사용한다.)
+ * rpi2: 사용하지 않는다.
+ */
 static void flush_pfn_alias(unsigned long pfn, unsigned long vaddr)
 {
 	unsigned long to = FLUSH_ALIAS_START + (CACHE_COLOUR(vaddr) << PAGE_SHIFT);
@@ -192,18 +200,40 @@ void __flush_dcache_page(struct address_space *mapping, struct page *page)
 	 * coherent with the kernels mapping.
 	 */
 	if (!PageHighMem(page)) {
+
+/* IAMROOT-12AB:
+ * -------------
+ * byte로 변환된 페이지 사이즈
+ */
 		size_t page_size = PAGE_SIZE << compound_order(page);
 		__cpuc_flush_dcache_area(page_address(page), page_size);
 	} else {
 		unsigned long i;
 		if (cache_is_vipt_nonaliasing()) {
+
+/* IAMROOT-12AB:
+ * -------------
+ * compound의 각 페이지에 대해 루프를 돌며
+ */
 			for (i = 0; i < (1 << compound_order(page)); i++) {
+
+/* IAMROOT-12AB:
+ * -------------
+ * fixmap을 이용하여 highmem 페이지를 매핑하고 캐시 clean & invalidate 후 
+ * 다시 언매핑한다.
+ */
 				void *addr = kmap_atomic(page + i);
 				__cpuc_flush_dcache_area(addr, PAGE_SIZE);
 				kunmap_atomic(addr);
 			}
 		} else {
 			for (i = 0; i < (1 << compound_order(page)); i++) {
+
+/* IAMROOT-12AB:
+ * -------------
+ * kmap을 이용하여 highmem 페이지를 매핑하고 캐시 clean & invalidate 후
+ * 다시 언매핑한다.
+ */
 				void *addr = kmap_high_get(page + i);
 				if (addr) {
 					__cpuc_flush_dcache_area(addr, PAGE_SIZE);
@@ -218,6 +248,12 @@ void __flush_dcache_page(struct address_space *mapping, struct page *page)
 	 * we only need to do one flush - which would be at the relevant
 	 * userspace colour, which is congruent with page->index.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * maping이 true이고 VIPT aliasing을 사용하는 데이터 캐시의 경우 아래 루틴을 사용한다.
+ * ARMv7: 데이터 캐시에 PIPT를 사용한다.
+ */
 	if (mapping && cache_is_vipt_aliasing())
 		flush_pfn_alias(page_to_pfn(page),
 				page->index << PAGE_CACHE_SHIFT);

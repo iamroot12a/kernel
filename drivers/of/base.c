@@ -34,6 +34,15 @@ LIST_HEAD(aliases_lookup);
 
 struct device_node *of_root;
 EXPORT_SYMBOL(of_root);
+
+/* IAMROOT-12AB:
+ * -------------
+ * of_chosen:	chosen 노드를 가리킨다.
+ * of_aliases:	aliases 노드를 가리킨다.
+ * of_stdout:	기본 출력을 담당하는 디바이스 노드를 가리킨다.
+ * of_stdout_options:	
+ */
+
 struct device_node *of_chosen;
 struct device_node *of_aliases;
 struct device_node *of_stdout;
@@ -1857,6 +1866,12 @@ static void of_alias_add(struct alias_prop *ap, struct device_node *np,
 	ap->id = id;
 	strncpy(ap->stem, stem, stem_len);
 	ap->stem[stem_len] = 0;
+
+/* IAMROOT-12AB:
+ * -------------
+ * 전역 aliases_lookup에 alias_prop 객체를 추가한다.
+ */
+
 	list_add_tail(&ap->link, &aliases_lookup);
 	pr_debug("adding DT alias:%s: stem=%s id=%i node=%s\n",
 		 ap->alias, ap->stem, ap->id, of_node_full_name(np));
@@ -1876,10 +1891,33 @@ void of_alias_scan(void * (*dt_alloc)(u64 size, u64 align))
 {
 	struct property *pp;
 
+/* IAMROOT-12AB:
+ * -------------
+ * of_aliases에 /aliases 노드를 찾아서 대입한다.
+ * of_chosen에 /chosen 노드를 찾아서 대입한다.
+ */
 	of_aliases = of_find_node_by_path("/aliases");
 	of_chosen = of_find_node_by_path("/chosen");
 	if (of_chosen == NULL)
 		of_chosen = of_find_node_by_path("/chosen@0");
+
+
+/* IAMROOT-12AB:
+ * -------------
+ * chosen 노드의 stdout-path 속성 값으로 노드를 찾아서 전역 of_stdout에 대입한다.
+ *
+ *  예) 
+ *	chosen {
+ *		stdout-path = &uart1;
+ *	};
+ *
+ *	&uart1 {
+ *		pinctrl-names = "default";
+ *	        pinctrl-0 = <&pinctrl_uart1>;
+ *	        fsl,uart-has-rtscts;
+ *	        status = "okay";
+ *	};
+ */
 
 	if (of_chosen) {
 		/* linux,stdout-path and /aliases/stdout are for legacy compatibility */
@@ -1903,17 +1941,34 @@ void of_alias_scan(void * (*dt_alloc)(u64 size, u64 align))
 		int id, len;
 
 		/* Skip those we do not want to proceed */
+
+/* IAMROOT-12AB:
+ * -------------
+ * aliases 노드에서 name과 phandle 속성은 제외한다.
+ */
 		if (!strcmp(pp->name, "name") ||
 		    !strcmp(pp->name, "phandle") ||
 		    !strcmp(pp->name, "linux,phandle"))
 			continue;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 각 속성값으로 노드를 찾아온다.
+ */
 		np = of_find_node_by_path(pp->value);
 		if (!np)
 			continue;
 
 		/* walk the alias backwards to extract the id and work out
 		 * the 'stem' string */
+
+/* IAMROOT-12AB:
+ * -------------
+ * stem 문자열은 뒷부분의 숫자를 제외하고 골뱅이를 포함한 노드명이다.
+ * 예) abc@1000
+ *	stem[] -> abc@
+ */
+
 		while (isdigit(*(end-1)) && end > start)
 			end--;
 		len = end - start;
@@ -1922,11 +1977,22 @@ void of_alias_scan(void * (*dt_alloc)(u64 size, u64 align))
 			continue;
 
 		/* Allocate an alias_prop with enough space for the stem */
+
+/* IAMROOT-12AB:
+ * -------------
+ * alias_prop 구조체 + stem[]을 할당한다.
+ * ap->alias에 속성값 주소를 대입한다.
+ */
 		ap = dt_alloc(sizeof(*ap) + len + 1, 4);
 		if (!ap)
 			continue;
 		memset(ap, 0, sizeof(*ap) + len + 1);
 		ap->alias = start;
+
+/* IAMROOT-12AB:
+ * -------------
+ * 전역 aliases_lookup에 alias_prop 구조체 + stem[]을 추가한다.
+ */
 		of_alias_add(ap, np, id, start, len);
 	}
 }

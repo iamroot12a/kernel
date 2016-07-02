@@ -47,6 +47,17 @@ struct of_irq_controller;
 #endif
 
 struct device_node {
+
+/* IAMROOT-12AB:
+ * -------------
+ * name:    compact 노드명(골뱅이 빠진)
+ *          루트노드의 경우 "<NULL>" 문자열
+ * type:    device_type 속성 값
+ *          "cpu", "memory", "network", "tbi-phy", "pci"
+ *          타입이 없는 경우 "<NULL>" 문자열
+ * phandle: phandle 속성 값 (인터럽트, gpio등 노드 참조용)
+ * fullname:    device_node 바로 뒷부분에 있는 full node name을 가리킨다.
+ */
 	const char *name;
 	const char *type;
 	phandle phandle;
@@ -85,6 +96,11 @@ struct of_reconfig_data {
 extern struct kobj_type of_node_ktype;
 static inline void of_node_init(struct device_node *node)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * kernel object 초기화
+ */
 	kobject_init(&node->kobj, &of_node_ktype);
 	node->fwnode.type = FWNODE_OF;
 }

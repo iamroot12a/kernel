@@ -654,8 +654,25 @@ static inline compound_page_dtor *get_compound_page_dtor(struct page *page)
 
 static inline int compound_order(struct page *page)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * page.flags: PG_Head가 설정된 경우 compound 페이지의 시작 페이지를 의미한다.
+ * page[1].compound_order: order값은 두 번째 페이지에 기록된다.
+ * compound page: order 단위의 복수(order) 페이지로 구성된다.
+ */
+
+/* IAMROOT-12AB:
+ * -------------
+ * compound page가 아니면 order 0를 반환한다.
+ */
 	if (!PageHead(page))
 		return 0;
+
+/* IAMROOT-12AB:
+ * -------------
+ * compound page인 경우 두 번째 페이지에 저장된 compound_order 값을 반환한다.
+ */
 	return page[1].compound_order;
 }
 
@@ -959,6 +976,11 @@ static inline void set_page_section(struct page *page, unsigned long section)
 	page->flags |= (section & SECTIONS_MASK) << SECTIONS_PGSHIFT;
 }
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * page->flags에 기록해 놓은 섹션 번호값을 알아온다.
+ */
 static inline unsigned long page_to_section(const struct page *page)
 {
 	return (page->flags >> SECTIONS_PGSHIFT) & SECTIONS_MASK;
@@ -1005,6 +1027,12 @@ static inline void set_page_links(struct page *page, enum zone_type zone,
  */
 #include <linux/vmstat.h>
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * lowmem에서는 page에 대한 가상 주소값을 변환할 때 __va를 사용한다.
+ */
+
 static __always_inline void *lowmem_page_address(const struct page *page)
 {
 	return __va(PFN_PHYS(page_to_pfn(page)));
@@ -1015,6 +1043,12 @@ static __always_inline void *lowmem_page_address(const struct page *page)
 #endif
 
 #if defined(WANT_PAGE_VIRTUAL)
+
+/* IAMROOT-12AB:
+ * -------------
+ *  ZONE_HIGHMEM을 사용하면서 해시 방식을 사용하지 않는 경우
+ *  직접 페이지 구조체에 가상 주소를 기록하여 사용한다.
+ */
 static inline void *page_address(const struct page *page)
 {
 	return page->virtual;
@@ -1027,11 +1061,23 @@ static inline void set_page_address(struct page *page, void *address)
 #endif
 
 #if defined(HASHED_PAGE_VIRTUAL)
+
+/* IAMROOT-12AB:
+ * -------------
+ * ZONE_HIGHMEM과 해시 방식(&page_address_htable[])을 사용하는 경우 아래 함수 사용하여
+ * lowmem과 highmem에 대한 가상 주소 값을 알아온다.
+ */
 void *page_address(const struct page *page);
 void set_page_address(struct page *page, void *virtual);
 void page_address_init(void);
 #endif
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * rpi2의 경우 ZONE_HIGHMEM이 구성되어 있지 않아 page_address()는 lowmem에 대해서만 
+ * 연산되면 된다.
+ */
 #if !defined(HASHED_PAGE_VIRTUAL) && !defined(WANT_PAGE_VIRTUAL)
 #define page_address(page) lowmem_page_address(page)
 #define set_page_address(page, address)  do { } while(0)

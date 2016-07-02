@@ -204,6 +204,11 @@ int fdt_path_offset(const void *fdt, const char *path)
 	return offset;
 }
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * len에는 문자열 길이가 담긴다. (null 제외한 길이)
+ */
 const char *fdt_get_name(const void *fdt, int nodeoffset, int *len)
 {
 	const struct fdt_node_header *nh = _fdt_offset_ptr(fdt, nodeoffset);

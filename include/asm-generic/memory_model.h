@@ -28,6 +28,14 @@
 #if defined(CONFIG_FLATMEM)
 
 #define __pfn_to_page(pfn)	(mem_map + ((pfn) - ARCH_PFN_OFFSET))
+
+/* IAMROOT-12AB:
+ * -------------
+ * page -> pfn 값으로 바꾼다.
+ *
+ * page 구조체의 가상 주소 - mem_map의 가상 주소를 빼면 page의 index 값이
+ * 산출되고 그 값에 ARCH_PFN_OFFSET(메모리가 위치한 PFN)을 더한다.
+ */
 #define __page_to_pfn(page)	((unsigned long)((page) - mem_map) + \
 				 ARCH_PFN_OFFSET)
 #elif defined(CONFIG_DISCONTIGMEM)
@@ -55,6 +63,12 @@
 /*
  * Note: section's mem_map is encoded to reflect its start_pfn.
  * section[i].section_mem_map == mem_map's address - start_pfn;
+ */
+
+/* IAMROOT-12AB:
+ * -------------
+ * page 구조체로 섹션 번호를 알아온 후 다시 section_mem_map(섹션별 pfn이 인코드된)을
+ * 알아온 후 그 값을 page 가상 주소에서 빼면 pfn 값을 알아낼 수 있다.
  */
 #define __page_to_pfn(pg)					\
 ({	const struct page *__pg = (pg);				\

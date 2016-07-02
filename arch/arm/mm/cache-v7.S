@@ -376,6 +376,10 @@ ENDPROC(v7_coherent_user_range)
  *	- size	- region size
  */
 ENTRY(v7_flush_kern_dcache_area)
+/* IAMROOT-12AB:
+ * -------------
+ * r2에 d-cache의 cache line 바이트를 담아온다.
+ */
 	dcache_line_size r2, r3
 	add	r1, r0, r1
 	sub	r3, r2, #1
@@ -384,6 +388,11 @@ ENTRY(v7_flush_kern_dcache_area)
 	ALT_SMP(W(dsb))
 	ALT_UP(W(nop))
 #endif
+
+/* IAMROOT-12AB:
+ * -------------
+ * 캐시 라인 바이트 수 단위씩 증가 시키며 루프를 돌며 d-cache를 clean & invalidate한다.
+ */
 1:
 	mcr	p15, 0, r0, c7, c14, 1		@ clean & invalidate D line / unified line
 	add	r0, r0, r2

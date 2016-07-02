@@ -172,6 +172,13 @@ static void * unflatten_dt_node(void *blob,
 	if (!pathp)
 		return mem;
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 기존(구) DTB를 사용하는 경우 allocl 값은 아래코드로 지정하고 그렇지 않은 경우는
+ * 다시 재계산된다.
+ */
+
 	allocl = l++;
 
 	/* version 0x10 has a more compact unit name here instead of the full
@@ -179,8 +186,22 @@ static void * unflatten_dt_node(void *blob,
 	 * it later. We detect this because the first character of the name is
 	 * not '/'.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 기존 DTB는 full path명을 사용하였고 항상 /로 시작하였다.
+ * 현재 DTB 0x10은 full path명을 사용하지 않고 루트 노드마저도 
+ * null(*.dtb의 바이너리)로 구성되어 있다.
+ */
+
 	if ((*pathp) != '/') {
 		new_format = 1;
+
+/* IAMROOT-12AB:
+ * -------------
+ * 루트 노드일 때에만 fpsize가 0이다.
+ */
+
 		if (fpsize == 0) {
 			/* root node: special case. fpsize accounts for path
 			 * plus terminating zero. root node only has '/', so
@@ -200,14 +221,37 @@ static void * unflatten_dt_node(void *blob,
 		}
 	}
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 각 노드의 할당을 위해 device_node 구조체 크기로 정렬한다.
+ * 
+ * 추가된 allocl(full path size)이 device_node 하나를 차지하므로 
+ * 비능률적으로 보이는데 그 원인은???
+ */
+
 	np = unflatten_dt_alloc(&mem, sizeof(struct device_node) + allocl,
 				__alignof__(struct device_node));
 	if (!dryrun) {
 		char *fn;
 		of_node_init(np);
+
+/* IAMROOT-12AB:
+ * -------------
+ * full_name은 device_node의 다음에 붙어 있는 주소를 가리킨다.
+ */
 		np->full_name = fn = ((char *)np) + sizeof(*np);
 		if (new_format) {
 			/* rebuild full path for new format */
+/* IAMROOT-12AB:
+ * -------------
+ * 1) 현재 depth=0 노드인 경우
+ *	'/'만 추가된다.
+ * 1) 현재 depth=1 노드인 경우
+ *	'/'+ 노드명
+ * 2) 현재 depth>1 노드인 경우
+ *	부모노드명 + '/' + 노드명
+ */
 			if (dad && dad->parent) {
 				strcpy(fn, dad->full_name);
 #ifdef DEBUG
@@ -219,11 +263,18 @@ static void * unflatten_dt_node(void *blob,
 #endif
 				fn += strlen(fn);
 			}
+
 			*(fn++) = '/';
 		}
 		memcpy(fn, pathp, l);
 
 		prev_pp = &np->properties;
+
+/* IAMROOT-12AB:
+ * -------------
+ * 노드를 추가
+ */
+
 		if (dad != NULL) {
 			np->parent = dad;
 			np->sibling = dad->child;
@@ -231,6 +282,12 @@ static void * unflatten_dt_node(void *blob,
 		}
 	}
 	/* process properties */
+
+/* IAMROOT-12AB:
+ * -------------
+ * blob + (structure block offset) + poffset가 가리키는 노드로부터 처음 속성부터
+ * 해당 노드의 마지막 속성까지 루프를 돈다.
+ */
 	for (offset = fdt_first_property_offset(blob, *poffset);
 	     (offset >= 0);
 	     (offset = fdt_next_property_offset(blob, offset))) {
@@ -246,6 +303,12 @@ static void * unflatten_dt_node(void *blob,
 			pr_info("Can't find property name in list !\n");
 			break;
 		}
+
+/* IAMROOT-12AB:
+ * -------------
+ * 최신 DTB 0x10은 각 노드마다 name 속성이 없을 수 있다. 따라서 끝까지 검색하여
+ * name 속성이 발견되지 않는 경우 마지막에 name 속성을 추가한다.
+ */
 		if (strcmp(pname, "name") == 0)
 			has_name = 1;
 		pp = unflatten_dt_alloc(&mem, sizeof(struct property),
@@ -256,6 +319,11 @@ static void * unflatten_dt_node(void *blob,
 			 * legacy "linux,phandle" properties.  If both
 			 * appear and have different values, things
 			 * will get weird.  Don't do that. */
+
+/* IAMROOT-12AB:
+ * -------------
+ * phandle 속성을 찾아 노드 구조체의 phandle 값으로 대입한다.
+ */
 			if ((strcmp(pname, "phandle") == 0) ||
 			    (strcmp(pname, "linux,phandle") == 0)) {
 				if (np->phandle == 0)
@@ -266,6 +334,11 @@ static void * unflatten_dt_node(void *blob,
 			 * stuff */
 			if (strcmp(pname, "ibm,phandle") == 0)
 				np->phandle = be32_to_cpup(p);
+
+/* IAMROOT-12AB:
+ * -------------
+ * 속성값을 채우고 추가 연결한다.
+ */
 			pp->name = (char *)pname;
 			pp->length = sz;
 			pp->value = (__be32 *)p;
@@ -280,6 +353,12 @@ static void * unflatten_dt_node(void *blob,
 		const char *p1 = pathp, *ps = pathp, *pa = NULL;
 		int sz;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 아래 pa와 ps를 산출한다.
+ * pa: pointer of at(@)
+ * ps: pointer of slash(/) (발견하지 못한 경우 노드명의 처음 주소)
+ */
 		while (*p1) {
 			if ((*p1) == '@')
 				pa = p1;
@@ -289,12 +368,31 @@ static void * unflatten_dt_node(void *blob,
 		}
 		if (pa < ps)
 			pa = p1;
+
+/* IAMROOT-12AB:
+ * -------------
+ * 예) abc@1000
+ *     -> sz= 3+1(null)
+ * 예) /abc@2000
+ *     -> sz= 3+1(null)
+ */
 		sz = (pa - ps) + 1;
+
+/* IAMROOT-12AB:
+ * -------------
+ * name 속성의 경우 노드 방식과 같이 property 구조체뒤에 compact 노드명을 추가한다.
+ */
 		pp = unflatten_dt_alloc(&mem, sizeof(struct property) + sz,
 					__alignof__(struct property));
 		if (!dryrun) {
 			pp->name = "name";
 			pp->length = sz;
+
+/* IAMROOT-12AB:
+ * -------------
+ * value는 compact(골뱅이 빠진) 노드명을 가리킨다.
+ * 속성 구조체 뒤에 compact 노드명이 복사된다.
+ */
 			pp->value = pp + 1;
 			*prev_pp = pp;
 			prev_pp = &pp->next;
@@ -306,6 +404,12 @@ static void * unflatten_dt_node(void *blob,
 	}
 	if (!dryrun) {
 		*prev_pp = NULL;
+
+/* IAMROOT-12AB:
+ * -------------
+ * 노드 구조체의 name에는 comapct 노드명이 대입된다.
+ * 노드 구조체의 type에는 device_type 속성값을 읽어와서 대입한다.
+ */
 		np->name = of_get_property(np, "name", NULL);
 		np->type = of_get_property(np, "device_type", NULL);
 
@@ -319,6 +423,11 @@ static void * unflatten_dt_node(void *blob,
 	*poffset = fdt_next_node(blob, *poffset, &depth);
 	if (depth < 0)
 		depth = 0;
+
+/* IAMROOT-12AB:
+ * -------------
+ * sub 노드가 있는 경우 재귀호출을 한다.
+ */
 	while (*poffset > 0 && depth > old_depth)
 		mem = unflatten_dt_node(blob, mem, poffset, np, NULL,
 					fpsize, dryrun);
@@ -330,6 +439,11 @@ static void * unflatten_dt_node(void *blob,
 	 * Reverse the child list. Some drivers assumes node order matches .dts
 	 * node order
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 형제 노드를 reverse 처리한다.
+ */
 	if (!dryrun && np->child) {
 		struct device_node *child = np->child;
 		np->child = NULL;
@@ -341,6 +455,10 @@ static void * unflatten_dt_node(void *blob,
 		}
 	}
 
+/* IAMROOT-12AB:
+ * -------------
+ * 인수로 변수가 지정된 경우 np를 대입한다.
+ */
 	if (nodepp)
 		*nodepp = np;
 
@@ -385,6 +503,11 @@ static void __unflatten_device_tree(void *blob,
 	}
 
 	/* First pass, scan for size */
+
+/* IAMROOT-12AB:
+ * -------------
+ * DTB를 분석하여 할당할 사이즈를 파악한다.
+ */
 	start = 0;
 	size = (unsigned long)unflatten_dt_node(blob, NULL, &start, NULL, NULL, 0, true);
 	size = ALIGN(size, 4);
@@ -392,15 +515,30 @@ static void __unflatten_device_tree(void *blob,
 	pr_debug("  size is %lx, allocating...\n", size);
 
 	/* Allocate memory for the expanded device tree */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 파악된 사이즈 + 4로 메모리 할당을 한다.
+ */
 	mem = dt_alloc(size + 4, __alignof__(struct device_node));
 	memset(mem, 0, size);
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 사이즈의 마지막 4바이트에 0xdeadbeef를 저장한다.
+ */
 	*(__be32 *)(mem + size) = cpu_to_be32(0xdeadbeef);
 
 	pr_debug("  unflattening %p...\n", mem);
 
 	/* Second pass, do actual unflattening */
 	start = 0;
+
+/* IAMROOT-12AB:
+ * -------------
+ * 실제 노드와 속성을 풀어서 대입한다.
+ */
 	unflatten_dt_node(blob, mem, &start, NULL, mynodes, 0, false);
 	if (be32_to_cpup(mem + size) != 0xdeadbeef)
 		pr_warning("End of tree marker overwritten: %08x\n",
@@ -1293,6 +1431,12 @@ int __init __weak early_init_dt_reserve_memory_arch(phys_addr_t base,
  */
 void * __init __weak early_init_dt_alloc_memory_arch(u64 size, u64 align)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * DTB 노드들에 대해 memblock을 사용하여 할당하게 한다. 
+ * (__weak 속성을 사용하여 별도의 함수를 제공하지 않는 경우 이 함수가 이용된다)
+ */
 	return __va(memblock_alloc(size, align));
 }
 #else
@@ -1387,10 +1531,24 @@ bool __init early_init_dt_scan(void *params)
  */
 void __init unflatten_device_tree(void)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * initial_boot_params: DTB 시작 주소 
+ * 전역 of_root는 루트 노드를 가리킨다.
+ */
+
 	__unflatten_device_tree(initial_boot_params, &of_root,
 				early_init_dt_alloc_memory_arch);
 
 	/* Get pointer to "/chosen" and "/aliases" nodes for use everywhere */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 전역 of_aliases, of_chosen, of_stdout 노드를 찾고,
+ * 전역 aliases_lookup 리스트에 aliases 노드의 모든 속성값으로 찾은 노드들을 
+ *	alias_prop 구조체 + stem[] 형태로 변환하여 추가한다.
+ */
 	of_alias_scan(early_init_dt_alloc_memory_arch);
 }
 

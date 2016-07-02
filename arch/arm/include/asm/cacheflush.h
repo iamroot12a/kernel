@@ -17,6 +17,12 @@
 #include <asm/cachetype.h>
 #include <asm/outercache.h>
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * cache aliasing(페이지 컬러링)값은 0 부터 2^alising bit - 1
+ * (예: 2개의 alising bit를 사용하는 경우 0 ~ 3)
+ */
 #define CACHE_COLOUR(vaddr)	((vaddr & (SHMLBA - 1)) >> PAGE_SHIFT)
 
 /*

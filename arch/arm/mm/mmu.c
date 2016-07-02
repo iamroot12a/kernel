@@ -1974,6 +1974,10 @@ void __init paging_init(const struct machine_desc *mdesc)
  */
 	bootmem_init();
 
+/* IAMROOT-12AB:
+ * -------------
+ * zoro 초기화된 1개의 페이지 가상주소를 전역 변수에 대입한다.
+ */
 	empty_zero_page = virt_to_page(zero_page);
 	__flush_dcache_page(NULL, empty_zero_page);
 }

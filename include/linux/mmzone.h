@@ -1259,6 +1259,13 @@ extern unsigned long usemap_size(void);
 #define SECTION_MAP_MASK	(~(SECTION_MAP_LAST_BIT-1))
 #define SECTION_NID_SHIFT	2
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * section_mem_map에 인코드된 mem_map의 주소가 담겨있다.
+ * (인코드는 section_mem_map의 pfn 값이 추가된 값이다.)
+ */
+
 static inline struct page *__section_mem_map_addr(struct mem_section *section)
 {
 	unsigned long map = section->section_mem_map;

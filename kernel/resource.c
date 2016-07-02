@@ -217,9 +217,31 @@ static struct resource * __request_resource(struct resource *root, struct resour
 		return root;
 	if (end > root->end)
 		return root;
+
+/* IAMROOT-12AB:
+ * -------------
+ * 지정된 root 리소스 밑에 새 리소스를 추가하되 asscending 정렬한다.
+ * 만일 root 범위를 벗어나는 경우 root 리소스를 반환하고,
+ * 기존 리소스와 범위가 중복되는 경우 중복된 기존 리소스를 반환한다.
+ */
+
+/* IAMROOT-12AB:
+ * -------------
+ * root->child에는 첫번째 자식 노드를 가리킨다.
+ * (자식 노드가 없는 경우는 NULL)
+ */
 	p = &root->child;
 	for (;;) {
 		tmp = *p;
+
+/* IAMROOT-12AB:
+ * -------------
+ *   insert 위치를 찾는다.
+ *   ----------------------
+ * - 첫 번째 자식이 없는 경우
+ * - 루프를 돌며 마지막 노드를 지난 경우
+ * - 첫 번째 자식보다 낮은 주소를 가진 경우 
+ */
 		if (!tmp || tmp->start > end) {
 			new->sibling = tmp;
 			*p = new;
@@ -229,6 +251,11 @@ static struct resource * __request_resource(struct resource *root, struct resour
 		p = &tmp->sibling;
 		if (tmp->end < start)
 			continue;
+
+/* IAMROOT-12AB:
+ * -------------
+ * 중복되어 트리에 추가하지 못한 경우 중복된 리소스를 반환한다.
+ */
 		return tmp;
 	}
 }
@@ -293,6 +320,12 @@ struct resource *request_resource_conflict(struct resource *root, struct resourc
 {
 	struct resource *conflict;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 지정된 root 리소스 밑에 새 리소스를 추가하되 asscending 정렬한다.
+ * 만일 root 범위를 벗어나는 경우 root 리소스를 반환하고,
+ * 기존 리소스와 범위가 중복되는 경우 중복된 기존 리소스를 반환한다.
+ */
 	write_lock(&resource_lock);
 	conflict = __request_resource(root, new);
 	write_unlock(&resource_lock);
@@ -310,6 +343,12 @@ int request_resource(struct resource *root, struct resource *new)
 {
 	struct resource *conflict;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 지정된 root 리소스 밑에 새 리소스를 추가하되 asscending 정렬한다.
+ * 만일 root 범위를 벗어나거나 기존 리소스와 범위가 중복되는 경우 
+ * 에러로 -EBUSY를 반환하고, 정상 처리된 경우 0을 반환한다.
+ */
 	conflict = request_resource_conflict(root, new);
 	return conflict ? -EBUSY : 0;
 }

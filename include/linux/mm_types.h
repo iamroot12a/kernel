@@ -190,6 +190,11 @@ struct page {
 	 * WANT_PAGE_VIRTUAL in asm/page.h
 	 */
 #if defined(WANT_PAGE_VIRTUAL)
+
+/* IAMROOT-12AB:
+ * -------------
+ * WANT_PAGE_VIRTUAL 커널 옵션을 사용하는 경우 할당된 페이지의 가상 주소를 담을 때 사용
+ */
 	void *virtual;			/* Kernel virtual address (NULL if
 					   not kmapped, ie. highmem) */
 #endif /* WANT_PAGE_VIRTUAL */

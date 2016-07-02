@@ -323,6 +323,12 @@ unsigned long __init node_memmap_size_bytes(int nid, unsigned long start_pfn,
  */
 static unsigned long sparse_encode_mem_map(struct page *mem_map, unsigned long pnum)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * 섹션 번호로 pfn값을 얻어서 인코드시에 mem_map 주소에 pfn 값을 빼서 저장한다.
+ */
+
 	return (unsigned long)(mem_map - (section_nr_to_pfn(pnum)));
 }
 

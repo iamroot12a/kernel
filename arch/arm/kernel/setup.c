@@ -1023,12 +1023,21 @@ static void __init request_standard_resources(const struct machine_desc *mdesc)
 	struct memblock_region *region;
 	struct resource *res;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 커널 코드와 데이터 영역의 시작과 끝
+ */
 	kernel_code.start   = virt_to_phys(_text);
 	kernel_code.end     = virt_to_phys(_etext - 1);
 	kernel_data.start   = virt_to_phys(_sdata);
 	kernel_data.end     = virt_to_phys(_end - 1);
 
 	for_each_memblock(memory, region) {
+
+/* IAMROOT-12AB:
+ * -------------
+ * System RAM을 iomem_resource에 등록
+ */
 		res = memblock_virt_alloc(sizeof(*res), 0);
 		res->name  = "System RAM";
 		res->start = __pfn_to_phys(memblock_region_memory_base_pfn(region));
@@ -1036,6 +1045,13 @@ static void __init request_standard_resources(const struct machine_desc *mdesc)
 		res->flags = IORESOURCE_MEM | IORESOURCE_BUSY;
 
 		request_resource(&iomem_resource, res);
+
+
+/* IAMROOT-12AB:
+ * -------------
+ * RAM에 있는 커널 코드와 데이터 부분을 System RAM의 sub resource로 등록 
+ * (XIP 커널 코드 부분 제외)
+ */
 
 		if (kernel_code.start >= res->start &&
 		    kernel_code.end <= res->end)
@@ -1045,6 +1061,11 @@ static void __init request_standard_resources(const struct machine_desc *mdesc)
 			request_resource(res, &kernel_data);
 	}
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * Video RAM 영역을 iomem_resource에 추가
+ */
 	if (mdesc->video_start) {
 		video_ram.start = mdesc->video_start;
 		video_ram.end   = mdesc->video_end;
@@ -1055,6 +1076,11 @@ static void __init request_standard_resources(const struct machine_desc *mdesc)
 	 * Some machines don't have the possibility of ever
 	 * possessing lp0, lp1 or lp2
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 머신에 등록된 포트가 있는 경우 ioport_resource에 추가한다.
+ */
 	if (mdesc->reserve_lp0)
 		request_resource(&ioport_resource, &lp0);
 	if (mdesc->reserve_lp1)
@@ -1224,9 +1250,22 @@ void __init setup_arch(char **cmdline_p)
 	paging_init(mdesc);
 	request_standard_resources(mdesc);
 
+/* IAMROOT-12AB:
+ * -------------
+ * 머신이 제공하는 restart 함수를 등록한다.
+ * 예) rpi2: bcm2709_restart()
+ */
 	if (mdesc->restart)
 		arm_pm_restart = mdesc->restart;
 
+/* IAMROOT-12AB:
+ * -------------
+ * dtb를 unflatten한 후 메모리를 할당받아 구조체 형태로 변환한다.
+ *
+ * 전역 of_aliases, of_chosen, of_stdout 노드를 찾고,
+ * 전역 aliases_lookup 리스트에 aliases 노드의 모든 속성값으로 찾은 노드들을 
+ *	alias_prop 구조체 + stem[] 형태로 변환하여 추가한다.
+ */
 	unflatten_device_tree();
 
 	arm_dt_init_cpu_maps();
