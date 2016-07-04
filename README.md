@@ -1,10 +1,13 @@
 # 최신 ARM 리눅스 커널 4.x 분석
 
 ## 커뮤니티: IAMROOT 12차 AB팀
-- www.iamroot.org | IAMROOT 홈페이지
-- jake.dothome.co.kr | 문c 블로그
-- http://kernelstudy.kr/wiki/doku.php?id=%EC%8A%A4%ED%84%B0%EB%94%94:kernel_%EC%98%A4%EB%A6%AC%EC%A7%80%EB%84%90_%EC%8A%A4%ED%84%B0%EB%94%94_12%EC%B0%A8_a
+- [www.iamroot.org][#iamroot] | IAMROOT 홈페이지
+- [jake.dothome.co.kr][#moonc] | 문c 블로그
+- [기존 WIKI][#old_wiki]
+[#old_wiki]: http://kernelstudy.kr/wiki/doku.php?id=%EC%8A%A4%ED%84%B0%EB%94%94:kernel_%EC%98%A4%EB%A6%AC%EC%A7%80%EB%84%90_%EC%8A%A4%ED%84%B0%EB%94%94_12%EC%B0%A8_a
 
+[#iamroot]: www.iamroot.org
+[#moonc]: jake.dothome.co.kr
 
 ## History
 
