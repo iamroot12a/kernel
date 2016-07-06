@@ -5,18 +5,15 @@
 - [jake.dothome.co.kr][#moonc] | 문c 블로그
 - [기존 WIKI][#old_wiki]
 [#old_wiki]: http://kernelstudy.kr/wiki/doku.php?id=%EC%8A%A4%ED%84%B0%EB%94%94:kernel_%EC%98%A4%EB%A6%AC%EC%A7%80%EB%84%90_%EC%8A%A4%ED%84%B0%EB%94%94_12%EC%B0%A8_a
-
-[#iamroot]: www.iamroot.org
-[#moonc]: jake.dothome.co.kr
+[#iamroot]: http://www.iamroot.org
+[#moonc]: http://jake.dothome.co.kr
 
 ## History
 
 첫 모임: 2015년 4월 25일
 
 ### 49주차
-- 일시: 2016.03.26
-- 인원: 11명
-- 장소: 토즈 선릉점
+- 일시: 2016.03.26, 토즈 선릉점 (11명)
 - 내용: start_kernel()
  - setup_machine_tags()
 - 참고: 
