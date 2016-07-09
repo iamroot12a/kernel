@@ -76,6 +76,11 @@ enum ipi_msg_type {
 
 static DECLARE_COMPLETION(cpu_running);
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * SMP ops 구조체는 코어의 초기화 및 구동에 대한 핸들러 함수를 가지고 있다.
+ */
 static struct smp_operations smp_ops;
 
 void __init smp_set_ops(struct smp_operations *ops)

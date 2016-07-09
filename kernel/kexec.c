@@ -1837,6 +1837,10 @@ static int __init __parse_crashkernel(char *cmdline,
 	*crash_size = 0;
 	*crash_base = 0;
 
+/* IAMROOT-12AB:
+ * -------------
+ * "crashkernel=" 체크
+ */
 	ck_cmdline = get_last_crashkernel(cmdline, name, suffix);
 
 	if (!ck_cmdline)
@@ -1844,6 +1848,10 @@ static int __init __parse_crashkernel(char *cmdline,
 
 	ck_cmdline += strlen(name);
 
+/* IAMROOT-12AB:
+ * -------------
+ * 1) ",high" 또는 ",low" 옵션이 뒤에 붙는 경우의 처리(x86)
+ */
 	if (suffix)
 		return parse_crashkernel_suffix(ck_cmdline, crash_size,
 				suffix);
@@ -1851,12 +1859,26 @@ static int __init __parse_crashkernel(char *cmdline,
 	 * if the commandline contains a ':', then that's the extended
 	 * syntax -- if not, it must be the classic syntax
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 2) range가 앞부분에 추가된 형태 "start-end:size@offset"
+ *    - 메모리가 start ~ end 범위 이내일 경우 size 만큼의 영역을 할당하게 한다.
+ *    - 범위 지정은 복수로 할 수 있다.
+ *      예) 512M-2G:64M,2G-:128M
+ *          시스템 RAM이 512~2G 이내인 경우 64M를 할당하고
+ *                       2G 이상인 경우 128M를 할당한다.
+ */
 	first_colon = strchr(ck_cmdline, ':');
 	first_space = strchr(ck_cmdline, ' ');
 	if (first_colon && (!first_space || first_colon < first_space))
 		return parse_crashkernel_mem(ck_cmdline, system_ram,
 				crash_size, crash_base);
 
+/* IAMROOT-12AB:
+ * -------------
+ * 3) simple하게 "size@offset"만 갖는 형태
+ */
 	return parse_crashkernel_simple(ck_cmdline, crash_size, crash_base);
 }
 
@@ -1869,6 +1891,12 @@ int __init parse_crashkernel(char *cmdline,
 			     unsigned long long *crash_size,
 			     unsigned long long *crash_base)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * panic 발생 시 캡쳐전용커널(라이트한 1core용)을 호출해서 coredump를 수행하도록
+ * 메모리 할당을 한다.
+ */
 	return __parse_crashkernel(cmdline, system_ram, crash_size, crash_base,
 					"crashkernel=", NULL);
 }

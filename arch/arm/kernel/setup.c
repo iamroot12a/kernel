@@ -126,6 +126,11 @@ struct cpu_user_fns cpu_user __read_mostly;
 struct cpu_cache_fns cpu_cache __read_mostly;
 #endif
 #ifdef CONFIG_OUTER_CACHE
+
+/* IAMROOT-12AB:
+ * -------------
+ * outer cache가 사용되는 경우 아래 전역 outer_cache를 사용한다.
+ */
 struct outer_cache_fns outer_cache __read_mostly;
 EXPORT_SYMBOL(outer_cache);
 #endif
@@ -720,6 +725,14 @@ static void __init smp_build_mpidr_hash(void)
 	 * Pre-scan the list of MPIDRS and filter out bits that do
 	 * not contribute to affinity levels, ie they never toggle.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * cpu_logical_map 비트에서 모두 중복된 비트를 제거한 값을 산출한다.
+ * 예) rpi2: 0xf00, 0xf01, 0xf02, 0xf03
+ *           0b1111_0000_0000	0b1111_0000_0001   0b1111_0000_0010   0b1111_0000_0011
+ *   mask -> 0b0000_0000_0000_0000_0000_0000_0000_0011 (0x0000_0003)
+ */
 	for_each_possible_cpu(i)
 		mask |= (cpu_logical_map(i) ^ cpu_logical_map(0));
 	pr_debug("mask of set bits 0x%x\n", mask);
@@ -727,6 +740,16 @@ static void __init smp_build_mpidr_hash(void)
 	 * Find and stash the last and first bit set at all affinity levels to
 	 * check how many bits are required to represent them.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ *			aff-0	aff-1	aff-2
+ * rpi2: affinity 값이	  3,	  0,      0	으로 변환한다.
+ *	 ls 값이	  2,      0,      0	으로 변환한다.
+ *	 fs[] 값이	  0,      0,      0	으로 설정된다.
+ *	 bits[] 값이	  2,      0,      0	으로 설정된다.
+ */
+
 	for (i = 0; i < 3; i++) {
 		affinity = MPIDR_AFFINITY_LEVEL(mask, i);
 		/*
@@ -748,6 +771,19 @@ static void __init smp_build_mpidr_hash(void)
 	 * of CPUs that is not an exact power of 2 and their bit
 	 * representation might contain holes, eg MPIDR[7:0] = {0x2, 0x80}.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * mpidr_hash.shift_aff[]
+ *	cpu 번호 -> mpidr 값으로 변환하기 위해 각 affnity 필드로 쉬프트해야할 
+ *	비트 수를 미리 계산해놓는다.
+ *
+ *	예) mask = 0x00000000_00000011_00000011_00000011 (max 64 cpus)
+ *	    bits[0]=2, bits[1]=2, bits[2]=2
+ *	    shift_aff[0] = 0
+ *	    shift_aff[1] = 6
+ *	    shift_aff[2] = 12
+ */
 	mpidr_hash.shift_aff[0] = fs[0];
 	mpidr_hash.shift_aff[1] = MPIDR_LEVEL_BITS + fs[1] - bits[0];
 	mpidr_hash.shift_aff[2] = 2*MPIDR_LEVEL_BITS + fs[2] -
@@ -766,6 +802,7 @@ static void __init smp_build_mpidr_hash(void)
 	 */
 	if (mpidr_hash_size() > 4 * num_possible_cpus())
 		pr_warn("Large number of MPIDR hash buckets detected\n");
+
 	sync_cache_w(&mpidr_hash);
 }
 #endif
@@ -1133,6 +1170,10 @@ static inline unsigned long long get_total_mem(void)
 {
 	unsigned long total;
 
+/* IAMROOT-12AB:
+ * -------------
+ * lowmem 사이즈를 반환한다.
+ */
 	total = max_low_pfn - min_low_pfn;
 	return total << PAGE_SHIFT;
 }
@@ -1150,12 +1191,26 @@ static void __init reserve_crashkernel(void)
 	unsigned long long total_mem;
 	int ret;
 
+/* IAMROOT-12AB:
+ * -------------
+ * lowmem 사이즈를 반환한다.
+ */
 	total_mem = get_total_mem();
+
+/* IAMROOT-12AB:
+ * -------------
+ * panic 발생 시 캡쳐전용커널(라이트한 1core용)을 호출해서 coredump를 수행하도록
+ * 사이즈와 주소를 parsing 해온다.
+ */
 	ret = parse_crashkernel(boot_command_line, total_mem,
 				&crash_size, &crash_base);
 	if (ret)
 		return;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 구해온 size와 base 주소로 crash kernel용 메모리를 할당한다.
+ */
 	ret = memblock_reserve(crash_base, crash_size);
 	if (ret < 0) {
 		pr_warn("crashkernel reservation failed - memory is in use (0x%lx)\n",
@@ -1170,6 +1225,11 @@ static void __init reserve_crashkernel(void)
 
 	crashk_res.start = crash_base;
 	crashk_res.end = crash_base + crash_size - 1;
+
+/* IAMROOT-12AB:
+ * -------------
+ * iomem_resource에 크래쉬 커널(Crash kernel) 리소스를 등록한다.
+ */
 	insert_resource(&iomem_resource, &crashk_res);
 }
 #else
@@ -1179,6 +1239,11 @@ static inline void reserve_crashkernel(void) {}
 void __init hyp_mode_check(void)
 {
 #ifdef CONFIG_ARM_VIRT_EXT
+
+/* IAMROOT-12AB:
+ * -------------
+ * 전역 __boot_cpu_mode 변수를 모든 cpu에 대해 inner &outer 캐시 동기화
+ */
 	sync_boot_mode();
 
 	if (is_hyp_mode_available()) {
@@ -1226,7 +1291,6 @@ void __init setup_arch(char **cmdline_p)
 	strlcpy(cmd_line, boot_command_line, COMMAND_LINE_SIZE);
 	*cmdline_p = cmd_line;
 
-
 /* IAMROOT-12AB:
  * -------------
  * cmdline에서 입력된 모든 파라메터에 대응하는 early 함수를 찾아 호출한다.
@@ -1268,16 +1332,57 @@ void __init setup_arch(char **cmdline_p)
  */
 	unflatten_device_tree();
 
+/* IAMROOT-12AB:
+ * -------------
+ * dtb의 /cpus의 child 노드에서 읽은 값을 __cpu_logical_map[]에 저장하고 
+ * 각 cpu를 possible 상태로 바꾼다.
+ * (MPIDR에서 읽은 값이 한 번도 매치되지 않은 경우 에러)
+ */
 	arm_dt_init_cpu_maps();
+
+/* IAMROOT-12AB:
+ * -------------
+ * dtb에서 /psci 노드를 사용하는 경우 psci_ops를 설정한다.
+ *	- 두 가지 version 지원
+ *	  (psci 버전 0.2의 경우 리셋 및 파워 off 전역 함수도 준비한다.)
+ * 모드(hvc, smc)에 따라 전역 invoke_psci_fn에 핸들러 함수 설정 
+ *	- hvc(HyperVisor Call)
+ *	- smc(Secure Monitor Call)
+ */
 	psci_init();
 #ifdef CONFIG_SMP
 	if (is_smp()) {
+
+/* IAMROOT-12AB:
+ * -------------
+ * vexpress: arch/arm/mach-vexpress/platsmp.c 에서 
+ *	 mdesc->smp_init에 vexpress_smp_init_ops()가 등록됨
+ * rpi2: mdesc->smp_init이 지정되지 않음
+ *	 mdesc->smp에 bcm2709_smp_ops이 대입되어 있다.
+ */
 		if (!mdesc->smp_init || !mdesc->smp_init()) {
+
+/* IAMROOT-12AB:
+ * -------------
+ * psci_init()을 통해 psci_ops.cpu_on에 핸들러 함수가 있는 경우 true
+ *	- ver 0.1: /psci 노드의 cpu_on 속성이 있는 경우에 핸들러 함수 등록
+ *	- ver 0.2: /psci 노드가 있기만 하면 핸들러 함수 등록
+ */
+/* IAMROOT-12AB:
+ * -------------
+ * psci_ops.cpu_on에 핸들러 함수가 있는 경우 true
+ */
 			if (psci_smp_available())
 				smp_set_ops(&psci_smp_ops);
 			else if (mdesc->smp)
 				smp_set_ops(mdesc->smp);
 		}
+
+/* IAMROOT-12AB:
+ * -------------
+ * smp_ops에 등록된 smp cpu 초기화 루틴을 동작시킨다.
+ * rpi2: smp_ops.smp_init_cpus = bcm2709_smp_init_cpus()
+ */
 		smp_init_cpus();
 		smp_build_mpidr_hash();
 	}
@@ -1289,6 +1394,11 @@ void __init setup_arch(char **cmdline_p)
 	reserve_crashkernel();
 
 #ifdef CONFIG_MULTI_IRQ_HANDLER
+
+/* IAMROOT-12AB:
+ * -------------
+ * 인터럽트 핸들러가 호출할 함수
+ */
 	handle_arch_irq = mdesc->handle_irq;
 #endif
 
@@ -1299,6 +1409,13 @@ void __init setup_arch(char **cmdline_p)
 	conswitchp = &dummy_con;
 #endif
 #endif
+
+/* IAMROOT-12AB:
+ * -------------
+ * 머신에 있는 init_early() 함수를 호출한다.
+ * rpi2: bcm2709_init_early()를 호출하면 init_dma_coherent_pool_size()를 
+ *       호출하여 사이즈를 4M로 설정한다.
+ */
 
 	if (mdesc->init_early)
 		mdesc->init_early();

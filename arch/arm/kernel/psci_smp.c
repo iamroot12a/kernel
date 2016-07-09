@@ -103,9 +103,18 @@ int __ref psci_cpu_kill(unsigned int cpu)
 bool __init psci_smp_available(void)
 {
 	/* is cpu_on available at least? */
+
+/* IAMROOT-12AB:
+ * -------------
+ * psci_ops.cpu_on에 핸들러 함수가 있는 경우 true
+ */
 	return (psci_ops.cpu_on != NULL);
 }
 
+/* IAMROOT-12AB:
+ * -------------
+ * psci용 smp ops는 부트 세컨더리와 die, kill에 대한 핸들러 함수가 기본 준비됨.
+ */
 struct smp_operations __initdata psci_smp_ops = {
 	.smp_boot_secondary	= psci_boot_secondary,
 #ifdef CONFIG_HOTPLUG_CPU

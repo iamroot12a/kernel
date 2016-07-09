@@ -413,6 +413,12 @@ static inline void __sync_cache_range_w(volatile void *p, size_t size)
 {
 	char *_p = (char *)p;
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * rpi2: v7_flush_kern_dcache_area()
+ *       outer cache를 사용하지 않는다.
+ */
 	__cpuc_clean_dcache_area(_p, size);
 	outer_clean_range(__pa(_p), __pa(_p + size));
 }

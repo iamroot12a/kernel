@@ -481,6 +481,12 @@ static inline bool cpumask_full(const struct cpumask *srcp)
  */
 static inline unsigned int cpumask_weight(const struct cpumask *srcp)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * 비트 값에서 1로 설정된 비트를 모두 합한 수
+ * 예) 0xf001_000f -> 9
+ */
 	return bitmap_weight(cpumask_bits(srcp), nr_cpumask_bits);
 }
 

@@ -40,9 +40,35 @@ static int __init set_smp_ops_by_method(struct device_node *node)
 	const char *method;
 	struct of_cpu_method *m = __cpu_method_of_table;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 예: bcm7445.dtsi
+ *	cpu@0 {
+ *		compatible = "brcm,brahma-b15";
+ *              device_type = "cpu";
+ *              enable-method = "brcm,brahma-b15";
+ *              reg = <0>;
+ *      }
+ *
+ * 아래와 같이 CPU_METHOD_OF_DECLARE() 매크로로 __cpu_method_of_table[]에 등록한다.
+ * 예: arch/arm/mach-rockchip/platsmp.c
+ * CPU_METHOD_OF_DECLARE(rk3066_smp, "rockchip,rk3066-smp", &rockchip_smp_ops);    
+ *	static struct smp_operations rockchip_smp_ops __initdata = { 
+ *		.smp_prepare_cpus       = rockchip_smp_prepare_cpus,
+ *              .smp_boot_secondary     = rockchip_boot_secondary,
+ *      #ifdef CONFIG_HOTPLUG_CPU
+ *              .cpu_kill               = rockchip_cpu_kill,
+ *              .cpu_die                = rockchip_cpu_die,
+ *      #endif
+ *      };
+ */
 	if (of_property_read_string(node, "enable-method", &method))
 		return 0;
 
+/* IAMROOT-12AB:
+ * -------------
+ * __cpu_method_of_table에 등록된 cpu method 이름과 비교하여 찾아서 ops를 SMP에 대입한다.
+ */
 	for (; m->method; m++)
 		if (!strcmp(m->method, method)) {
 			smp_set_ops(m->ops);
@@ -77,18 +103,37 @@ void __init arm_dt_init_cpu_maps(void)
 	struct device_node *cpu, *cpus;
 	int found_method = 0;
 	u32 i, j, cpuidx = 1;
+
+/* IAMROOT-12AB:
+ * -------------
+ * MPIDR은 ARM 아키텍처 버전에 따라 implementation이 다르다.
+ * ARMv7에서는 affinity level 0가 cpu, 1은 cluster, 2는 사용하지 않는다.
+ */
 	u32 mpidr = is_smp() ? read_cpuid_mpidr() & MPIDR_HWID_BITMASK : 0;
 
 	u32 tmp_map[NR_CPUS] = { [0 ... NR_CPUS-1] = MPIDR_INVALID };
 	bool bootcpu_valid = false;
+
+/* IAMROOT-12AB:
+ * -------------
+ * unflatten된 디바이스 트리 object에서 /cpus 노드 구조체를 찾아온다.
+ */
 	cpus = of_find_node_by_path("/cpus");
 
 	if (!cpus)
 		return;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 루프를 돌며 cpus의 child 노드를 cpu에 담아온다.
+ */
 	for_each_child_of_node(cpus, cpu) {
 		u32 hwid;
 
+/* IAMROOT-12AB:
+ * -------------
+ * child 노드의 타입이 "cpu"가 아니면 skip
+ */
 		if (of_node_cmp(cpu->type, "cpu"))
 			continue;
 
@@ -98,6 +143,11 @@ void __init arm_dt_init_cpu_maps(void)
 		 * properties is considered invalid to build the
 		 * cpu_logical_map.
 		 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * cpu 노드에서 "reg" 속성 값을 hwid에 읽어온다.
+ */
 		if (of_property_read_u32(cpu, "reg", &hwid)) {
 			pr_debug(" * %s missing reg property\n",
 				     cpu->full_name);
@@ -118,6 +168,11 @@ void __init arm_dt_init_cpu_maps(void)
 		 * temp values were initialized to UINT_MAX
 		 * to avoid matching valid MPIDR[23:0] values.
 		 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 이미 읽어온 hwid 값이 중복된 경우 경고 메시지 출력후 종료
+ */
 		for (j = 0; j < cpuidx; j++)
 			if (WARN(tmp_map[j] == hwid, "Duplicate /cpu reg "
 						     "properties in the DT\n"))
@@ -132,6 +187,12 @@ void __init arm_dt_init_cpu_maps(void)
 		 * logical map built from DT is validated and can be used
 		 * to override the map created in smp_setup_processor_id().
 		 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * dtb에서 읽어온 hwid와 보조 레지스터에서 읽어온 mpidr 값을 비교
+ */
+
 		if (hwid == mpidr) {
 			i = 0;
 			bootcpu_valid = true;
@@ -146,8 +207,16 @@ void __init arm_dt_init_cpu_maps(void)
 			break;
 		}
 
+/* IAMROOT-12AB:
+ * -------------
+ * rpi2: tmp_map[] = { 0xf00, 0xf01, 0xf02, 0xf03 }
+ */
 		tmp_map[i] = hwid;
 
+/* IAMROOT-12AB:
+ * -------------
+ * SMP ops가 처음 설정된 경우 한 번만 수행된다.
+ */
 		if (!found_method)
 			found_method = set_smp_ops_by_method(cpu);
 	}
@@ -156,9 +225,19 @@ void __init arm_dt_init_cpu_maps(void)
 	 * Fallback to an enable-method in the cpus node if nothing found in
 	 * a cpu node.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * cpus child노드인 cpu의 enable-method로 매치되지 않는 경우 
+ *		    cpus 노드에 있는 enable-method로도 검색을 시도한다.
+ */
 	if (!found_method)
 		set_smp_ops_by_method(cpus);
 
+/* IAMROOT-12AB:
+ * -------------
+ * DTB의 cpu 노드의 reg 값이 hwid와 한번도 같은 경우가 없으면 아래 메시지가 출력되고 종료
+ */
 	if (!bootcpu_valid) {
 		pr_warn("DT missing boot CPU MPIDR[23:0], fall back to default cpu_logical_map\n");
 		return;
@@ -169,6 +248,12 @@ void __init arm_dt_init_cpu_maps(void)
 	 * a reg property, the DT CPU list can be considered valid and the
 	 * logical map created in smp_setup_processor_id() can be overridden
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * __cpu_logical_map[]에 tmp_map[]을 복사하고 각 cpu를 possible 상태로 설정한다.
+ */
+
 	for (i = 0; i < cpuidx; i++) {
 		set_cpu_possible(i, true);
 		cpu_logical_map(i) = tmp_map[i];

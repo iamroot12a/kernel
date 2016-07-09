@@ -309,6 +309,11 @@ static inline int bitmap_full(const unsigned long *src, unsigned int nbits)
 		return __bitmap_full(src, nbits);
 }
 
+/* IAMROOT-12AB:
+ * -------------
+ * 비트 값에서 1로 설정된 비트를 모두 합한 수
+ * 예) 0xf001_000f -> 9
+ */
 static inline int bitmap_weight(const unsigned long *src, unsigned int nbits)
 {
 	if (small_const_nbits(nbits))
