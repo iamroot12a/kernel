@@ -537,6 +537,12 @@ EXPORT_SYMBOL(nr_cpu_ids);
 /* An arch may set nr_cpu_ids earlier if needed, so this would be redundant */
 void __init setup_nr_cpu_ids(void)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * 가장 마지막에 possible된 비트를 찾아서 1을 더한다.
+ * 8개 cpu가 possible되어 있는 경우 find_last_bit()=7이므로 
+ * nr_cpu_ids=8이된다.
+ */
 	nr_cpu_ids = find_last_bit(cpumask_bits(cpu_possible_mask),NR_CPUS) + 1;
 }
 

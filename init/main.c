@@ -377,6 +377,16 @@ static inline void smp_prepare_cpus(unsigned int maxcpus) { }
  */
 static void __init setup_command_line(char *command_line)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * saved_command_line 
+ *	/proc에서 볼 수 있게 연결되었고 수정되지 않는다.
+ * initcall_command_line
+ *	initcall 관련 parsing용으로 사용되며 변경될 수 있다.	
+ * static_command_line
+ *	parising용으로 사용되며 변경될 수 있다.
+ */
 	saved_command_line =
 		memblock_virt_alloc(strlen(boot_command_line) + 1, 0);
 	initcall_command_line =

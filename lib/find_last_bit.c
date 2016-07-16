@@ -17,6 +17,13 @@
 
 #ifndef find_last_bit
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 비트맵에서 size 범위 내에서 가장 마지막에 설정된 비트 번호를 알아온다. (0~)
+ * 예) bigendian: 0x0f0f_0f0f_0f0f_0f0f (lsb), size=48
+ *		  => 43
+ */
 unsigned long find_last_bit(const unsigned long *addr, unsigned long size)
 {
 	unsigned long words;

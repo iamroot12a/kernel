@@ -473,6 +473,14 @@ struct mm_struct {
 
 static inline void mm_init_cpumask(struct mm_struct *mm)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * cpumask 비트맵이 통채로 스택을 통해서 인수로 전달되지 않고, 
+ * 할당을 받은 후 포인터만 전달하는 방식으로 stack overflow가 일어날
+ * 가능성을 줄여준다. cpu가 수천 개 이상인 경우 많은 비트맵이 
+ * 스택을 통해서 이동하는 것을 막기 위함이다.
+ */
 #ifdef CONFIG_CPUMASK_OFFSTACK
 	mm->cpu_vm_mask_var = &mm->cpumask_allocation;
 #endif

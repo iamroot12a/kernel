@@ -1779,6 +1779,12 @@ static struct pcpu_alloc_info * __init pcpu_build_alloc_info(
 {
 	static int group_map[NR_CPUS] __initdata;
 	static int group_cnt[NR_CPUS] __initdata;
+
+/* IAMROOT-12AB:
+ * -------------
+ * static_size: per_cpu 섹션 영역 크기
+ *	rpi2: 0x3ec0으로 계산을 시도
+ */
 	const size_t static_size = __per_cpu_end - __per_cpu_start;
 	int nr_groups = 1, nr_units = 0;
 	size_t size_sum, min_unit_size, alloc_size;
@@ -1793,8 +1799,18 @@ static struct pcpu_alloc_info * __init pcpu_build_alloc_info(
 	memset(group_cnt, 0, sizeof(group_cnt));
 
 	/* calculate size_sum and ensure dyn_size is enough for early alloc */
+
+/* IAMROOT-12AB:
+ * -------------
+ * rpi2: size_sum = 0x3ec0 + 0x2000 + 0x5000 = 0xb000 (0xaec0를 4k align)
+ */
 	size_sum = PFN_ALIGN(static_size + reserved_size +
 			    max_t(size_t, dyn_size, PERCPU_DYNAMIC_EARLY_SIZE));
+
+/* IAMROOT-12AB:
+ * -------------
+ * rpi2: dyn_size = 0xb000 - 0x3ec0 - 0x2000 = 0x5140
+ */
 	dyn_size = size_sum - static_size - reserved_size;
 
 	/*
@@ -1803,14 +1819,36 @@ static struct pcpu_alloc_info * __init pcpu_build_alloc_info(
 	 * which can accommodate 4k aligned segments which are equal to
 	 * or larger than min_unit_size.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * rpi2: min_unit_size = 0xb000
+ */
 	min_unit_size = max_t(size_t, size_sum, PCPU_MIN_UNIT_SIZE);
 
+/* IAMROOT-12AB:
+ * -------------
+ * rpi2: alloc_size = 0xb000
+ */
 	alloc_size = roundup(min_unit_size, atom_size);
+
+/* IAMROOT-12AB:
+ * -------------
+ * 할당 사이즈를 upa로 나누어서 남는 공간이 없도록 upa를 줄여나간다.
+ * 또한 할당 사이즈를 upa로 나누어서 페이지 정렬이 안되면 upa를 줄여나간다.
+ *
+ * rpi2: upa(Unit Per Alloc) = 1
+ */
 	upa = alloc_size / min_unit_size;
 	while (alloc_size % upa || ((alloc_size / upa) & ~PAGE_MASK))
 		upa--;
 	max_upa = upa;
 
+/* IAMROOT-12AB:
+ * -------------
+ * cpu간에 같은 노드에 속하는지 distance를 확인하여 같은 노드에 있을 때 
+ * 노드(그룹) 카운터를 증가시키고, 각 cpu가 속한 노드(그룹)을 파악한다.
+ */
 	/* group cpus according to their proximity */
 	for_each_possible_cpu(cpu) {
 		group = 0;
@@ -1826,6 +1864,12 @@ static struct pcpu_alloc_info * __init pcpu_build_alloc_info(
 				goto next_group;
 			}
 		}
+
+/* IAMROOT-12AB:
+ * -------------
+ * group_map[]:	cpu -> 노드(그룹) 변환 테이블
+ * group_cnt[]:	노드(그룹)별로 -> cpu 수 
+ */
 		group_map[cpu] = group;
 		group_cnt[group]++;
 	}
@@ -1835,6 +1879,16 @@ static struct pcpu_alloc_info * __init pcpu_build_alloc_info(
 	 * and then as much as possible without using more address
 	 * space.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * atom_size가 큰 아키텍처에서 unit이 여러 개 산출되는데 불필요한 공간을
+ * 줄여서 각 노드(그룹)에 필요한 만큼의 unit 수로 줄인다.
+ *
+ * 예) rpi2: 여전히 upa=1을 사용한다.
+ * 예) rpi2의 요건과 같이하여 8 cpu, 2 node, atom_size=2M를 사용하는 경우 
+ *     upa가 46 -> 32 -> 8로 줄어든다.
+ */
 	last_allocs = INT_MAX;
 	for (upa = max_upa; upa; upa--) {
 		int allocs = 0, wasted = 0;
@@ -2201,6 +2255,12 @@ void __init setup_per_cpu_areas(void)
 	 * Always reserve area for module percpu variables.  That's
 	 * what the legacy allocator did.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * PERCPU_MODULE_RESERVE(8K)
+ * PERCPU_DYNAMIC_RESERVE(20K)
+ */
 	rc = pcpu_embed_first_chunk(PERCPU_MODULE_RESERVE,
 				    PERCPU_DYNAMIC_RESERVE, PAGE_SIZE, NULL,
 				    pcpu_dfl_fc_alloc, pcpu_dfl_fc_free);
