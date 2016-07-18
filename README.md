@@ -283,3 +283,10 @@ page_address_init()
 - setup_arch()->hyp_mode_check()
 - setup_arch()->reserve_crashkernel()
 - setup_arch()->mdesc->init_early()
+
+### 65주차
+- 2016.07.16, 토즈 선릉점 (10명, 권경환, 김종철, 문영일, 박진영, 양유석, 유계성, 윤창호, 조현철, 최영민, 한상종)
+- mm_init_cpumask()
+- setup_command_line()
+- setup_nr_cpu_ids()
+- setup_per_cpu_areas() ~
