@@ -171,6 +171,10 @@ ENDPROC(cpu_v7_set_pte_ext)
  * - TTBCR zero(0)
  * - SMP: ttbr0 |= (TTB_RGN_WBWA|TTB_S)
  *        ttbr1 |= (TTB_RGN_WBWA|TTB_S) 한 후 -> write TTBR1
+ *        
+ *        ttbr1은 커널용 pgd를 담아두었다가 context switch가 일어나 
+ *        kernel에 진입하는 경우 kernel용 페이지 테이블을 지정하기 위해 사용한다.
+ *        사용 전에 ttbr1 -> ttbr0에 복사하여 사용함
  */
 
 	.macro	v7_ttb_setup, zero, ttbr0, ttbr1, tmp
