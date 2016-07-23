@@ -134,11 +134,21 @@ static unsigned int pcpu_high_unit_cpu __read_mostly;
 void *pcpu_base_addr __read_mostly;
 EXPORT_SYMBOL_GPL(pcpu_base_addr);
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * cpu->unit 배열, 각 cpu별 unit offset
+ */
 static const int *pcpu_unit_map __read_mostly;		/* cpu -> unit */
 const unsigned long *pcpu_unit_offsets __read_mostly;	/* cpu -> unit offset */
 
 /* group information, used for vm allocation */
 static int pcpu_nr_groups __read_mostly;
+
+/* IAMROOT-12AB:
+ * -------------
+ * 각 그룹(노드)의 base_offset와 size
+ */
 static const unsigned long *pcpu_group_offsets __read_mostly;
 static const size_t *pcpu_group_sizes __read_mostly;
 
@@ -146,6 +156,11 @@ static const size_t *pcpu_group_sizes __read_mostly;
  * The first chunk which always exists.  Note that unlike other
  * chunks, this one can be allocated and mapped in several different
  * ways and thus often doesn't live in the vmalloc area.
+ */
+
+/* IAMROOT-12AB:
+ * -------------
+ * pcpu_first_chunk: dynamic 영역을 관리
  */
 static struct pcpu_chunk *pcpu_first_chunk;
 
@@ -155,6 +170,13 @@ static struct pcpu_chunk *pcpu_first_chunk;
  * reserved offset is in pcpu_reserved_chunk_limit.  When reserved
  * area doesn't exist, the following variables contain NULL and 0
  * respectively.
+ */
+
+/* IAMROOT-12AB:
+ * -------------
+ * pcpu_reserved_chunk: reserve 영역을 관리 
+ *                      모듈을 사용하지 않으면 NULL 
+ *			모듈을 사용하는 경우 static chunk 구조체를 가리킴
  */
 static struct pcpu_chunk *pcpu_reserved_chunk;
 static int pcpu_reserved_chunk_limit;
@@ -202,6 +224,14 @@ static bool pcpu_addr_in_reserved_chunk(void *addr)
 		addr < first_start + pcpu_reserved_chunk_limit;
 }
 
+/* IAMROOT-12AB:
+ * -------------
+ * size에 따른 slot을 결정한다.
+ * 4K  ~  8K-1 -> 9
+ * 8K  ~ 16K-1 -> 10
+ * 16K ~ 32K-1 -> 11
+ * 32K ~ 64K-1 -> 12
+ */
 static int __pcpu_size_to_slot(int size)
 {
 	int highbit = fls(size);	/* size is in bytes */
@@ -1380,10 +1410,23 @@ struct pcpu_alloc_info * __init pcpu_alloc_alloc_info(int nr_groups,
 	void *ptr;
 	int unit;
 
+/* IAMROOT-12AB:
+ * -------------
+ * pcpu_alloc_info 구조체와 그 서브 구조체인 pcpu_group_info[]의 사이즈를 구한다.
+ */
 	base_size = ALIGN(sizeof(*ai) + nr_groups * sizeof(ai->groups[0]),
 			  __alignof__(ai->groups[0].cpu_map[0]));
+
+/* IAMROOT-12AB:
+ * -------------
+ * cpu_map에 대한 공간을 nr_units 수 만큼 추가한다.
+ */
 	ai_size = base_size + nr_units * sizeof(ai->groups[0].cpu_map[0]);
 
+/* IAMROOT-12AB:
+ * -------------
+ * 산출된 공간을 할당한다.
+ */
 	ptr = memblock_virt_alloc_nopanic(PFN_ALIGN(ai_size), 0);
 	if (!ptr)
 		return NULL;
@@ -1392,6 +1435,10 @@ struct pcpu_alloc_info * __init pcpu_alloc_alloc_info(int nr_groups,
 
 	ai->groups[0].cpu_map = ptr;
 
+/* IAMROOT-12AB:
+ * -------------
+ * cpu_map[]에 초기값 NR_CPUS를 대입한다.
+ */
 	for (unit = 0; unit < nr_units; unit++)
 		ai->groups[0].cpu_map[unit] = NR_CPUS;
 
@@ -1565,6 +1612,14 @@ int __init pcpu_setup_first_chunk(const struct pcpu_alloc_info *ai,
 	PCPU_SETUP_BUG_ON(pcpu_verify_alloc_info(ai) < 0);
 
 	/* process group information and build config tables accordingly */
+
+/* IAMROOT-12AB:
+ * -------------
+ * group_offsets[nr_groups] 할당 
+ * group_sizes[nr_groups] 할당
+ * unit_map[nr_cpu_ids] 할당
+ * unit_off[nr_cpu_ids] 할당
+ */
 	group_offsets = memblock_virt_alloc(ai->nr_groups *
 					     sizeof(group_offsets[0]), 0);
 	group_sizes = memblock_virt_alloc(ai->nr_groups *
@@ -1572,6 +1627,10 @@ int __init pcpu_setup_first_chunk(const struct pcpu_alloc_info *ai,
 	unit_map = memblock_virt_alloc(nr_cpu_ids * sizeof(unit_map[0]), 0);
 	unit_off = memblock_virt_alloc(nr_cpu_ids * sizeof(unit_off[0]), 0);
 
+/* IAMROOT-12AB:
+ * -------------
+ * 
+ */
 	for (cpu = 0; cpu < nr_cpu_ids; cpu++)
 		unit_map[cpu] = UINT_MAX;
 
@@ -1584,6 +1643,10 @@ int __init pcpu_setup_first_chunk(const struct pcpu_alloc_info *ai,
 		group_offsets[group] = gi->base_offset;
 		group_sizes[group] = gi->nr_units * ai->unit_size;
 
+/* IAMROOT-12AB:
+ * -------------
+ * unit->cpu 매핑되어 있는 cpu_map[]을 사용하여 cpu->unit 매핑을 구성
+ */
 		for (i = 0; i < gi->nr_units; i++) {
 			cpu = gi->cpu_map[i];
 			if (cpu == NR_CPUS)
@@ -1592,11 +1655,20 @@ int __init pcpu_setup_first_chunk(const struct pcpu_alloc_info *ai,
 			PCPU_SETUP_BUG_ON(cpu >= nr_cpu_ids);
 			PCPU_SETUP_BUG_ON(!cpu_possible(cpu));
 			PCPU_SETUP_BUG_ON(unit_map[cpu] != UINT_MAX);
-
+/* IAMROOT-12AB:
+ * -------------
+ * cpu->unit 매핑 구성
+ */
 			unit_map[cpu] = unit + i;
 			unit_off[cpu] = gi->base_offset + i * ai->unit_size;
 
 			/* determine low/high unit_cpu */
+
+/* IAMROOT-12AB:
+ * -------------
+ * pcpu_low_unit_cpu: offset가 가장 낮은 cpu id 
+ * pcpu_high_unit_cpu: offset가 가장 높은 cpu id
+ */
 			if (pcpu_low_unit_cpu == NR_CPUS ||
 			    unit_off[cpu] < unit_off[pcpu_low_unit_cpu])
 				pcpu_low_unit_cpu = cpu;
@@ -1605,6 +1677,12 @@ int __init pcpu_setup_first_chunk(const struct pcpu_alloc_info *ai,
 				pcpu_high_unit_cpu = cpu;
 		}
 	}
+
+/* IAMROOT-12AB:
+ * -------------
+ * pcpu_nr_units는 cpu수와 다를 수 있다.
+ * (사용하지 않는 unit를 포함한 수)
+ */
 	pcpu_nr_units = unit;
 
 	for_each_possible_cpu(cpu)
@@ -1614,6 +1692,10 @@ int __init pcpu_setup_first_chunk(const struct pcpu_alloc_info *ai,
 #undef PCPU_SETUP_BUG_ON
 	pcpu_dump_alloc_info(KERN_DEBUG, ai);
 
+/* IAMROOT-12AB:
+ * -------------
+ * 그룹 배열 정보와 cpu->unit 매핑 정보를 전역 변수가 가리키게 한다.
+ */
 	pcpu_nr_groups = ai->nr_groups;
 	pcpu_group_offsets = group_offsets;
 	pcpu_group_sizes = group_sizes;
@@ -1624,6 +1706,12 @@ int __init pcpu_setup_first_chunk(const struct pcpu_alloc_info *ai,
 	pcpu_unit_pages = ai->unit_size >> PAGE_SHIFT;
 	pcpu_unit_size = pcpu_unit_pages << PAGE_SHIFT;
 	pcpu_atom_size = ai->atom_size;
+
+/* IAMROOT-12AB:
+ * -------------
+ * pcpu_chunk 구조체 + unit 페이지 수만큼의 비트맵(단위: 워드)
+ *                     (예: 44K -> 11개 페이지 -> unsigned long 하나)
+ */
 	pcpu_chunk_struct_size = sizeof(struct pcpu_chunk) +
 		BITS_TO_LONGS(pcpu_unit_pages) * sizeof(unsigned long);
 
@@ -1631,6 +1719,12 @@ int __init pcpu_setup_first_chunk(const struct pcpu_alloc_info *ai,
 	 * Allocate chunk slots.  The additional last slot is for
 	 * empty chunks.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * unit 사이즈로 슬롯 크기를 결정하고 마지막 슬롯은 empty chunk 용도이다.
+ * unit_size가 32K~64K-1인 경우 12+2=14개의 슬롯이 만들어진다. 
+ */
 	pcpu_nr_slots = __pcpu_size_to_slot(pcpu_unit_size) + 2;
 	pcpu_slot = memblock_virt_alloc(
 			pcpu_nr_slots * sizeof(pcpu_slot[0]), 0);
@@ -1644,21 +1738,62 @@ int __init pcpu_setup_first_chunk(const struct pcpu_alloc_info *ai,
 	 * covers static area + reserved area (mostly used for module
 	 * static percpu allocation).
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * chunk 관리 매커니즘은 두 가지로 나뉜다.
+ *	- schunk: static chunk
+ *		  모듈이 없을 때 dynamic 영역을 관리 
+ *		  모듈이 있을 때 reserve 영역을 관리 (모듈이 사용하는 static)
+ *	- dchunk: dynamic chunk 
+ *		  모듈이 없을 때 사용안함
+ *		  모듈이 있을 때 dynamic 영역을 관리
+ */
 	schunk = memblock_virt_alloc(pcpu_chunk_struct_size, 0);
 	INIT_LIST_HEAD(&schunk->list);
+
+/* IAMROOT-12AB:
+ * -------------
+ * 관리 map이 처음 static으로 128개 사용되다 모자라는 경우 확장을 위해 
+ * map 확장 함수를 등록해둔다.
+ */
 	INIT_WORK(&schunk->map_extend_work, pcpu_map_extend_workfn);
 	schunk->base_addr = base_addr;
+
+/* IAMROOT-12AB:
+ * -------------
+ * 처음에는 128개의 static 엔트리로 관리
+ */
 	schunk->map = smap;
 	schunk->map_alloc = ARRAY_SIZE(smap);
 	schunk->immutable = true;
+
+/* IAMROOT-12AB:
+ * -------------
+ * 각 unit 페이지들을 활성화된 상태로 비트맵을 초기화
+ */
 	bitmap_fill(schunk->populated, pcpu_unit_pages);
 	schunk->nr_populated = pcpu_unit_pages;
 
 	if (ai->reserved_size) {
+
+/* IAMROOT-12AB:
+ * -------------
+ * 모듈을 사용하는 경우
+ *	- pcpu_first_chunk에 dchunk 사용
+ *	- pcpu_reserved_chunk에 schunk 사용 
+ */
 		schunk->free_size = ai->reserved_size;
 		pcpu_reserved_chunk = schunk;
 		pcpu_reserved_chunk_limit = ai->static_size + ai->reserved_size;
 	} else {
+
+/* IAMROOT-12AB:
+ * -------------
+ * 모듈을 사용하지 않는 경우 
+ *	- pcpu_first_chunk에 schunk 사용 
+ *	- pcpu_reserved_chunk에 null
+ */
 		schunk->free_size = dyn_size;
 		dyn_size = 0;			/* dynamic area covered */
 	}
@@ -1919,9 +2054,18 @@ static struct pcpu_alloc_info * __init pcpu_build_alloc_info(
 	upa = best_upa;
 
 	/* allocate and fill alloc_info */
+
+/* IAMROOT-12AB:
+ * -------------
+ * nr_units: 각 그룹(노드)에 속한 cpu 수를 산출
+ */
 	for (group = 0; group < nr_groups; group++)
 		nr_units += roundup(group_cnt[group], upa);
 
+/* IAMROOT-12AB:
+ * -------------
+ * ai와 그 서브 구조체에 대한 공간을 할당해온다.
+ */
 	ai = pcpu_alloc_alloc_info(nr_groups, nr_units);
 	if (!ai)
 		return ERR_PTR(-ENOMEM);
@@ -1932,6 +2076,10 @@ static struct pcpu_alloc_info * __init pcpu_build_alloc_info(
 		cpu_map += roundup(group_cnt[group], upa);
 	}
 
+/* IAMROOT-12AB:
+ * -------------
+ * 할당 받은 구조체 pcpu_alloc_info에 산출된 값들을 설정한다.
+ */
 	ai->static_size = static_size;
 	ai->reserved_size = reserved_size;
 	ai->dyn_size = dyn_size;
@@ -1947,8 +2095,17 @@ static struct pcpu_alloc_info * __init pcpu_build_alloc_info(
 		 * back-to-back.  The caller should update this to
 		 * reflect actual allocation.
 		 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * unit별 offset를 결정한다.
+ */
 		gi->base_offset = unit * ai->unit_size;
 
+/* IAMROOT-12AB:
+ * -------------
+ * unit->cpu 매핑을 한다.
+ */
 		for_each_possible_cpu(cpu)
 			if (group_map[cpu] == group)
 				gi->cpu_map[gi->nr_units++] = cpu;
@@ -2006,6 +2163,11 @@ int __init pcpu_embed_first_chunk(size_t reserved_size, size_t dyn_size,
 	size_t size_sum, areas_size, max_distance;
 	int group, i, rc;
 
+/* IAMROOT-12AB:
+ * -------------
+ * pcpu_alloc_info 구조체 및 그 서브 구조체 정보를 할당하고 구성해온다.
+ * (내부에 그룹별로 unit->cpu 매핑을 구성한다)
+ */
 	ai = pcpu_build_alloc_info(reserved_size, dyn_size, atom_size,
 				   cpu_distance_fn);
 	if (IS_ERR(ai))
@@ -2014,6 +2176,10 @@ int __init pcpu_embed_first_chunk(size_t reserved_size, size_t dyn_size,
 	size_sum = ai->static_size + ai->reserved_size + ai->dyn_size;
 	areas_size = PFN_ALIGN(ai->nr_groups * sizeof(void *));
 
+/* IAMROOT-12AB:
+ * -------------
+ * 그룹 수 만큼 임시로 void * areas[] 배열 할당.
+ */
 	areas = memblock_virt_alloc_nopanic(areas_size, 0);
 	if (!areas) {
 		rc = -ENOMEM;
@@ -2021,6 +2187,13 @@ int __init pcpu_embed_first_chunk(size_t reserved_size, size_t dyn_size,
 	}
 
 	/* allocate, copy and determine base address */
+
+/* IAMROOT-12AB:
+ * -------------
+ * per-cpu 공간을 그룹(노드)별로 할당한다.
+ * (각 그룹(노드)별 upa 단위로 정렬된 gi->nu_units x ai->unit_size 만큼
+ * 공간을 할당받는다.)
+ */
 	for (group = 0; group < ai->nr_groups; group++) {
 		struct pcpu_group_info *gi = &ai->groups[group];
 		unsigned int cpu = NR_CPUS;
@@ -2031,6 +2204,13 @@ int __init pcpu_embed_first_chunk(size_t reserved_size, size_t dyn_size,
 		BUG_ON(cpu == NR_CPUS);
 
 		/* allocate space for the whole group */
+
+/* IAMROOT-12AB:
+ * -------------
+ * local 노드의 메모리를 access하여 성능을 높이게 하기 위해 그룹(노드)별로
+ * 메모리를 구분하여 할당한다. (arm의 mainline 코드는 메모리 할당을 누마
+ * 그룹과 관계없이 할당한다.)
+ */
 		ptr = alloc_fn(cpu, gi->nr_units * ai->unit_size, atom_size);
 		if (!ptr) {
 			rc = -ENOMEM;
@@ -2048,6 +2228,13 @@ int __init pcpu_embed_first_chunk(size_t reserved_size, size_t dyn_size,
 	 * allocations are complete; otherwise, we may end up with
 	 * overlapping groups.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 할당 받은 공간에 per-cpu static 값들을 복사하고,
+ * 사용하지 않는 유닛 공간은 free 시킨다.
+ * 또한 dynamic 위의 사용하지 않는 공간도 free 시킨다.
+ */
 	for (group = 0; group < ai->nr_groups; group++) {
 		struct pcpu_group_info *gi = &ai->groups[group];
 		void *ptr = areas[group];
@@ -2065,6 +2252,12 @@ int __init pcpu_embed_first_chunk(size_t reserved_size, size_t dyn_size,
 	}
 
 	/* base address is now known, determine group base offsets */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 최초 offset부터 가장 멀리 떨어진 그룹(노드)의 offset와의 최대 거리를
+ * 산출한다.
+ */
 	max_distance = 0;
 	for (group = 0; group < ai->nr_groups; group++) {
 		ai->groups[group].base_offset = areas[group] - base;
@@ -2074,6 +2267,13 @@ int __init pcpu_embed_first_chunk(size_t reserved_size, size_t dyn_size,
 	max_distance += ai->unit_size;
 
 	/* warn if maximum distance is further than 75% of vmalloc space */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 최대 거리가 vmalloc 공간의 75%를 초과하는 경우 경고 메시지를 출력한다.
+ * PAGE_FIRST_CHUNK가 지원되는 x86등의 아키텍처에서 PAGE 방식으로 다시
+ * 준비하게 한다. (sparc64에서 문제가 발견되어 workaroung 패치하여 사용)
+ */
 	if (max_distance > VMALLOC_TOTAL * 3 / 4) {
 		pr_warning("PERCPU: max_distance=0x%zx too large for vmalloc "
 			   "space 0x%lx\n", max_distance,
@@ -2236,6 +2436,11 @@ EXPORT_SYMBOL(__per_cpu_offset);
 static void * __init pcpu_dfl_fc_alloc(unsigned int cpu, size_t size,
 				       size_t align)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * DMA 공간을 제외한 공간을 할당받아온다.
+ */
 	return  memblock_virt_alloc_from_nopanic(
 			size, align, __pa(MAX_DMA_ADDRESS));
 }

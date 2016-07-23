@@ -97,6 +97,10 @@ enum {
 	WORKER_DESC_LEN		= 24,
 };
 
+/* IAMROOT-12AB:
+ * -------------
+ * 워크 큐에 동작시킬 함수를 func에 등록
+ */
 struct work_struct {
 	atomic_long_t data;
 	struct list_head entry;
