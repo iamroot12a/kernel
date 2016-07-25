@@ -290,3 +290,7 @@ page_address_init()
 - setup_command_line()
 - setup_nr_cpu_ids()
 - setup_per_cpu_areas() ~
+
+### 66주차
+- 2016.07.23, 토즈 선릉점 (7명, 권경환, 문영일, 박진영, 양유석, 윤창호, 조현철, 한상종)
+- setup_per_cpu_areas() ~
