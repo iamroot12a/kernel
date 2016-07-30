@@ -109,6 +109,14 @@
  * Variant on the per-CPU variable declaration/definition theme used for
  * ordinary per-CPU variables.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * per-cpu static 선언 부분으로
+ *  - DEFINE_PER_CPU는 커널 코어에서 사용(static 할당)
+ *  - DECLARE_PER_CPU는 커널 코어에서 정의한 변수를 커널 모듈에서 사용할 때 사용 
+ */
+
 #define DECLARE_PER_CPU(type, name)					\
 	DECLARE_PER_CPU_SECTION(type, name, "")
 

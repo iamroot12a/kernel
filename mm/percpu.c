@@ -227,10 +227,10 @@ static bool pcpu_addr_in_reserved_chunk(void *addr)
 /* IAMROOT-12AB:
  * -------------
  * size에 따른 slot을 결정한다.
- * 4K  ~  8K-1 -> 9
- * 8K  ~ 16K-1 -> 10
- * 16K ~ 32K-1 -> 11
- * 32K ~ 64K-1 -> 12
+ * 4K  ~  8K-1 -> 10
+ * 8K  ~ 16K-1 -> 11
+ * 16K ~ 32K-1 -> 12
+ * 32K ~ 64K-1 -> 13
  */
 static int __pcpu_size_to_slot(int size)
 {
@@ -358,16 +358,34 @@ static void pcpu_mem_free(void *ptr, size_t size)
  */
 static int pcpu_count_occupied_pages(struct pcpu_chunk *chunk, int i)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * first chunk의 dynamic 엔트리 맵의 시작 주소와 끝 주소를 알아온다.
+ */
 	int off = chunk->map[i] & ~1;
 	int end = chunk->map[i + 1] & ~1;
 
 	if (!PAGE_ALIGNED(off) && i > 0) {
 		int prev = chunk->map[i - 1];
 
+/* IAMROOT-12AB:
+ * -------------
+ * 그 전 엔트리가 free로 등록되어 있으면서 1 페이지 이상인 경우 
+ * off를 1 페이지 만큼 round down 한다.
+ */
 		if (!(prev & 1) && prev <= round_down(off, PAGE_SIZE))
 			off = round_down(off, PAGE_SIZE);
 	}
 
+/* IAMROOT-12AB:
+ * -------------
+ * 그 다음 엔트리가 free로 등록되어 있으면서 1 페이지 이상인 경우 
+ * end를 1 페이지 만큼 round up 한다.
+ *
+ * 위 아래가 free 엔트리인 경우 가능하면 현재 계산되는 align되지 않은
+ * off와 end에 대해 1 페이지씩 더 추가할 수 있게 한다.
+ */
 	if (!PAGE_ALIGNED(end) && i + 1 < chunk->map_used) {
 		int next = chunk->map[i + 1];
 		int nend = chunk->map[i + 2] & ~1;
@@ -376,6 +394,12 @@ static int pcpu_count_occupied_pages(struct pcpu_chunk *chunk, int i)
 			end = round_up(end, PAGE_SIZE);
 	}
 
+/* IAMROOT-12AB:
+ * -------------
+ * end - off 범위에서 온전한 페이지의 수를 반환한다.
+ * (partial 페이지라도 위아래 엔트리가 free 이면서 1페이지 이상인 경우 
+ * 위 아래의 paritial 페이지도 추가한다)
+ */
 	return max_t(int, PFN_DOWN(end) - PFN_UP(off), 0);
 }
 
@@ -394,8 +418,19 @@ static int pcpu_count_occupied_pages(struct pcpu_chunk *chunk, int i)
  */
 static void pcpu_chunk_relocate(struct pcpu_chunk *chunk, int oslot)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * free 사이즈로 슬롯 번호를 구해온다.
+ */
 	int nslot = pcpu_chunk_slot(chunk);
 
+/* IAMROOT-12AB:
+ * -------------
+ * reserved chunk가 아닌 경우(dynamic)이면서 슬롯이 변경된 경우
+ * 현재 chunk를 새로운 슬롯으로 이동하는데 만일 new 슬롯이 작은 경우 
+ * new 슬롯의 뒷 부분으로 추가한다.
+ */
 	if (chunk != pcpu_reserved_chunk && oslot != nslot) {
 		if (oslot < nslot)
 			list_move(&chunk->list, &pcpu_slot[nslot]);
@@ -427,20 +462,44 @@ static int pcpu_need_to_extend(struct pcpu_chunk *chunk, bool is_atomic)
 {
 	int margin, new_alloc;
 
+/* IAMROOT-12AB:
+ * -------------
+ * is_atomic(wait, fs, io가 하나라도 없는 경우 true)인 경우 즉, 커널 요청이 아닌 경우
+ * margin=3로 하고, async가 지원될 때 맵에 32개의 여유가 부족한 경우 map 확장을
+ * 스케쥴한다.
+ */
 	if (is_atomic) {
 		margin = 3;
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * pcpu_async_enabled은 서브시스템이 로드될 때 true가 된다.
+ * 초기 부트업프로세스 중에는 false인 상태이다.
+ *
+ * 위와 같이 async가 준비가 된 상태에서 map 엔트리가 32개 여유가 없는 경우 map_extend_work를 
+ * 스케쥴한다. async가 준비가 안된 경우에는 3개 여유까지는 확장을 하지 않게 한다.
+ */
 		if (chunk->map_alloc <
 		    chunk->map_used + PCPU_ATOMIC_MAP_MARGIN_LOW &&
 		    pcpu_async_enabled)
 			schedule_work(&chunk->map_extend_work);
 	} else {
+
+/* IAMROOT-12AB:
+ * -------------
+ * 커널 요청 또는 map_extend_work가 다시 요청한 경우 64개의 margin을 확보하게 한다.
+ */
 		margin = PCPU_ATOMIC_MAP_MARGIN_HIGH;
 	}
 
 	if (chunk->map_alloc >= chunk->map_used + margin)
 		return 0;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 새로 할당될 공간이 2배씩 map이 확장되도록 한다.
+ */
 	new_alloc = PCPU_DFL_MAP_ALLOC;
 	while (new_alloc < chunk->map_used + margin)
 		new_alloc *= 2;
@@ -468,6 +527,10 @@ static int pcpu_extend_area_map(struct pcpu_chunk *chunk, int new_alloc)
 	unsigned long flags;
 
 	new = pcpu_mem_zalloc(new_size);
+/* IAMROOT-12AB:
+ * -------------
+ * slub이 준비되지 않거나 메모리가 부족한 경우 -ENOMEM으로 리턴
+ */
 	if (!new)
 		return -ENOMEM;
 
@@ -477,6 +540,10 @@ static int pcpu_extend_area_map(struct pcpu_chunk *chunk, int new_alloc)
 	if (new_alloc <= chunk->map_alloc)
 		goto out_unlock;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 새로 할당 받은 object에 기존 map을 복사한다.
+ */
 	old_size = chunk->map_alloc * sizeof(chunk->map[0]);
 	old = chunk->map;
 
@@ -592,6 +659,10 @@ static int pcpu_alloc_area(struct pcpu_chunk *chunk, int size, int align,
 	bool seen_free = false;
 	int *p;
 
+/* IAMROOT-12AB:
+ * -------------
+ * chunk의 맵에서 첫 free 엔트리부터 마지막 맵 엔트리까지 루프를 돈다.
+ */
 	for (i = chunk->first_free, p = chunk->map + i; i < chunk->map_used; i++, p++) {
 		int head, tail;
 		int this_size;
@@ -906,6 +977,15 @@ static void __percpu *pcpu_alloc(size_t size, size_t align, bool reserved,
 	static int warn_limit = 10;
 	struct pcpu_chunk *chunk;
 	const char *err;
+
+/* IAMROOT-12AB:
+ * -------------
+ * GFP_KERNEL 요청이 없는 경우 is_atomic을 true로 하여 매핑 공간이 부족한 경우 
+ * async로 확장 가능하도록 한다.
+ *
+ * 보통 percpu 할당 함수에서는 gfp 인수로 GFP_KERNEL이 입력된다.
+ * (is_atomic이 true가 되는 경우는 percpu_alloc_gfp() 호출에서만 가능)
+ */
 	bool is_atomic = (gfp & GFP_KERNEL) != GFP_KERNEL;
 	int occ_pages = 0;
 	int slot, off, new_alloc, cpu, ret;
@@ -916,11 +996,22 @@ static void __percpu *pcpu_alloc(size_t size, size_t align, bool reserved,
 	 * We want the lowest bit of offset available for in-use/free
 	 * indicator, so force >= 16bit alignment and make size even.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * per-cpu 자료 길이는 항상 2바이트 단위로 align 한다.
+ * (마지막 1비트를 in-use/free로 구분하여 사용한다.)
+ */
 	if (unlikely(align < 2))
 		align = 2;
 
 	size = ALIGN(size, 2);
 
+/* IAMROOT-12AB:
+ * -------------
+ * size가 0이거나, PCPU_MIN_UNIT_SIZE(32K)를 초과하는 경우 또는 align이 PAGE_SIZE를 
+ * 초과하는 경우 처리를 중단한다.
+ */
 	if (unlikely(!size || size > PCPU_MIN_UNIT_SIZE || align > PAGE_SIZE)) {
 		WARN(true, "illegal size (%zu) or align (%zu) for "
 		     "percpu allocation\n", size, align);
@@ -938,6 +1029,10 @@ static void __percpu *pcpu_alloc(size_t size, size_t align, bool reserved,
 			goto fail_unlock;
 		}
 
+/* IAMROOT-12AB:
+ * -------------
+ * 부트업 프로세스가 아닌 경우에 한하여 맵이 부족해지는 경우 확장을 시도한다.
+ */
 		while ((new_alloc = pcpu_need_to_extend(chunk, is_atomic))) {
 			spin_unlock_irqrestore(&pcpu_lock, flags);
 			if (is_atomic ||
@@ -959,12 +1054,32 @@ static void __percpu *pcpu_alloc(size_t size, size_t align, bool reserved,
 
 restart:
 	/* search through normal chunks */
+
+/* IAMROOT-12AB:
+ * -------------
+ * size에 해당하는 슬롯부터 시작하여 마지막 슬롯까지 1씩 증가하며 검색한다.
+ */
 	for (slot = pcpu_size_to_slot(size); slot < pcpu_nr_slots; slot++) {
 		list_for_each_entry(chunk, &pcpu_slot[slot], list) {
+
+/* IAMROOT-12AB:
+ * -------------
+ * size가 contig_hint보다 큰 경우 할당이 불가능하므로 다음 chunk로 skip
+ * (contig_hint: chunk 내에서 max free size entry)
+ */
 			if (size > chunk->contig_hint)
 				continue;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 부트업 프로세스가 아닌 경우에 한하여 맵이 부족해지는 경우 확장을 시도한다.
+ */
 			new_alloc = pcpu_need_to_extend(chunk, is_atomic);
+
+/* IAMROOT-12AB:
+ * -------------
+ * is_atomic인 경우는 메모리 할당을 못하게 막고 다른 chunk로 skip한다.
+ */
 			if (new_alloc) {
 				if (is_atomic)
 					continue;
@@ -979,6 +1094,10 @@ restart:
 				 * pcpu_lock has been dropped, need to
 				 * restart cpu_slot list walking.
 				 */
+/* IAMROOT-12AB:
+ * -------------
+ * 맵이 확장된 후에는 처음 즉, chunk 찾는 것부터 다시 시도.
+ */
 				goto restart;
 			}
 
@@ -1131,6 +1250,11 @@ EXPORT_SYMBOL_GPL(__alloc_percpu);
  */
 void __percpu *__alloc_reserved_percpu(size_t size, size_t align)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * GFP_KERNEL: wait, io, fs 가능
+ */
 	return pcpu_alloc(size, align, true, GFP_KERNEL);
 }
 
@@ -1723,7 +1847,22 @@ int __init pcpu_setup_first_chunk(const struct pcpu_alloc_info *ai,
 /* IAMROOT-12AB:
  * -------------
  * unit 사이즈로 슬롯 크기를 결정하고 마지막 슬롯은 empty chunk 용도이다.
- * unit_size가 32K~64K-1인 경우 12+2=14개의 슬롯이 만들어진다. 
+ * unit_size가 32K~64K-1인 경우 13+2=15개의 슬롯이 만들어진다. 
+ *
+ * pcpu_slot[] 배열은 per-cpu 할당된 공간의 파편화를 최소화하기 위해 
+ * 각 chunk의 free_size의 변동에 따라 slot을 옮겨다니며 dynamic per-cpu 
+ * 할당이 필요할 때 마다 작은 사이즈부터 큰 사이즈로 옮기면서 할당할 
+ * free size 및 contig_hint를 확인하여 적절한 chunk를 찾게되어 있다.
+ *
+ * rpi2: 아래와 같이 총 15개의 slot이 생성되어 관리된다.
+ * pcpu_slot[0] ->  not used
+ * pcpu_slot[1] ->         ~ 0x000f
+ * pcpu_slot[2] ->  0x0010 ~ 0x001f 
+ * pcpu_slot[3] ->  0x0020 ~ 0x003f
+ * ...
+ * pcpu_slot[12] -> 0x4000 ~ 0x7fff
+ * pcpu_slot[13] -> 0x8000 ~ 0xffff
+ * pcpu_slot[14] -> empty chunk가 미리 대기되어 있다.
  */
 	pcpu_nr_slots = __pcpu_size_to_slot(pcpu_unit_size) + 2;
 	pcpu_slot = memblock_virt_alloc(
@@ -1819,6 +1958,14 @@ int __init pcpu_setup_first_chunk(const struct pcpu_alloc_info *ai,
 		bitmap_fill(dchunk->populated, pcpu_unit_pages);
 		dchunk->nr_populated = pcpu_unit_pages;
 
+/* IAMROOT-12AB:
+ * -------------
+ * first chunk의 dynamic 영역을 관리하기 위한 맵을 준비한다.
+ * 기본적으로 3개의 엔트리를 준비하며(그래도 2개의 엔트리를 사용한 것으로 표기)
+ * 첫 번째 엔트리에는 static+reserved 영역이 used(1)로 설정되고,
+ * 두 번째 엔트리에는 dynamic 영역이 free(0)로 설정된다.
+ * 세 번째 엔트리에는 dynamic 영역이 끝나는 limit 값이 설정된다.
+ */
 		dchunk->contig_hint = dchunk->free_size = dyn_size;
 		dchunk->map[0] = 1;
 		dchunk->map[1] = pcpu_reserved_chunk_limit;
@@ -1828,8 +1975,18 @@ int __init pcpu_setup_first_chunk(const struct pcpu_alloc_info *ai,
 
 	/* link the first chunk in */
 	pcpu_first_chunk = dchunk ?: schunk;
+
+/* IAMROOT-12AB:
+ * -------------
+ * first chunk의 dynamic 영역에서 할당 가능한 온전한 페이지의 수를 알아온다.
+ */
 	pcpu_nr_empty_pop_pages +=
 		pcpu_count_occupied_pages(pcpu_first_chunk, 1);
+
+/* IAMROOT-12AB:
+ * -------------
+ * first chunk를 적절한 slot으로 배치한다.
+ */
 	pcpu_chunk_relocate(pcpu_first_chunk, -1);
 
 	/* we're done */
@@ -2298,6 +2455,11 @@ out_free_areas:
 			free_fn(areas[group],
 				ai->groups[group].nr_units * ai->unit_size);
 out_free:
+
+/* IAMROOT-12AB:
+ * -------------
+ * ai 구조체와 areas[] 배열을 다 사용하였으므로 free 한다.
+ */
 	pcpu_free_alloc_info(ai);
 	if (areas)
 		memblock_free_early(__pa(areas), areas_size);
@@ -2472,6 +2634,11 @@ void __init setup_per_cpu_areas(void)
 	if (rc < 0)
 		panic("Failed to initialize percpu areas.");
 
+/* IAMROOT-12AB:
+ * -------------
+ * percpu 섹션의 시작 주소와 할당 받은 first chunk의 주소의 차를 delta로 
+ * 얻어와서 각 cpu별 유니트의 offset에 더해준다.
+ */
 	delta = (unsigned long)pcpu_base_addr - (unsigned long)__per_cpu_start;
 	for_each_possible_cpu(cpu)
 		__per_cpu_offset[cpu] = delta + pcpu_unit_offsets[cpu];

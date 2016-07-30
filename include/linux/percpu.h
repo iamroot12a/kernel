@@ -131,6 +131,11 @@ extern phys_addr_t per_cpu_ptr_to_phys(void *addr);
 #define alloc_percpu_gfp(type, gfp)					\
 	(typeof(type) __percpu *)__alloc_percpu_gfp(sizeof(type),	\
 						__alignof__(type), gfp)
+/* IAMROOT-12AB:
+ * -------------
+ * chunk의 dynamic 공간에 per-cpu 변수를 할당한다.
+ * (first chunk의 dynamic 공간과, 그 외의 일반 chunk의 공간)
+ */
 #define alloc_percpu(type)						\
 	(typeof(type) __percpu *)__alloc_percpu(sizeof(type),		\
 						__alignof__(type))

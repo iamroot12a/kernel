@@ -10,30 +10,146 @@
 struct vm_area_struct;
 
 /* Plain integer GFP bitmasks. Do not use this directly. */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 아래 4개는 zone을 나타낸다.
+ */
 #define ___GFP_DMA		0x01u
 #define ___GFP_HIGHMEM		0x02u
 #define ___GFP_DMA32		0x04u
 #define ___GFP_MOVABLE		0x08u
+
+/* IAMROOT-12AB:
+ * -------------
+ * 할당 중 wait(sleep) 가능
+ * - 인터럽트 핸들러에서는 사용 못함
+ */
 #define ___GFP_WAIT		0x10u
+
+/* IAMROOT-12AB:
+ * -------------
+ * 높은 우선 순위로 할당 요청
+ */
 #define ___GFP_HIGH		0x20u
+
+/* IAMROOT-12AB:
+ * -------------
+ * 할당 중 IO 요청 가능 
+ */
 #define ___GFP_IO		0x40u
+
+/* IAMROOT-12AB:
+ * -------------
+ * 할당 중 File System Call 사용 가능
+ */
 #define ___GFP_FS		0x80u
+
+/* IAMROOT-12AB:
+ * -------------
+ * 할당 시 cold(리스트의 tail에 있는) 페이지를 할당 받는다.
+ */
 #define ___GFP_COLD		0x100u
+
+/* IAMROOT-12AB:
+ * -------------
+ * 할당 시 경고 출력하지 않도록 한다.
+ */
 #define ___GFP_NOWARN		0x200u
+
+/* IAMROOT-12AB:
+ * -------------
+ * 할당 시 메모리가 부족한 경우 1번 더 시도하게 한다.
+ */
 #define ___GFP_REPEAT		0x400u
+
+/* IAMROOT-12AB:
+ * -------------
+ * 할당 시 메모리가 부족한 경우 성공할 때까지 시도하게 한다.
+ */
 #define ___GFP_NOFAIL		0x800u
+
+/* IAMROOT-12AB:
+ * -------------
+ * 할당 시 실패하는 경우 그냥 포기한다.
+ */
 #define ___GFP_NORETRY		0x1000u
+
+/* IAMROOT-12AB:
+ * -------------
+ * 할당을 비상 영역에서 할 수 있도록 한다.
+ * (커널 내부에서 compaction 또는 reclaim 관련하여 사용)
+ */
 #define ___GFP_MEMALLOC		0x2000u
+
+/* IAMROOT-12AB:
+ * -------------
+ * 할당 시 컴파운드(복합) 페이지를 구성하게 한다.
+ * 컴파운드 페이지는 메타데이터를 가질 수 있다.
+ * (page descriptors에서 메타데이터의 위치를 지정하고
+ *  생성자와 소멸자도 지정할 수 있다)
+ */
 #define ___GFP_COMP		0x4000u
+
+/* IAMROOT-12AB:
+ * -------------
+ * 할당된 메모리를 0으로 초기화 시킨다.
+ */
 #define ___GFP_ZERO		0x8000u
+
+/* IAMROOT-12AB:
+ * -------------
+ * 할당 시 비상 영역을 사용하지 못하도록 한다.
+ */
 #define ___GFP_NOMEMALLOC	0x10000u
+
+/* IAMROOT-12AB:
+ * -------------
+ * 
+ */
 #define ___GFP_HARDWALL		0x20000u
+
+/* IAMROOT-12AB:
+ * -------------
+ * 할당 시 NUMA의 경우 현재 노드에서만 허용하게 한다.
+ */
 #define ___GFP_THISNODE		0x40000u
+
+/* IAMROOT-12AB:
+ * -------------
+ * 할당 시 회수 가능한 페이지로 할당한다.
+ * (file 캐시 등에서 사용한다.)
+ */
 #define ___GFP_RECLAIMABLE	0x80000u
+
+/* IAMROOT-12AB:
+ * -------------
+ * 할당 시 Control Group에서 사용량등을 통제하지 못하게 한다.
+ */
 #define ___GFP_NOACCOUNT	0x100000u
+
+/* IAMROOT-12AB:
+ * -------------
+ * 할당 시 디버그 트레이싱을 하지 못하게 한다.
+ */
 #define ___GFP_NOTRACK		0x200000u
+
+/* IAMROOT-12AB:
+ * -------------
+ * 할당 시 kswapd에 의해 swap 파일로 이동하지 못하게 한다.
+ */
 #define ___GFP_NO_KSWAPD	0x400000u
+
+/* IAMROOT-12AB:
+ * -------------
+ * 할당 시 다른 노드에서 할당하도록 한다.
+ */
 #define ___GFP_OTHER_NODE	0x800000u
+
+/* IAMROOT-12AB:
+ * -------------
+ * 할당 시 dirty 페이지로 할당하도록 한다.
+ */
 #define ___GFP_WRITE		0x1000000u
 /* If the above are modified, __GFP_BITS_SHIFT may need updating */
 
