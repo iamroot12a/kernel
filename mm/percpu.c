@@ -464,21 +464,27 @@ static int pcpu_need_to_extend(struct pcpu_chunk *chunk, bool is_atomic)
 
 /* IAMROOT-12AB:
  * -------------
- * is_atomic(wait, fs, io가 하나라도 없는 경우 true)인 경우 즉, 커널 요청이 아닌 경우
- * margin=3로 하고, async가 지원될 때 맵에 32개의 여유가 부족한 경우 map 확장을
- * 스케쥴한다.
+ * is_atomic(wait, fs, io가 하나라도 없는 경우 true)인 경우 
+ * slub 메모리 할당자가 동작할 때(async가 지원될 때) 맵에 32개의 여유가 부족한 경우 
+ * map 확장을 스케쥴한다.
+ *
+ * margin을 3개로 하는 이유:
+ *	- 마지막 엔트리 하나는 이미 사용하고 있고,
+ *	- 두 개는 공간을 할당 시 map이 최대 2개 insert될 수 있다.
+ *	  (align으로 인해 발생하는 head 공간과, 
+ *	   size에 맞게 배치하고 남은 tail 공간)
  */
 	if (is_atomic) {
 		margin = 3;
-
 
 /* IAMROOT-12AB:
  * -------------
  * pcpu_async_enabled은 서브시스템이 로드될 때 true가 된다.
  * 초기 부트업프로세스 중에는 false인 상태이다.
  *
- * 위와 같이 async가 준비가 된 상태에서 map 엔트리가 32개 여유가 없는 경우 map_extend_work를 
- * 스케쥴한다. async가 준비가 안된 경우에는 3개 여유까지는 확장을 하지 않게 한다.
+ * 위와 같이 async가 준비가 된 상태에서 map 엔트리가 32개 여유가 없는 경우 
+ * map_extend_work를 스케쥴한다. 
+ * (async가 준비가 안된 경우에는 함수 외부의 조건으로 확장을 하지 않게 한다.)
  */
 		if (chunk->map_alloc <
 		    chunk->map_used + PCPU_ATOMIC_MAP_MARGIN_LOW &&
@@ -603,6 +609,13 @@ static int pcpu_fit_in_area(struct pcpu_chunk *chunk, int off, int this_size,
 {
 	int cand_off = off;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 현재 버전의 커널 코드에서는 pop_only가 항상 false로 진입된다.
+ *
+ * 추후 pop_only가 true로 진입되는 case에서는 활성화된 페이지 내에서만
+ * per-cpu 공간을 할당하게 된다. (비활성화된 페이지는 skip)
+ */
 	while (true) {
 		int head = ALIGN(cand_off, align) - off;
 		int page_start, page_end, rs, re;
@@ -673,6 +686,10 @@ static int pcpu_alloc_area(struct pcpu_chunk *chunk, int size, int align,
 
 		this_size = (p[1] & ~1) - off;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 맵에서 사용가능한 공간을 찾아온다. (head=unit 내에서 찾은 공간의 offset)
+ */
 		head = pcpu_fit_in_area(chunk, off, this_size, size, align,
 					pop_only);
 		if (head < 0) {
@@ -690,6 +707,12 @@ static int pcpu_alloc_area(struct pcpu_chunk *chunk, int size, int align,
 		 * than sizeof(int), which is very small but isn't too
 		 * uncommon for percpu allocations.
 		 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 맵에서 적절한 free 공간을 찾았으면서 찾은 offset(head)가 첫 엔트리이거나 
+ * 이전 엔트리가 free 인 경우
+ */
 		if (head && (head < sizeof(int) || !(p[-1] & 1))) {
 			*p = off += head;
 			if (p[-1] & 1)
@@ -708,6 +731,13 @@ static int pcpu_alloc_area(struct pcpu_chunk *chunk, int size, int align,
 		}
 
 		/* split if warranted */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 찾은 map 공간에 align으로 인해 발생한 head 영역과 배치하고 남은 tail 영역에 대해 
+ * map 엔트리를 최대 2개만큼 추가한다. 각각의 head와 tail 영역이 sizeof(int)보다 
+ * 적을 경우에는 해당 엔트리를 만들지 않도록 한다.
+ */
 		if (head || tail) {
 			int nr_extra = !!head + !!tail;
 
@@ -744,7 +774,18 @@ static int pcpu_alloc_area(struct pcpu_chunk *chunk, int size, int align,
 		chunk->free_size -= size;
 		*p |= 1;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 현재의 map 영역에서 온전한 페이지 수를 알아온다.
+ * (다만 이전 map 영역이나 이후 map 영역이 1페이지 이상의 free 영역인 경우 
+ *  partial 영역도 포함시킨다)
+ */
 		*occ_pages_p = pcpu_count_occupied_pages(chunk, i);
+
+/* IAMROOT-12AB:
+ * -------------
+ * 할당 후 free_size가 변했으므로 이에 따라 적절한 slot을 찾아 이동한다.
+ */
 		pcpu_chunk_relocate(chunk, oslot);
 		return off;
 	}
@@ -984,7 +1025,10 @@ static void __percpu *pcpu_alloc(size_t size, size_t align, bool reserved,
  * async로 확장 가능하도록 한다.
  *
  * 보통 percpu 할당 함수에서는 gfp 인수로 GFP_KERNEL이 입력된다.
- * (is_atomic이 true가 되는 경우는 percpu_alloc_gfp() 호출에서만 가능)
+ * (is_atomic이 true가 되는 경우는 percpu_alloc_gfp() 호출에서만 가능하다.
+ *
+ * 다만 현재 커널 소스에서는 percpu_alloc_gfp() 함수를 호출 시 
+ * GFP_KERNEL 옵션을 사용하지 않은 경우가 없고, 나중에 사용될 계획으로 남겨두었다
  */
 	bool is_atomic = (gfp & GFP_KERNEL) != GFP_KERNEL;
 	int occ_pages = 0;
@@ -1057,7 +1101,8 @@ restart:
 
 /* IAMROOT-12AB:
  * -------------
- * size에 해당하는 슬롯부터 시작하여 마지막 슬롯까지 1씩 증가하며 검색한다.
+ * loop1: size에 해당하는 슬롯부터 시작하여 마지막 슬롯까지 1씩 증가하며 검색한다.
+ * loop2: 해당 슬롯에 등록된 chunk list에 등록된 chunk 엔트리 수 만큼
  */
 	for (slot = pcpu_size_to_slot(size); slot < pcpu_nr_slots; slot++) {
 		list_for_each_entry(chunk, &pcpu_slot[slot], list) {
@@ -1073,12 +1118,15 @@ restart:
 /* IAMROOT-12AB:
  * -------------
  * 부트업 프로세스가 아닌 경우에 한하여 맵이 부족해지는 경우 확장을 시도한다.
+ * (현재 커널 코드에서 is_atomic은 false로 호출된다. 나중에 확장될 예정)
  */
 			new_alloc = pcpu_need_to_extend(chunk, is_atomic);
 
 /* IAMROOT-12AB:
  * -------------
  * is_atomic인 경우는 메모리 할당을 못하게 막고 다른 chunk로 skip한다.
+ * (요청을 빠르게 처리하기 위해 맵이 부족한 맵확장 함수를 스케쥴시키고
+ *  현재 태스크에서는 다음 chunk를 찾아 진행한다)
  */
 			if (new_alloc) {
 				if (is_atomic)
@@ -1101,6 +1149,11 @@ restart:
 				goto restart;
 			}
 
+/* IAMROOT-12AB:
+ * -------------
+ * is_atomic은 현재 커널 코드에서 항상 false이고, 나중에 관련 루틴이 
+ * 확장될 예정이다.
+ */
 			off = pcpu_alloc_area(chunk, size, align, is_atomic,
 					      &occ_pages);
 			if (off >= 0)
@@ -1120,6 +1173,10 @@ restart:
 
 	mutex_lock(&pcpu_alloc_mutex);
 
+/* IAMROOT-12AB:
+ * -------------
+ * 마지막 slot은 empty chunk 전용이고 이 slot에 chunk가 없으면 chunk를 생성한다.
+ */
 	if (list_empty(&pcpu_slot[pcpu_nr_slots - 1])) {
 		chunk = pcpu_create_chunk();
 		if (!chunk) {
@@ -1149,6 +1206,10 @@ area_found:
 		page_start = PFN_DOWN(off);
 		page_end = PFN_UP(off + size);
 
+/* IAMROOT-12AB:
+ * -------------
+ * 사용할 맵 공간에 대해 unpopulate된 페이지에 대해 모두 할당 받고 매핑한다.
+ */
 		pcpu_for_each_unpop_region(chunk, rs, re, page_start, page_end) {
 			WARN_ON(chunk->immutable);
 
@@ -1161,6 +1222,11 @@ area_found:
 				err = "failed to populate";
 				goto fail_unlock;
 			}
+
+/* IAMROOT-12AB:
+ * -------------
+ * chunk->populated 비트맵에 해당 영역의 페이지를 set한다.
+ */
 			pcpu_chunk_populated(chunk, rs, re);
 			spin_unlock_irqrestore(&pcpu_lock, flags);
 		}
@@ -1171,10 +1237,20 @@ area_found:
 	if (chunk != pcpu_reserved_chunk)
 		pcpu_nr_empty_pop_pages -= occ_pages;
 
+/* IAMROOT-12AB:
+ * -------------
+ * atomic 할당을 위해 비어있는 populate 페이지가 2 페이지 미만으로 떨어지는 경우 
+ * 최대 4 페이지 까지 비어있는 populate 페이지를 준비하도록 스케쥴한다.
+ */
 	if (pcpu_nr_empty_pop_pages < PCPU_EMPTY_POP_PAGES_LOW)
 		pcpu_schedule_balance_work();
 
 	/* clear the areas and return address relative to base address */
+
+/* IAMROOT-12AB:
+ * -------------
+ * cpu 수 만큼 할당 받은 dynamic per cpu 영역을 0으로 초기화한다.
+ */
 	for_each_possible_cpu(cpu)
 		memset((void *)pcpu_chunk_addr(chunk, cpu, 0) + off, 0, size);
 
@@ -1278,6 +1354,10 @@ static void pcpu_balance_workfn(struct work_struct *work)
 	mutex_lock(&pcpu_alloc_mutex);
 	spin_lock_irq(&pcpu_lock);
 
+/* IAMROOT-12AB:
+ * -------------
+ * empty chunk 리스트에서 처음 chunk를 제외하고 모두 임시 리스트 to_free에 추가한다.
+ */
 	list_for_each_entry_safe(chunk, next, free_head, list) {
 		WARN_ON(chunk->immutable);
 
@@ -1290,6 +1370,10 @@ static void pcpu_balance_workfn(struct work_struct *work)
 
 	spin_unlock_irq(&pcpu_lock);
 
+/* IAMROOT-12AB:
+ * -------------
+ * to_free 리스트에 있는 모든 chunk를 모두 unpoplate시키고 chunk를 destroy 한다.
+ */
 	list_for_each_entry_safe(chunk, next, &to_free, list) {
 		int rs, re;
 
@@ -1313,6 +1397,12 @@ static void pcpu_balance_workfn(struct work_struct *work)
 	 * inefficient.
 	 */
 retry_pop:
+
+/* IAMROOT-12AB:
+ * -------------
+ * nr_to_pop: 이 번에 populate 시킬 페이지 수를 결정하는데 전에 할당이 실패한 적이 
+ * 있으면 max 4개 페이지로 설정하고 그렇지 않은 경우 0 ~ 4 범위내에서 설정한다.
+ */
 	if (pcpu_atomic_alloc_failed) {
 		nr_to_pop = PCPU_EMPTY_POP_PAGES_HIGH;
 		/* best effort anyway, don't worry about synchronization */
@@ -1323,6 +1413,11 @@ retry_pop:
 				  0, PCPU_EMPTY_POP_PAGES_HIGH);
 	}
 
+/* IAMROOT-12AB:
+ * -------------
+ * 페이지 단위로 population을 해야 하기 때문에 PAGE_SIZE 이상을 사용하는 slot에서
+ * 부터 검색을 해서 unpopulat된 페이지를 찾아서 nr_to_pop만큼 populate 시킨다.
+ */
 	for (slot = pcpu_size_to_slot(PAGE_SIZE); slot < pcpu_nr_slots; slot++) {
 		int nr_unpop = 0, rs, re;
 
@@ -1341,6 +1436,11 @@ retry_pop:
 			continue;
 
 		/* @chunk can't go away while pcpu_alloc_mutex is held */
+
+/* IAMROOT-12AB:
+ * -------------
+ * nr_to_pop 수 만큼 unpopulate된 페이지들을 찾아서 populate 한다.
+ */
 		pcpu_for_each_unpop_region(chunk, rs, re, 0, pcpu_unit_pages) {
 			int nr = min(re - rs, nr_to_pop);
 
@@ -1359,6 +1459,11 @@ retry_pop:
 		}
 	}
 
+/* IAMROOT-12AB:
+ * -------------
+ * 슬롯에서 nr_to_pop 수 만큼의 페이지를 다 populate 시키지 못한 경우(모자르기 때문)
+ * chunk를 생성하고 다시 계속하여 populate 시킨다.
+ */
 	if (nr_to_pop) {
 		/* ran out of chunks to populate, create a new one and retry */
 		chunk = pcpu_create_chunk();
