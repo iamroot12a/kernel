@@ -36,6 +36,9 @@ static inline void set_my_cpu_offset(unsigned long off)
  *          (이전에는 메모리에 할당했었다)
  *          참고: https://lwn.net/Articles/527927/
  *
+ * per-cpu 값을 access할 때 각 cpu는 각 cpu의 보조레지스터 TPIDRPRW에 저장된
+ * 값(cpu별 유닛 offset + delta)을 더해 사용한다.
+ *
  * The asm "memory" constraints are needed here to ensure the percpu offset
  * gets reloaded.
  */

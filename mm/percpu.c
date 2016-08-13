@@ -101,6 +101,42 @@
 #define __pcpu_ptr_to_addr(ptr)		(void __force *)(ptr)
 #endif	/* CONFIG_SMP */
 
+/* IAMROOT-12AB:
+ * -------------
+ * list:
+ *	pcpu_slot에 이 구조체를 리스트로 등록할 때 사용 
+ * free_size:
+ *	이 chunk의 한 유닛을 기준으로 사용할 수 있는 total free 영역의 크기 
+ *	(0 ~ unit_size 까지)
+ * contig_hint:
+ *	이 chunk의 한 유닛을 기준으로 연속된 max free 영역의 크기 
+ *	(0 ~ unit_size 까지) 
+ * base_addr:
+ *	이 chunk가 사용하는 할당 공간 중 가장 낮은 주소 
+ * map_used:
+ *	사용한 맵 엔트리 수 
+ * map_alloc:
+ *	사용할 수 있는 최대 맵 엔트리 수
+ *	(first chunk에서는 처음 128개로 시작, 그 이후 chunk는 16개부터 시작)
+ * map:
+ *	할당된 맵 영역 주소 
+ *	맵 엔트리들은 offset | (lsb에 1=in-use/0=free를 구분)
+ * map_extend_work
+ *	비동기로 맵 확장시 사용할 work_struct 구조체
+ * data:
+ * first_free:
+ *	엔트리 중 첫 free 맵 엔트리를 가리킨다.
+ *	(처음에는 0으로 사용되고 나중에 할당 할 때마다 유지보수한다.)
+ * immutable:
+ *	population 및 nopopulation 금지
+ *	(first chunk는 항상 population되어 있기 때문에 immutable은 항상 true)
+ * nr_populated:
+ *	populated된 페이지 수 
+ *	(first chunk는 pcpu_unit_pages와 동일하고, 새로 만들어진 chunk는 0부터 시작)
+ * populated[]
+ *	unit내의 페이지 populated 상태를 관리하는 비트맵 
+ *	(0=no alloc/no mapped, 1=alloc/mapped)
+ */
 struct pcpu_chunk {
 	struct list_head	list;		/* linked to pcpu_slot lists */
 	int			free_size;	/* free bytes in the chunk */
@@ -119,6 +155,25 @@ struct pcpu_chunk {
 	unsigned long		populated[];	/* populated bitmap */
 };
 
+/* IAMROOT-12AB:
+ * -------------
+ * pcpu_unit_pages: 
+ *	유닛 내의 페이지 수 
+ *	(모든 유닛은 동일한 페이지 수를 갖는다)
+ * pcpu_unit_size:
+ *	유닛 크기 
+ *	(모든 유닛은 동일한 유닛 크기를 갖는다)
+ * pcpu_nr_units:
+ *	chunk에 할당 받은 전체 유닛 수 
+ *	(possible cpu 수와 다르다)
+ * pcpu_atom_size:
+ *	할당 최소 단위 (arm=4K)
+ * pcpu_nr_slots:
+ *	사용할 슬롯 수 
+ *	(pcpu_unit_size에 의해 산출된다.)
+ * pcpu_chunk_struct_size:
+ *	chunk 구조체 + populated[]에 사용되는 비트맵 크기 
+ */
 static int pcpu_unit_pages __read_mostly;
 static int pcpu_unit_size __read_mostly;
 static int pcpu_nr_units __read_mostly;
@@ -131,24 +186,38 @@ static unsigned int pcpu_low_unit_cpu __read_mostly;
 static unsigned int pcpu_high_unit_cpu __read_mostly;
 
 /* the address of the first chunk which starts with the kernel static area */
+
+/* IAMROOT-12AB:
+ * -------------
+ * pcpu_base_addr:
+ *	할당 받은 first chunk의 가장 낮은 주소
+ */
 void *pcpu_base_addr __read_mostly;
 EXPORT_SYMBOL_GPL(pcpu_base_addr);
 
 
 /* IAMROOT-12AB:
  * -------------
- * cpu->unit 배열, 각 cpu별 unit offset
+ * pcpu_unit_map[]:
+ *	cpu->unit 배열로 cpu별 유닛 번호 
+ * pcpu_unit_offsets[]:
+ *	cpu별 unit offset
  */
 static const int *pcpu_unit_map __read_mostly;		/* cpu -> unit */
 const unsigned long *pcpu_unit_offsets __read_mostly;	/* cpu -> unit offset */
 
 /* group information, used for vm allocation */
-static int pcpu_nr_groups __read_mostly;
 
 /* IAMROOT-12AB:
  * -------------
- * 각 그룹(노드)의 base_offset와 size
+ * pcpu_nr_groups:
+ *	chunk를 할당할 노드(그룹) 수
+ * pcpu_group_offset:
+ *	각 그룹(노드)의 base_offset 
+ * pcpu_group_sizes: 
+ *	각 그룹(노드)의 할당 size
  */
+static int pcpu_nr_groups __read_mostly;
 static const unsigned long *pcpu_group_offsets __read_mostly;
 static const size_t *pcpu_group_sizes __read_mostly;
 
@@ -160,7 +229,8 @@ static const size_t *pcpu_group_sizes __read_mostly;
 
 /* IAMROOT-12AB:
  * -------------
- * pcpu_first_chunk: dynamic 영역을 관리
+ * pcpu_first_chunk: 
+ *	first chunk의 dynamic 영역을 관리
  */
 static struct pcpu_chunk *pcpu_first_chunk;
 
@@ -174,9 +244,13 @@ static struct pcpu_chunk *pcpu_first_chunk;
 
 /* IAMROOT-12AB:
  * -------------
- * pcpu_reserved_chunk: reserve 영역을 관리 
- *                      모듈을 사용하지 않으면 NULL 
- *			모듈을 사용하는 경우 static chunk 구조체를 가리킴
+ * pcpu_reserved_chunk: 
+ *	first chunk의 reserved 영역을 관리 
+ *      모듈을 사용하지 않으면 NULL 
+ *	모듈을 사용하는 경우 static chunk 구조체를 가리킴
+ * pcpu_reserved_chunk_limit:
+ *	static+reserved 영역을 더한 offset
+ *	
  */
 static struct pcpu_chunk *pcpu_reserved_chunk;
 static int pcpu_reserved_chunk_limit;
@@ -184,11 +258,31 @@ static int pcpu_reserved_chunk_limit;
 static DEFINE_SPINLOCK(pcpu_lock);	/* all internal data structures */
 static DEFINE_MUTEX(pcpu_alloc_mutex);	/* chunk create/destroy, [de]pop */
 
+/* IAMROOT-12AB:
+ * -------------
+ * pcpu_slot:
+ *	dynamic 공간을 관리하기 위해 만들어진 chunk들에 대해 
+ *	남아 있는 공간(chunk->free_size)를 slot 번호로 변환하여 
+ *	각 슬롯이 관리하는 리스트에 추가하여 관리한다.
+ *	이 방법을 사용하여 각 chunk에서 할당받는 per-cpu 공간의 
+ *	파편화를 최대한 줄여주게 설계한다.
+ *	(할당할 때 가장 작은 slot 부터 위로 올라가며 빈 자리를 검색)
+ */
 static struct list_head *pcpu_slot __read_mostly; /* chunk list slots */
 
 /*
  * The number of empty populated pages, protected by pcpu_lock.  The
  * reserved chunk doesn't contribute to the count.
+ */
+
+/* IAMROOT-12AB:
+ * -------------
+ * pcpu_nr_empty_pop_pages:
+ *	chunk에서 populated되고 아직 사용하지 않은 빈 페이지의 총 수 
+ *	(dynamic 영역에 대해 빈 페이지) 
+ *	per-cpu에서 atomic하게 할당하게 하기 위해 미리 최소의 몇 개 
+ *	여분의 비어있는 populated 페이지를 준비한다.
+ *	(2 ~ 4개 준비)
  */
 static int pcpu_nr_empty_pop_pages;
 
@@ -2730,8 +2824,12 @@ void __init setup_per_cpu_areas(void)
 
 /* IAMROOT-12AB:
  * -------------
+ * Embed 방식으로 first chunk를 생성한다.
+ *
  * PERCPU_MODULE_RESERVE(8K)
- * PERCPU_DYNAMIC_RESERVE(20K)
+ *	- 모듈에서 사용하는 static per-cpu 공간이 8K 밖에 제공되지 않으므로 
+ *	  모듈에서 사용량이 많은 경우 추가하여 사용해야 한다.
+ * PERCPU_DYNAMIC_RESERVE(32bit=20K, 64bit=28K)
  */
 	rc = pcpu_embed_first_chunk(PERCPU_MODULE_RESERVE,
 				    PERCPU_DYNAMIC_RESERVE, PAGE_SIZE, NULL,
@@ -2743,6 +2841,15 @@ void __init setup_per_cpu_areas(void)
  * -------------
  * percpu 섹션의 시작 주소와 할당 받은 first chunk의 주소의 차를 delta로 
  * 얻어와서 각 cpu별 유니트의 offset에 더해준다.
+ *
+ * delta:
+ *	DEFINE_PER_CPU()로 만든 static per-cpu 데이터와 
+ *	alloc_percpu()로 만든 dynamic per-cpu 데이터에 대해 
+ *	this_cpu_ptr()등의 공통 인터페이스를 사용하여 접근하기 위해 
+ *	first chunk를 만들 때 계산된 delta 값을 구하여 이 값을 
+ *	__per_cpu_offset[]에 미리 더해 저장한 후 이 함수 다음에서 TPIDRPRW에도
+ *	저장해 둔다. alloc_percpu() 함수로 만든 per-cpu 포인터는 만들어진 
+ *	per-cpu 데이터에서 미리 delta 만큼 감소 시킨 주소를 제공한다.
  */
 	delta = (unsigned long)pcpu_base_addr - (unsigned long)__per_cpu_start;
 	for_each_possible_cpu(cpu)

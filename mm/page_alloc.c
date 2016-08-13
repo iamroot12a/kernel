@@ -3391,6 +3391,10 @@ static int build_zonelists_node(pg_data_t *pgdat, struct zonelist *zonelist,
 	struct zone *zone;
 	enum zone_type zone_type = MAX_NR_ZONES;
 
+/* IAMROOT-12AB:
+ * -------------
+ * node_zonelists[]->_zonerefs[]에 populated zone을 추가한다.
+ */
 	do {
 		zone_type--;
 		zone = pgdat->node_zones + zone_type;
@@ -3427,6 +3431,12 @@ static char zonelist_order_name[3][8] = {"Default", "Node", "Zone"};
 
 #ifdef CONFIG_NUMA
 /* The value user specified ....changed by config */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 커널 파라메터를 사용해서 zonelist order를 선택하지 않은 경우 
+ * Default 사용
+ */
 static int user_zonelist_order = ZONELIST_ORDER_DEFAULT;
 /* string for sysctl */
 #define NUMA_ZONELIST_ORDER_LEN	16
@@ -3457,6 +3467,11 @@ static int __parse_numa_zonelist_order(char *s)
 	return 0;
 }
 
+/* IAMROOT-12AB:
+ * -------------
+ * "numa_zonelist_order=" 커널 옵션에 따라 zonelist 순서를 지정할 수 있다.
+ *  D=Default, N=Node order, Z=Zone order
+ */
 static __init int setup_numa_zonelist_order(char *s)
 {
 	int ret;
@@ -3591,10 +3606,22 @@ static void build_zonelists_in_node_order(pg_data_t *pgdat, int node)
 	int j;
 	struct zonelist *zonelist;
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 노드별로 추가 zonelist 엔트리가 비어있는 곳을 찾아 거기서 부터 
+ * zone을 추가한다.
+ */
+
 	zonelist = &pgdat->node_zonelists[0];
 	for (j = 0; zonelist->_zonerefs[j].zone != NULL; j++)
 		;
 	j = build_zonelists_node(NODE_DATA(node), zonelist, j);
+
+/* IAMROOT-12AB:
+ * -------------
+ * 다음 추가를 위해 null로 마무리
+ */
 	zonelist->_zonerefs[j].zone = NULL;
 	zonelist->_zonerefs[j].zone_idx = 0;
 }
@@ -3630,6 +3657,11 @@ static void build_zonelists_in_zone_order(pg_data_t *pgdat, int nr_nodes)
 
 	zonelist = &pgdat->node_zonelists[0];
 	pos = 0;
+
+/* IAMROOT-12AB:
+ * -------------
+ * zone 다음에 best node 순으로 populated zone을 추가한다.
+ */
 	for (zone_type = MAX_NR_ZONES - 1; zone_type >= 0; zone_type--) {
 		for (j = 0; j < nr_nodes; j++) {
 			node = node_order[j];
@@ -3672,6 +3704,13 @@ static int default_zonelist_order(void)
 
 static void set_zonelist_order(void)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * 커널 파라메터로 zonelist order를 결정하지 않으면 초기값이 default로 설정되어 
+ * 있으므로 default_zonelist_order() 함수에서 결정하는데 32비트 시스템에서는 
+ * zone order로 결정하고 64비트 시스템에서는 node order로 결정한다.
+ */
 	if (user_zonelist_order == ZONELIST_ORDER_DEFAULT)
 		current_zonelist_order = default_zonelist_order();
 	else
@@ -3688,6 +3727,13 @@ static void build_zonelists(pg_data_t *pgdat)
 	int order = current_zonelist_order;
 
 	/* initialize zonelists */
+
+/* IAMROOT-12AB:
+ * -------------
+ * MAX_ZONELISTS: NUMA=2(전체노드, 현재노드), UMA=1(전체=현재노드)
+ *
+ * zonelist를 초기화한다.
+ */
 	for (i = 0; i < MAX_ZONELISTS; i++) {
 		zonelist = pgdat->node_zonelists + i;
 		zonelist->_zonerefs[0].zone = NULL;
@@ -3703,6 +3749,16 @@ static void build_zonelists(pg_data_t *pgdat)
 	memset(node_order, 0, sizeof(node_order));
 	j = 0;
 
+/* IAMROOT-12AB:
+ * -------------
+ * case A) 해당 노드에 대한 node 순으로 zonelists 생성 
+ *
+ * node_load: 
+ *	다음 best 노드를 찾을 때 사용할 노드별 가중치 값
+ * node_order:
+ *	현재 부팅한 cpu가 있는 로컬 노드를 대상으로 가장 빠른(가까운) 순서의 
+ *	노드 번호를 저장한다.
+ */
 	while ((node = find_next_best_node(local_node, &used_mask)) >= 0) {
 		/*
 		 * We don't want to pressure a particular node.
@@ -3721,11 +3777,19 @@ static void build_zonelists(pg_data_t *pgdat)
 			node_order[j++] = node;	/* remember order */
 	}
 
+/* IAMROOT-12AB:
+ * -------------
+ * case B) 해당 노드에 대한 zone 순으로 zonelists 생성
+ */
 	if (order == ZONELIST_ORDER_ZONE) {
 		/* calculate node order -- i.e., DMA last! */
 		build_zonelists_in_zone_order(pgdat, j);
 	}
 
+/* IAMROOT-12AB:
+ * -------------
+ * 자기 노드에 대한 zonelists를 생성한다.
+ */
 	build_thisnode_zonelists(pgdat);
 }
 
@@ -3738,6 +3802,11 @@ static void build_zonelist_cache(pg_data_t *pgdat)
 
 	zonelist = &pgdat->node_zonelists[0];
 	zonelist->zlcache_ptr = zlc = &zonelist->zlcache;
+
+/* IAMROOT-12AB:
+ * -------------
+ * zonelist cache를 초기화한다.
+ */
 	bitmap_zero(zlc->fullzones, MAX_ZONES_PER_ZONELIST);
 	for (z = zonelist->_zonerefs; z->zone; z++)
 		zlc->z_to_n[z - zonelist->_zonerefs] = zonelist_node_idx(z);
@@ -3852,6 +3921,10 @@ static int __build_all_zonelists(void *data)
 		build_zonelist_cache(self);
 	}
 
+/* IAMROOT-12AB:
+ * -------------
+ * 노드에 대해 zonelists를 구성하고 해당 zlc를 초기화한다.
+ */
 	for_each_online_node(nid) {
 		pg_data_t *pgdat = NODE_DATA(nid);
 
@@ -3872,6 +3945,12 @@ static int __build_all_zonelists(void *data)
 	 * needs the percpu allocator in order to allocate its pagesets
 	 * (a chicken-egg dilemma).
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 각 cpu에 대해 버디 시스템에서 사용하는 pcp를 초기화 한다.
+ * (일단 전역 pcp에 batch=0으로 초기화한다)
+ */
 	for_each_possible_cpu(cpu) {
 		setup_pageset(&per_cpu(boot_pageset, cpu), 0);
 
@@ -3911,6 +3990,11 @@ build_all_zonelists_init(void)
  */
 void __ref build_all_zonelists(pg_data_t *pgdat, struct zone *zone)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * zonelist order를 node order(64bit) 또는 zone order(32bit) 둘 중 하나로 선택한다.
+ */
 	set_zonelist_order();
 
 	if (system_state == SYSTEM_BOOTING) {
@@ -4370,6 +4454,12 @@ static void pageset_update(struct per_cpu_pages *pcp, unsigned long high,
 /* a companion to pageset_set_high() */
 static void pageset_set_batch(struct per_cpu_pageset *p, unsigned long batch)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * 지정된 batch 수의 6배를 high로 설정한다.
+ * high = 31 * 6 = 186
+ */
 	pageset_update(&p->pcp, 6 * batch, max(1UL, 1 * batch));
 }
 
@@ -4378,6 +4468,10 @@ static void pageset_init(struct per_cpu_pageset *p)
 	struct per_cpu_pages *pcp;
 	int migratetype;
 
+/* IAMROOT-12AB:
+ * -------------
+ * buddy 시스템의 order 0 페이지를 관리하는 pcp(per-cpu pageset)를 초기화한다.
+ */
 	memset(p, 0, sizeof(*p));
 
 	pcp = &p->pcp;
@@ -4389,6 +4483,11 @@ static void pageset_init(struct per_cpu_pageset *p)
 static void setup_pageset(struct per_cpu_pageset *p, unsigned long batch)
 {
 	pageset_init(p);
+
+/* IAMROOT-12AB:
+ * -------------
+ * 부팅중에는 batch 수를 0으로 하였다.
+ */
 	pageset_set_batch(p, batch);
 }
 

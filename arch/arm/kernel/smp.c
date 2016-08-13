@@ -409,6 +409,12 @@ void __init smp_cpus_done(unsigned int max_cpus)
 
 void __init smp_prepare_boot_cpu(void)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * 현재 cpu에 해당하는 TPIDRPRW에 __per_cpu_offset[] 
+ * 값(cpu별 유닛 offset + delta)을 읽어 저장한다.
+ * (delta: first chunk의 base address - __per_cpu_start
+ */
 	set_my_cpu_offset(per_cpu_offset(smp_processor_id()));
 }
 

@@ -51,6 +51,15 @@ int arch_update_cpu_topology(void);
 /* Conform to ACPI 2.0 SLIT distance definitions */
 #define LOCAL_DISTANCE		10
 #define REMOTE_DISTANCE		20
+
+/* IAMROOT-12AB:
+ * -------------
+ * 2 개의 노드에서는 아래 generic 코드를 사용해서 LOCAL 노드와 리모트 노드에 
+ * 대한 값으로 10과 20을 반환한다.
+ *
+ * 실제 복잡한 NUMA 시스템에서는 제조사에서 node_distance() 함수를 제공하여 
+ * 정확한 distance 값을 반환해야 한다.
+ */
 #ifndef node_distance
 #define node_distance(from,to)	((from) == (to) ? LOCAL_DISTANCE : REMOTE_DISTANCE)
 #endif

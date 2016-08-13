@@ -614,6 +614,13 @@ static inline bool zone_is_empty(struct zone *zone)
  * [0]	: Zonelist with fallback
  * [1]	: No fallback (__GFP_THISNODE)
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 노드 마다 2개의 zonelists를 구성한다.
+ * 이 때 0번 배열에는 전체 노드에 대한 fallback list를 구성한다.
+ *       1번 배열에는 현재 노드에 대한 zonelists를 구성한다.
+ */
 #define MAX_ZONELISTS 2
 
 
@@ -678,7 +685,21 @@ static inline bool zone_is_empty(struct zone *zone)
 
 struct zonelist_cache {
 	unsigned short z_to_n[MAX_ZONES_PER_ZONELIST];		/* zone->nid */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 비트 하나가 _zoneref에 대응을 하여 1인 경우 페이지 할당자가 이 zone에 
+ * 대한 메모리 여유를 체크하지 않고 full되었다고 가정하고 skip 한다.
+ *
+ * zlc(Zone-List Cache) 기능으로 인해 성능향상이 없다고 판단하여 
+ * 커널 v4.4-rc1에서 제거된다
+ */
 	DECLARE_BITMAP(fullzones, MAX_ZONES_PER_ZONELIST);	/* zone full? */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 일정 주기가 지나면 lzc를 클리어하기 위해 아래 tick을 저장한다.
+ */
 	unsigned long last_full_zap;		/* when last zap'd (jiffies) */
 };
 #else
@@ -691,6 +712,15 @@ struct zonelist_cache;
  * here to avoid dereferences into large structures and lookups of tables
  */
 struct zoneref {
+
+/* IAMROOT-12AB:
+ * -------------
+ * zone: 
+ *      노드내의 zone 포인터 
+ * zone_idx:
+ *      0~3까지의 zone 타입에 대한 인덱스 번호 
+ *      (rpi2: 0=ZONE_NORMAL, 1=ZONE_MOVABLE)
+ */
 	struct zone *zone;	/* Pointer to actual zone */
 	int zone_idx;		/* zone_idx(zoneref->zone) */
 };
@@ -746,16 +776,52 @@ extern struct page *mem_map;
  */
 struct bootmem_data;
 typedef struct pglist_data {
+
+/* IAMROOT-12AB:
+ * -------------
+ * 최대 4개의 zone 
+ * rp2: 2개의 zone(ZONE_NORMAL, ZONE_MOVABLE)
+ */
 	struct zone node_zones[MAX_NR_ZONES];
+
+/* IAMROOT-12AB:
+ * -------------
+ * NUMA의 경우 node_zonelists[2]로 구성하고
+ *  UMA의 경우 node_zonelists[1]로 구성한다.
+ *
+ * node_zonelists[0]에는 전체 노드에 대해 zonelists가 구성된다.
+ * node_zonelists[1]에는 현재 노드에 대해 zonelists가 구성된다.
+ */
 	struct zonelist node_zonelists[MAX_ZONELISTS];
+
+/* IAMROOT-12AB:
+ * -------------
+ * nr_zones:
+ *      해당 노드의 zone 수
+ */
 	int nr_zones;
 #ifdef CONFIG_FLAT_NODE_MEM_MAP	/* means !SPARSEMEM */
+
+/* IAMROOT-12AB:
+ * -------------
+ * SPARSEMEM이 아닌 모델에서 사용하는 노드별 mem_map(page descriptor들) 
+ */
 	struct page *node_mem_map;
 #ifdef CONFIG_PAGE_EXTENSION
+
+/* IAMROOT-12AB:
+ * -------------
+ * 확장된 mem_map(page descriptor 확장), 디버그 용도로 owner등을 추적
+ */
 	struct page_ext *node_page_ext;
 #endif
 #endif
 #ifndef CONFIG_NO_BOOTMEM
+
+/* IAMROOT-12AB:
+ * -------------
+ * memblock을 사용하지 않는 경우에 bootmem_data 구조체를 사용한다.
+ */
 	struct bootmem_data *bdata;
 #endif
 #ifdef CONFIG_MEMORY_HOTPLUG
@@ -771,6 +837,16 @@ typedef struct pglist_data {
 	 */
 	spinlock_t node_size_lock;
 #endif
+
+/* IAMROOT-12AB:
+ * -------------
+ * node_start_pfn:
+ *      노드에 대한 시작 pfn 
+ * node_present_pages:
+ *      노드에서 hole을 제외한 페이지의 수 
+ * node_spanned_pages:
+ *      노드에 hole을 포함한 페이지의 수 
+ */
 	unsigned long node_start_pfn;
 	unsigned long node_present_pages; /* total number of physical pages */
 	unsigned long node_spanned_pages; /* total size of physical page
@@ -863,8 +939,19 @@ unsigned long __init node_memmap_size_bytes(int, unsigned long, unsigned long);
 /*
  * zone_idx() returns 0 for the ZONE_DMA zone, 1 for the ZONE_NORMAL zone, etc.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * zone 타입에 대한 인덱스를 반환한다.
+ * rpi2: 0=ZONE_NORMAL, 1=ZONE_MOVABLE
+ */
 #define zone_idx(zone)		((zone) - (zone)->zone_pgdat->node_zones)
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 페이지가 존재하는 zone인지 여부를 체크한다.
+ */
 static inline int populated_zone(struct zone *zone)
 {
 	return (!!zone->present_pages);

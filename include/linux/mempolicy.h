@@ -155,6 +155,10 @@ extern unsigned int mempolicy_slab_node(void);
 
 extern enum zone_type policy_zone;
 
+/* IAMROOT-12AB:
+ * -------------
+ * ZONE_MOVABLE을 제외한 가장 상위의 zone 타입을 전역변수 policy_zone에 저장한다.
+ */
 static inline void check_highest_zone(enum zone_type k)
 {
 	if (k > policy_zone && k != ZONE_MOVABLE)

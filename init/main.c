@@ -123,6 +123,18 @@ static inline void mark_rodata_ro(void) { }
  */
 bool early_boot_irqs_disabled __read_mostly;
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 부팅 과정에서 상태값이 바뀐다.
+ *  enum system_states {
+ *	SYSTEM_BOOTING,
+ *	SYSTEM_RUNNING,
+ *	SYSTEM_HALT,
+ *	SYSTEM_POWER_OFF,
+ *	SYSTEM_RESTART,
+ *  } system_state;
+ */
 enum system_states system_state __read_mostly;
 EXPORT_SYMBOL(system_state);
 

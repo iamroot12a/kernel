@@ -19,7 +19,8 @@ extern unsigned long __per_cpu_offset[NR_CPUS];
 
 /* IAMROOT-12AB:
  * -------------
- * per-cpu 데이터에서 cpu에 대한 offset
+ * cpu별 유닛 offset + delta 값을 보관한다.
+ * (delta: first chunk의 base address - __per_cpu_start
  */
 #define per_cpu_offset(x) (__per_cpu_offset[x])
 #endif
@@ -53,6 +54,16 @@ extern unsigned long __per_cpu_offset[NR_CPUS];
 #endif
 
 #ifdef CONFIG_HAVE_SETUP_PER_CPU_AREA
+
+/* IAMROOT-12AB:
+ * -------------
+ * CONFIG_HAVE_SETUP_PER_CPU_AREA:
+ *      - 아키텍처에 따라 setup_per_cpu_areas()를 제공하는 경우가 있다.
+ *      - x86의 경우 first chunk를 만들 때 embed 방식이 실패하는 경우 
+ *        page 방식으로 만드는 코드를 제공한다.
+ *      - arm의 경우 embed 방식의 first chunk를 만드는 
+ *        generic setup_per_cpu_areas() 함수를 그냥 사용한다.
+ */
 extern void setup_per_cpu_areas(void);
 #endif
 
