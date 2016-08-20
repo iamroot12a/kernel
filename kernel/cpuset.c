@@ -2388,6 +2388,12 @@ void cpuset_cpus_allowed_fallback(struct task_struct *tsk)
 
 void __init cpuset_init_current_mems_allowed(void)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * current->mems_allowed 노드 비트맵을 MAX_NUMNODES 만큼 1로 설정하여
+ * 현재 태스크에 대해 모든 노드에 대해 접근할 수 있도록 한다.
+ */
 	nodes_setall(current->mems_allowed);
 }
 

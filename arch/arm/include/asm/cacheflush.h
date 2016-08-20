@@ -286,6 +286,13 @@ extern void flush_cache_page(struct vm_area_struct *vma, unsigned long user_addr
  * Perform necessary cache operations to ensure that data previously
  * stored within this range of addresses can be executed by the CPU.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * ARM의 경우 주어진 영역의 icache를 flush하라고 하는 경우 
+ * d-cache 및 i-cache를 모두 flush한다.
+ */
+
 #define flush_icache_range(s,e)		__cpuc_coherent_kern_range(s,e)
 
 /*
@@ -311,6 +318,13 @@ extern void flush_dcache_page(struct page *);
 
 static inline void flush_kernel_vmap_range(void *addr, int size)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * ARMv7에 대해서는 data cache에 대해 VIPT_NONALIASING이므로 
+ * 해당 영역의 d-cache에 대한 플러시를 하지않는다.
+ * (ARMv7: L1 d-cache가 PIPT이고 non alilasing이므로 구분하지 않게 하기 위해
+ *         커널 코드에서는 VIPT_NONALIASING으로 인식하게 한다.)
+ */
 	if ((cache_is_vivt() || cache_is_vipt_aliasing()))
 	  __cpuc_flush_dcache_area(addr, (size_t)size);
 }

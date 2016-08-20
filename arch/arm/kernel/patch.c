@@ -21,6 +21,11 @@ static void __kprobes *patch_map(void *addr, int fixmap, unsigned long *flags)
 	__acquires(&patch_lock)
 {
 	unsigned int uintaddr = (uintptr_t) addr;
+
+/* IAMROOT-12AB:
+ * -------------
+ * core 커널 text 영역이 아닌 경우 module 커널 text 영역이라고 인식한다.
+ */
 	bool module = !core_kernel_text(uintaddr);
 	struct page *page;
 
@@ -36,6 +41,10 @@ static void __kprobes *patch_map(void *addr, int fixmap, unsigned long *flags)
 	else
 		__acquire(&patch_lock);
 
+/* IAMROOT-12AB:
+ * -------------
+ * fixmap(fixmap address space 범위에 위치한 fixmap 인덱스)에 물리주소를 매핑한다.
+ */
 	set_fixmap(fixmap, page_to_phys(page));
 
 	return (void *) (__fix_to_virt(fixmap) + (uintaddr & ~PAGE_MASK));
@@ -62,6 +71,11 @@ void __kprobes __patch_text_real(void *addr, unsigned int insn, bool remap)
 	int size;
 
 	if (remap)
+
+/* IAMROOT-12AB:
+ * -------------
+ * 주어진 addr이 있는 페이지를 fixmap의 FIX_TEXT_POKE0 인덱스 페이지에 해당하는 주소에 매핑한다.
+ */
 		waddr = patch_map(addr, FIX_TEXT_POKE0, &flags);
 	else
 		__acquire(&patch_lock);
@@ -89,6 +103,12 @@ void __kprobes __patch_text_real(void *addr, unsigned int insn, bool remap)
 
 		size = sizeof(u32);
 	} else {
+
+/* IAMROOT-12AB:
+ * -------------
+ * 엔디안 변환에 따른 저장할 인스트럭션으로 변환 
+ * rpi2: 변환할 필요 없음
+ */
 		if (thumb2)
 			insn = __opcode_to_mem_thumb32(insn);
 		else
@@ -98,6 +118,11 @@ void __kprobes __patch_text_real(void *addr, unsigned int insn, bool remap)
 		size = sizeof(u32);
 	}
 
+/* IAMROOT-12AB:
+ * -------------
+ * remap한 경우 항상 waddr과 addr은 다르다.
+ * 또한 remap을 안하더라도 thumb쪽에서 waddr이 바뀔 수 있다.
+ */
 	if (waddr != addr) {
 		flush_kernel_vmap_range(waddr, twopage ? size / 2 : size);
 		patch_unmap(FIX_TEXT_POKE0, &flags);

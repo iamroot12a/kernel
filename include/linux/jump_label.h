@@ -74,6 +74,12 @@ struct static_key {
 };
 #endif	/* CC_HAVE_ASM_GOTO && CONFIG_JUMP_LABEL */
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * static key를 선언 시 둘 중 하나를 사용한다.
+ */
+
 enum jump_label_type {
 	JUMP_LABEL_DISABLE = 0,
 	JUMP_LABEL_ENABLE,

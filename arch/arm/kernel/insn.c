@@ -38,15 +38,27 @@ __arm_gen_branch_arm(unsigned long pc, unsigned long addr, bool link)
 	unsigned long opcode = 0xea000000;
 	long offset;
 
+/* IAMROOT-12AB:
+ * -------------
+ * bl 또는 b를 구분한다. (link=1이면 bl)
+ */
 	if (link)
 		opcode |= 1 << 24;
 
+/* IAMROOT-12AB:
+ * -------------
+ * addr(목적지) - pc(내 코드 위치) = offset
+ */
 	offset = (long)addr - (long)(pc + 8);
 	if (unlikely(offset < -33554432 || offset > 33554428)) {
 		WARN_ON_ONCE(1);
 		return 0;
 	}
 
+/* IAMROOT-12AB:
+ * -------------
+ * +-32M 범위내에서 상대 점프를 하는 코드를 만들어낸다.
+ */
 	offset = (offset >> 2) & 0x00ffffff;
 
 	return opcode | offset;
@@ -55,6 +67,10 @@ __arm_gen_branch_arm(unsigned long pc, unsigned long addr, bool link)
 unsigned long
 __arm_gen_branch(unsigned long pc, unsigned long addr, bool link)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * arm: +-32M 범위내에서 상대 점프(b or bl)를 하는 코드를 만들어낸다.
+ */
 	if (IS_ENABLED(CONFIG_THUMB2_KERNEL))
 		return __arm_gen_branch_thumb2(pc, addr, link);
 	else

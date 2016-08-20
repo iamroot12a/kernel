@@ -109,6 +109,10 @@ extern asmlinkage unsigned int arm_check_condition(u32 opcode, u32 psr);
 
 #else /* ! CONFIG_CPU_ENDIAN_BE8 */
 
+/* IAMROOT-12AB:
+ * -------------
+ * little endian
+ */
 #define __opcode_to_mem_arm(x) ___opcode_identity32(x)
 #define __opcode_to_mem_thumb16(x) ___opcode_identity16(x)
 #define ___asm_opcode_to_mem_arm(x) ___asm_opcode_identity32(x)

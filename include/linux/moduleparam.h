@@ -78,6 +78,10 @@ struct kernel_param {
 	};
 };
 
+/* IAMROOT-12AB:
+ * -------------
+ * new 커널 파라메터 저장 장소
+ */
 extern const struct kernel_param __start___param[], __stop___param[];
 
 /* Special one for strings we want to copy into */

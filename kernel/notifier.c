@@ -18,6 +18,13 @@ BLOCKING_NOTIFIER_HEAD(reboot_notifier_list);
  *	are layered on top of these, with appropriate locking added.
  */
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * notifier_block을 추가하는데 priority를 내림 순으로 추가하여 정렬한다.
+ * 예) priority=30 -> 0 -> -30으로 3개의 nb가 등록되어 있을 때 0을 새롭게 추가하면
+ *	        30 -> 0 -> 0(new) -> -30 과 같이 내림 정렬되어 추가된다.
+ */
 static int notifier_chain_register(struct notifier_block **nl,
 		struct notifier_block *n)
 {

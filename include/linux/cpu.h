@@ -114,6 +114,16 @@ enum {
 #ifdef CONFIG_SMP
 /* Need to know about CPUs going up/down? */
 #if defined(CONFIG_HOTPLUG_CPU) || !defined(MODULE)
+
+/* IAMROOT-12AB:
+ * -------------
+ * cpu state가 변화될 때마다 함수가 동작되도록 등록한다.
+ *      예) hotcpu_notifier(page_alloc_cpu_notify, 0);
+ *          -> struct notifier_block page_alloc_cpu_notify_nb = {
+ *               .notifier_call = page_alloc_cpu_notify,
+ *               .priority = 0 };
+ *             register_cpu_notifier(&page_alloc_cpu_notify_nb);
+ */
 #define cpu_notifier(fn, pri) {					\
 	static struct notifier_block fn##_nb =			\
 		{ .notifier_call = fn, .priority = pri };	\

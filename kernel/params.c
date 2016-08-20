@@ -107,8 +107,19 @@ static int parse_one(char *param,
 	int err;
 
 	/* Find parameter */
+
+/* IAMROOT-12AB:
+ * -------------
+ * parse_early_param() 함수로 들어온 경우는 num_params가 0이므로 아래 검색을 수행하지 않고 skip한다.
+ * 그렇지 않고 start_kernel()->parse_args()로 호출된 경우는 아래를 수행한다.
+ */
 	for (i = 0; i < num_params; i++) {
 		if (parameq(param, params[i].name)) {
+
+/* IAMROOT-12AB:
+ * -------------
+ * 지정된 레벨 범위를 벗어나는 경우 0으로 리턴한다.
+ */
 			if (params[i].level < min_level
 			    || params[i].level > max_level)
 				return 0;
@@ -120,6 +131,14 @@ static int parse_one(char *param,
 				params[i].ops->set);
 			mutex_lock(&param_lock);
 			param_check_unsafe(&params[i]);
+
+/* IAMROOT-12AB:
+ * -------------
+ * 찾은 파라메터 블럭에서 ops->set에 등록된 함수를 호출한다.
+ * kernel/params.c 에 변수 타입별로 set() 및 get() 함수들이 등록되어 있다.
+ * 예) param_set_boot(), param_get_bool()
+ *     param_set_string(), param_get_string()
+ */
 			err = params[i].ops->set(val, &params[i]);
 			mutex_unlock(&param_lock);
 			return err;

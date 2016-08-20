@@ -197,6 +197,11 @@ void __init jump_label_init(void)
 	struct jump_entry *iter;
 
 	jump_label_lock();
+
+/* IAMROOT-12AB:
+ * -------------
+ * 각 jump entry의 key 값으로 sorting한다.
+ */
 	jump_label_sort_entries(iter_start, iter_stop);
 
 	for (iter = iter_start; iter < iter_stop; iter++) {

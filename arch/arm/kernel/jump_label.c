@@ -12,6 +12,10 @@ static void __arch_jump_label_transform(struct jump_entry *entry,
 	void *addr = (void *)entry->code;
 	unsigned int insn;
 
+/* IAMROOT-12AB:
+ * -------------
+ * branch code를 만들거나 nop(mov r0, r0) code를 만들어온다.
+ */
 	if (type == JUMP_LABEL_ENABLE)
 		insn = arm_gen_branch(entry->code, entry->target);
 	else

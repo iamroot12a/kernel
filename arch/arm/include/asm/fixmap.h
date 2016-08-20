@@ -12,6 +12,11 @@ enum fixed_addresses {
 	FIX_KMAP_END = FIX_KMAP_BEGIN + (KM_TYPE_NR * NR_CPUS) - 1,
 
 	/* Support writing RO kernel text via kprobes, jump labels, etc. */
+
+/* IAMROOT-12AB:
+ * -------------
+ * FIX_TEXT_POKE0 페이지는 읽기 커널 코드 영역을 patch할 때 사용한다.
+ */
 	FIX_TEXT_POKE0,
 	FIX_TEXT_POKE1,
 

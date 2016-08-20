@@ -47,6 +47,11 @@ void cpu_maps_update_done(void)
 }
 EXPORT_SYMBOL(cpu_notifier_register_done);
 
+/* IAMROOT-12AB:
+ * -------------
+ * cpu on/off 시 호출되어야 할 함수들이 아래 리스트에 등록된다.
+ * (notifier block 들은 호출될 함수명과 우선 순위 값으로 되어 있다)
+ */
 static RAW_NOTIFIER_HEAD(cpu_chain);
 
 /* If set, cpu_up and cpu_down will return -EBUSY and do nothing.

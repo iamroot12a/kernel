@@ -17,12 +17,20 @@ __arm_gen_branch(unsigned long pc, unsigned long addr, bool link);
 static inline unsigned long
 arm_gen_branch(unsigned long pc, unsigned long addr)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * false: b (branch label) 인스트럭션을 만든다.
+ */
 	return __arm_gen_branch(pc, addr, false);
 }
 
 static inline unsigned long
 arm_gen_branch_link(unsigned long pc, unsigned long addr)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * true: bl (branch call) 인스트럭션을 만든다.
+ */
 	return __arm_gen_branch(pc, addr, true);
 }
 

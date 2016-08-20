@@ -684,10 +684,21 @@ asmlinkage __visible void __init start_kernel(void)
 
 	pr_notice("Kernel command line: %s\n", boot_command_line);
 	parse_early_param();
+
+/* IAMROOT-12AB:
+ * -------------
+ * -1 레벨 커널 파라메터들을 파싱한다.
+ */
 	after_dashes = parse_args("Booting kernel",
 				  static_command_line, __start___param,
 				  __stop___param - __start___param,
 				  -1, -1, &unknown_bootoption);
+
+/* IAMROOT-12AB:
+ * -------------
+ * cmd_line에 --를 주는 경우 그 뒷 부분에 있는 모든 커널 파라메터들은
+ * argv_init[] 배열에 추가되고 이 배열은 init process에서 사용될 수 있다.
+ */
 	if (!IS_ERR_OR_NULL(after_dashes))
 		parse_args("Setting init args", after_dashes, NULL, 0, -1, -1,
 			   set_init_arg);

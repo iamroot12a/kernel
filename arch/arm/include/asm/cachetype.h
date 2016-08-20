@@ -8,8 +8,9 @@
  * bit0~2: d-cache 
  * bit3~5: i-cache 
  *
- * ARMv7에서의 data cache 타입은 무조건 VIPT_ALIASING으로 고정
+ * ARMv7에서의 data cache 타입은 무조건 VIPT_NONALIASING으로 고정
  * 다만 i-cache는 시스템 레지스터를 읽어서 판단함.
+ * (rpi2: i-cache=VIPT_I_ALIASING, d-cache=VIPT_NONALIASING)
  */
 #define CACHEID_VIVT			(1 << 0)
 #define CACHEID_VIPT_NONALIASING	(1 << 1)

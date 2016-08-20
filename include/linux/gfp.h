@@ -338,6 +338,36 @@ static inline int gfpflags_to_migratetype(const gfp_t gfp_flags)
 #error ZONES_SHIFT too large to create GFP_ZONE_TABLE integer
 #endif
 
+/* IAMROOT-12AB:
+ * -------------
+ * ZONES_SHIFT: zone을 표현할 때 사용하는 비트 수로 최대 2bit를 사용한다.
+ * rpi2: 1(ZONE_NORMAL, ZONE_MOVABLE)
+ *
+ * OPT_ZONE_DMA: CONFIG_ZONE_DMA가 설정된 경우 ZONE_DMA(0)이고 
+ *                                 설정되지 않은 경우 ZONE_NORMAL이다.
+ *
+ * GFP_ZONE_TABLE에 의해 만들어지는 상수들은 다음과 같이 16개의 항목으로 나뉘고 
+ * 각 항목은 사용하는 zone bit 수 만큼 결정된다. (0~2) 
+ *
+ * 이 테이블은 4bit로 구성된 gfp 플래그 -> zone 인덱스(0~3)로 변환한다.
+ * ----------------------------------------------------------------------------
+ * entry #00: GOOD - ZONE_NORMAL 
+ * entry #01: GOOD - ZONE_DMA(없으면 ZONE_NORMAL)
+ * entry #02: GOOD - ZONE_HIGHMEM(없으면 ZONE_NORMAL)
+ * entry #03: BAD  - 
+ * entry #04: GOOD - ZONE_DMA32(없으면 ZONE_NORMAL) 
+ * entry #05: BAD  -
+ * entry #06: BAD  -
+ * entry #07: BAD  -
+ * entry #08: GOOD - ZONE_NORMAL 
+ * entry #09: GOOD - ZONE_DMA(없으면 ZONE_NORMAL) 
+ * entry #10: GOOD - ZONE_MOVABLE 
+ * entry #11: BAD  -
+ * entry #12: GOOD - ZONE_DMA32(없으면 ZONE_NORMAL) 
+ * entry #13: BAD  -
+ * entry #14: BAD  -
+ * entry #15: BAD  -
+ */
 #define GFP_ZONE_TABLE ( \
 	(ZONE_NORMAL << 0 * ZONES_SHIFT)				      \
 	| (OPT_ZONE_DMA << ___GFP_DMA * ZONES_SHIFT)			      \
@@ -366,6 +396,12 @@ static inline int gfpflags_to_migratetype(const gfp_t gfp_flags)
 	| 1 << (___GFP_MOVABLE | ___GFP_DMA32 | ___GFP_DMA | ___GFP_HIGHMEM)  \
 )
 
+/* IAMROOT-12AB:
+ * -------------
+ * GFP_ZONE_TABLE로 부터 요청 gfp 플래그에 해당하는 zone 인덱스 번호를 반환한다. 
+ * (시스템에 따라 0 ~ 3까지)
+ * (rpi2: 0(ZONE_NORMAL) ~ 1(ZONE_MOVABLE))
+ */
 static inline enum zone_type gfp_zone(gfp_t flags)
 {
 	enum zone_type z;

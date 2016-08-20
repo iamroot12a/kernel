@@ -418,6 +418,11 @@ EXPORT_SYMBOL(get_mem_type);
  */
 void __set_fixmap(enum fixed_addresses idx, phys_addr_t phys, pgprot_t prot)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * fixmap 인덱스로 가상 주소로 변환한다.
+ */
 	unsigned long vaddr = __fix_to_virt(idx);
 	pte_t *pte = pte_offset_kernel(pmd_off_k(vaddr), vaddr);
 

@@ -1582,6 +1582,11 @@ struct task_struct {
 	cputime_t acct_timexpd;	/* stime + utime since last update */
 #endif
 #ifdef CONFIG_CPUSETS
+
+/* IAMROOT-12AB:
+ * -------------
+ * mems_allowed: 허용 노드 비트맵(현재 태스크에 대해 노드를 제한하는 비트 마스크)
+ */
 	nodemask_t mems_allowed;	/* Protected by alloc_lock */
 	seqcount_t mems_allowed_seq;	/* Seqence no to catch updates */
 	int cpuset_mem_spread_rotor;

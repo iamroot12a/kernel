@@ -31,6 +31,12 @@ l_yes:
 
 typedef u32 jump_label_t;
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * static brach에 사용되는 점프 엔트리들
+ * (커널 부트업 프로세스 시 key 값으로 sorting)
+ */
 struct jump_entry {
 	jump_label_t code;
 	jump_label_t target;

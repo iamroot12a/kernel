@@ -40,6 +40,11 @@ enum {
 	MIGRATE_RECLAIMABLE,
 	MIGRATE_MOVABLE,
 	MIGRATE_PCPTYPES,	/* the number of types on the pcp lists */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 커널 4.4-rc1에서 MIGRATE_RESERVE가 없어지고 MIGRATE_HIGHATOMIC이 새롭게 생성되었다.
+ */
 	MIGRATE_RESERVE = MIGRATE_PCPTYPES,
 #ifdef CONFIG_CMA
 	/*
@@ -256,6 +261,15 @@ enum zone_watermarks {
 	NR_WMARK
 };
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 워터마크는 zone별로 구성되는데 메모리 부족시 페이지 회수 시스템 kswapd 등이 동작된다.
+ * min 값이 결정되면 low 값은 min 값의 120%, high 값은 150%로 결정된다.
+ *
+ * low값 이하로 떨어지면 kswapd가 wakeup 되고 high값이 되면 kswapd가 sleep된다.
+ * 최하 값이 min까지 떨어지는 경우 direct-reclaim이 동작된다.
+ */
 #define min_wmark_pages(z) (z->watermark[WMARK_MIN])
 #define low_wmark_pages(z) (z->watermark[WMARK_LOW])
 #define high_wmark_pages(z) (z->watermark[WMARK_HIGH])

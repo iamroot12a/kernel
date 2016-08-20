@@ -27,6 +27,10 @@
  */
 #if defined(CONFIG_FLATMEM)
 
+/* IAMROOT-12AB:
+ * -------------
+ * pfn으로 mem_map[]에서 해당 page descriptor를 알아온다.
+ */
 #define __pfn_to_page(pfn)	(mem_map + ((pfn) - ARCH_PFN_OFFSET))
 
 /* IAMROOT-12AB:

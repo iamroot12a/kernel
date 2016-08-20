@@ -3080,8 +3080,17 @@ static unsigned long nr_free_zone_pages(int offset)
 	/* Just pick one node, since fallback list is circular */
 	unsigned long sum = 0;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 현재 노드 기준으로 만들어진 zonelist를 가져온다.
+ */
 	struct zonelist *zonelist = node_zonelist(numa_node_id(), GFP_KERNEL);
 
+/* IAMROOT-12AB:
+ * -------------
+ * zonelist에서 인수로 지정한 offset zone 범위의 managed_pages들에서
+ * 워터마크 페이지를 제외한 페이지 수를 반환환다.
+ */
 	for_each_zone_zonelist(zone, z, zonelist, offset) {
 		unsigned long size = zone->managed_pages;
 		unsigned long high = high_wmark_pages(zone);
@@ -3112,6 +3121,19 @@ EXPORT_SYMBOL_GPL(nr_free_buffer_pages);
  */
 unsigned long nr_free_pagecache_pages(void)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * GFP_HIGHUSER_MOVABLE:
+ *	__GFP_WAIT | __GFP_IO | __GFP_FS | __GFP_HARDWALL | __GFP_HIGHMEM | __GFP_MOVABLE
+ *
+ * gfp_zone():
+ *	zone에 대한 gfp 플래그만 분리하여(__GFP_HIGHMEM | __GFP_MOVABLE) 요청하는 경우 
+ *	해당 시스템에 존재하는 높은 zone 인덱스를 반환한다.
+ *	(rpi2: ZONE_MOVABLE을 반환한다)
+ *
+ * 모든 zone에 대한 managed 페이지에서 워터마크 페이지를 제외한 페이지 수를 반환한다.
+ */
 	return nr_free_zone_pages(gfp_zone(GFP_HIGHUSER_MOVABLE));
 }
 
@@ -3974,8 +3996,24 @@ static int __build_all_zonelists(void *data)
 static noinline void __init
 build_all_zonelists_init(void)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * zonelists를 구성한다.
+ */
 	__build_all_zonelists(NULL);
+
+/* IAMROOT-12AB:
+ * -------------
+ * 만들어진 zonelists에 문제가 없는지 진단한다.
+ */
 	mminit_verify_zonelist();
+
+/* IAMROOT-12AB:
+ * -------------
+ * CONFIG_CPUSETS을 사용(cgroup)하는 경우 
+ * 현재 태스크에 대해 모든 노드에 대해 접근할 수 있도록 한다.
+ */
 	cpuset_init_current_mems_allowed();
 }
 
@@ -3997,15 +4035,31 @@ void __ref build_all_zonelists(pg_data_t *pgdat, struct zone *zone)
  */
 	set_zonelist_order();
 
+/* IAMROOT-12AB:
+ * -------------
+ * 커널이 부트업 프로세스 중에 있는 경우: system_state=SYSTEM_BOOTING
+ */
 	if (system_state == SYSTEM_BOOTING) {
 		build_all_zonelists_init();
 	} else {
 #ifdef CONFIG_MEMORY_HOTPLUG
 		if (zone)
+
+/* IAMROOT-12AB:
+ * -------------
+ * zone에 대한 메모리 크기가 변경되는 경우 pcp 정보(batch size등)를 변경한다.
+ */
 			setup_zone_pageset(zone);
 #endif
 		/* we have to stop all cpus to guarantee there is no user
 		   of zonelist */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 커널이 동작중에 메모리 정보가 바뀌게 되면 zone이 새로 구성되거나 없어질 수 있기 
+ * 때문에 zonelists를 다시 빌드하게 하기 위해 모든 cpu들을 멈춘 후 zonelists를 
+ * 다시 구성하게 한다.
+ */
 		stop_machine(__build_all_zonelists, pgdat, NULL);
 		/* cpuset refresh routine should be here */
 	}
@@ -4017,6 +4071,12 @@ void __ref build_all_zonelists(pg_data_t *pgdat, struct zone *zone)
 	 * made on memory-hotadd so a system can start with mobility
 	 * disabled and enable it later
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 남은 free 메모리가 적은 경우 페이지 마이그레이션이 동작하지 않도록 한다.
+ * (항상 MIGRATE_UNMOVABLE로 설정한다.)
+ */
 	if (vm_total_pages < (pageblock_nr_pages * MIGRATE_TYPES))
 		page_group_by_mobility_disabled = 1;
 	else
@@ -6198,6 +6258,18 @@ static int page_alloc_cpu_notify(struct notifier_block *self,
 
 void __init page_alloc_init(void)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * cpu state가 변화될 때 page_alloc_cpu_notify() 함수를 notify_block구조로 
+ * 만들어 전역 cpu_chain 리스트에 등록한다. 이때 등록되는 우선순위의 값을 
+ * 0으로 한다. (우선순위 값에 따라 cpu on/off에 대한 호출순서가 결정되는데 
+ * 높은 우선 순위부터 호출된다)
+ *
+ * page_alloc_cpu_notify() 함수는 페이지 할당자를 분석한 후 진행하기로 한다.
+ * - cpu가 off될 때 cpu 캐시가 관리하는 free 페이지들을 모두 버디 시스템으로
+ *   돌려보내고, cpu관련한 vm_stat 관리를 drop한다.
+ */
 	hotcpu_notifier(page_alloc_cpu_notify, 0);
 }
 

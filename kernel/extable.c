@@ -59,6 +59,10 @@ const struct exception_table_entry *search_exception_tables(unsigned long addr)
 	return e;
 }
 
+/* IAMROOT-12AB:
+ * -------------
+ * 커널 코드가 init 섹션에 위치한 경우 한 번 부트업 수행 후 없애버릴 영역
+ */
 static inline int init_kernel_text(unsigned long addr)
 {
 	if (addr >= (unsigned long)_sinittext &&
@@ -69,9 +73,21 @@ static inline int init_kernel_text(unsigned long addr)
 
 int core_kernel_text(unsigned long addr)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * 커널 코드가 있는 위치를 core 커널 text 영역으로 인식한다.
+ */
+
 	if (addr >= (unsigned long)_stext &&
 	    addr < (unsigned long)_etext)
 		return 1;
+
+
+/* IAMROOT-12AB:
+ * -------------
+ * 부팅 중에는 init 영역에 있는 코드도 core 커널 text 영역으로 인식한다.
+ */
 
 	if (system_state == SYSTEM_BOOTING &&
 	    init_kernel_text(addr))
