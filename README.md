@@ -308,4 +308,10 @@ page_address_init()
 - 2016.08.13, 강남 윙스터디2 (7명, 김종철, 문영일, 박진영, 윤창호, 조현철, 최영민, 한상종)
 - per_cpu API들
 - smp_prepare_boot_cpu()
-- build_all_zonelists() ~
+- build_all_zonelists()
+
+### 70주차
+- 2016.08.20, 강남 상상플러스 (9명, 권경환, 김종철, 문영일, 양유석, 유계성, 윤창호, 조현철, 최영민, 한상종)
+ - page_alloc_init()
+ - parse_args()
+ - jump_label_init()
