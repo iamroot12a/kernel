@@ -100,6 +100,11 @@ static inline int static_key_count(struct static_key *key)
 #define JUMP_LABEL_TYPE_TRUE_BRANCH	1UL
 #define JUMP_LABEL_TYPE_MASK		1UL
 
+/* IAMROOT-12AB:
+ * -------------
+ * lsb 1비트를 제거하여 __jump_table 섹션에 정렬되어 있는 key의 jump_entry의 
+ * 주소를 가져온다.
+ */
 static
 inline struct jump_entry *jump_label_get_entries(struct static_key *key)
 {
@@ -107,6 +112,14 @@ inline struct jump_entry *jump_label_get_entries(struct static_key *key)
 						& ~JUMP_LABEL_TYPE_MASK);
 }
 
+/* IAMROOT-12AB:
+ * -------------
+ * static_key를 선언 시 사용한 JUMP_LABE_TYPE을 알아온다.
+ * STATIC_KEY_INIT_TRUE()로 선언한 경우 컴파일 타임에 key->entries에 
+ *      JUMP_LABEL_TYPE_TRUE_BRANCH(1)이 저장되고, 커널이 초기화 과정에서 
+ *      처음 사용한 jump_label 엔트리의 처음 주소가 더해있다.
+ *      (결국 lsb 1bit만 읽어들여 확인하는 코드로 구성된다)
+ */
 static inline bool jump_label_get_branch_default(struct static_key *key)
 {
 	if (((unsigned long)key->entries & JUMP_LABEL_TYPE_MASK) ==
@@ -148,6 +161,11 @@ extern void jump_label_apply_nops(struct module *mod);
 	  .entries = (void *)JUMP_LABEL_TYPE_FALSE_BRANCH })
 
 #else  /* !HAVE_JUMP_LABEL */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 이 아래는 HAVE_JUMP_LABEL을 사용하지 않을 때
+ */
 
 static __always_inline void jump_label_init(void)
 {

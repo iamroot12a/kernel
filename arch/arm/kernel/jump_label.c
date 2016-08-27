@@ -21,6 +21,10 @@ static void __arch_jump_label_transform(struct jump_entry *entry,
 	else
 		insn = arm_gen_nop();
 
+/* IAMROOT-12AB:
+ * -------------
+ * ARM에서는 is_static=true가 되므로 __patch_text_early() 함수를 호출한다.
+ */
 	if (is_static)
 		__patch_text_early(addr, insn);
 	else
@@ -36,6 +40,16 @@ void arch_jump_label_transform(struct jump_entry *entry,
 void arch_jump_label_transform_static(struct jump_entry *entry,
 				      enum jump_label_type type)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * type:
+ *	- JUMP_LABEL_ENABLE(1): jump 코드를 생성 
+ *	- JUMP_LABEL_DISABLE(0): nop 코드를 생성
+ *
+ * is_static(3번째 인수): 
+ *	- false: patch_text() 함수를 호출 
+ *	- true: __patch_text_early() 함수를 호출
+ */
 	__arch_jump_label_transform(entry, type, true);
 }
 

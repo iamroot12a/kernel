@@ -1192,6 +1192,12 @@ EXPORT_SYMBOL(__ww_mutex_lock_interruptible);
  *
  * return true and hold lock if we dec to 0, return false otherwise
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 값을 감소시켜 0이되는 경우 lock을 획득하고 true를 반환한다.
+ * 만일 lock이 걸리지 않은 경우 false를 반환한다.
+ */
 int atomic_dec_and_mutex_lock(atomic_t *cnt, struct mutex *lock)
 {
 	/* dec if we can't possibly hit 0 */

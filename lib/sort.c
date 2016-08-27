@@ -43,6 +43,15 @@ static void generic_swap(void *a, void *b, int size)
  * it less suitable for kernel use.
  */
 
+/* IAMROOT-12AB:
+ * -------------
+ * 일정 영역을 정렬시키는 API
+ *	- base: 시작 주소
+ *	- num: 갯수
+ *	- size: 사이즈
+ *	- cmp_func: 비교 함수 
+ *	- swap_func: 교체 함수(null인 경우 그 항목 전체를 교체)
+ */
 void sort(void *base, size_t num, size_t size,
 	  int (*cmp_func)(const void *, const void *),
 	  void (*swap_func)(void *, void *, int size))
