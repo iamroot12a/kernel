@@ -1038,7 +1038,22 @@ __kuser_helper_end:
  * -------------
  * 벡터는 다음 위치에 존재하고 벡터 스터브는 그 다음 페이지에 위치한다.
  *    - 0xffff_0000에 위치하는 high vector
- *    - 0x0000_0000에 이치하는 low vector
+ *    - 0x0000_0000에 이치하는 low vector 
+ *
+ * 몇 개의 인터럽트 핸들러가 사용하는 디스패처 매크로
+ * name: 
+ *	- irq 
+ *	- dabt
+ *	- pabt 
+ *	- und 
+ *	- fiq
+ * mode:
+ *	- ABT_MODE 
+ *	- IRQ_MODE 
+ *	- FIQ_MODE 
+ *	- UND_MODE
+ * correction:
+ *	- 핸들러 처리 후 복귀할 주소 교정(0, 4, 8)
  */
 	.macro	vector_stub, name, mode, correction=0
 	.align	5
@@ -1083,7 +1098,15 @@ ENDPROC(vector_\name)
 /* IAMROOT-12AB:
  * -------------
  * .stub 섹션에 처음에는 소프트인터럽트 핸들러의 주소가 위치한다.
- * 그 뒤로 8개의 exception 핸들러들이 위치하고
+ * 그 뒤로 8개의 exception 핸들러들이 위치한다.
+ *	- SWI (jump만 존재하고 다른 소스에 위치)
+ *	- 리셋 핸들러 
+ *	- IRQ 디스패처 
+ *	- Data Abort 디스패처
+ *	- Prefetch 디스패처
+ *	- Undefined Instruction 디스패처 
+ *	- (Reserved)
+ *	- FIQ 디스패처
  */
 	.section .stubs, "ax", %progbits
 __stubs_start:
@@ -1098,6 +1121,11 @@ vector_rst:
 
 /*
  * Interrupt dispatcher
+ */
+
+/* IAMROOT-12AB:
+ * -------------
+ * IRQ 디스패처
  */
 	vector_stub	irq, IRQ_MODE, 4
 
@@ -1121,6 +1149,11 @@ vector_rst:
 /*
  * Data abort dispatcher
  * Enter in ABT mode, spsr = USR CPSR, lr = USR PC
+ */
+
+/* IAMROOT-12AB:
+ * -------------
+ * Data Abort 디스패처
  */
 	vector_stub	dabt, ABT_MODE, 8
 

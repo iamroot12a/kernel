@@ -52,6 +52,11 @@ extern void unwind_backtrace(struct pt_regs *regs, struct task_struct *tsk);
 
 #endif	/* !__ASSEMBLY__ */
 
+/* IAMROOT-12AB:
+ * -------------
+ * 커널이 만들어 주는 코드가 아니라 컴파일러로 하여금 UNWIND에 관련한 디렉티브를 
+ * 처리하도록 요청한다. (.fnstart, .fnend, .cantunwind, ...)
+ */
 #ifdef CONFIG_ARM_UNWIND
 #define UNWIND(code...)		code
 #else

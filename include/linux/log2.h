@@ -165,6 +165,13 @@ unsigned long __rounddown_pow_of_two(unsigned long n)
  * - the result is undefined when n == 0
  * - this can be used to initialise global variables from constant data
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 2의 차수 단위로 round up을 한다.
+ * 예) 1024 -> 1024
+ *     1025 -> 2048
+ */
 #define roundup_pow_of_two(n)			\
 (						\
 	__builtin_constant_p(n) ? (		\

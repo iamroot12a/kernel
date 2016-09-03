@@ -263,8 +263,19 @@ static u32 clear_idx;
 #else
 #define LOG_ALIGN __alignof__(struct printk_log)
 #endif
+
+/* IAMROOT-12AB:
+ * -------------
+ * 기본 커널 설정에 CONFIG_LOG_BUF_SHIFT(17)로 설정되어 있음. -> 128K
+ */
 #define __LOG_BUF_LEN (1 << CONFIG_LOG_BUF_SHIFT)
 static char __log_buf[__LOG_BUF_LEN] __aligned(LOG_ALIGN);
+
+/* IAMROOT-12AB:
+ * -------------
+ * log_buf는 보통 staitic __log_buf[]를 가리키고 있다.
+ * (많은 CPU를 사용할 때에 버퍼를 더 요구한다)
+ */
 static char *log_buf = __log_buf;
 static u32 log_buf_len = __LOG_BUF_LEN;
 
@@ -831,6 +842,12 @@ static unsigned long __initdata new_log_buf_len;
 /* we practice scaling the ring buffer by powers of 2 */
 static void __init log_buf_len_update(unsigned size)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * 2의 차수 단위로 로그 사이즈를 지정한다.
+ */
+
 	if (size)
 		size = roundup_pow_of_two(size);
 	if (size > log_buf_len)
@@ -849,6 +866,11 @@ static int __init log_buf_len_setup(char *str)
 early_param("log_buf_len", log_buf_len_setup);
 
 #ifdef CONFIG_SMP
+
+/* IAMROOT-12AB:
+ * -------------
+ * 기본 커널 설정이 4K로 되어있다.
+ */
 #define __LOG_CPU_MAX_BUF_LEN (1 << CONFIG_LOG_CPU_MAX_BUF_SHIFT)
 
 static void __init log_buf_add_cpu(void)
@@ -866,6 +888,13 @@ static void __init log_buf_add_cpu(void)
 	cpu_extra = (num_possible_cpus() - 1) * __LOG_CPU_MAX_BUF_LEN;
 
 	/* by default this will only continue through for large > 64 CPUs */
+
+/* IAMROOT-12AB:
+ * -------------
+ * ARM: 기본적으로 18개 이상 cpu를 대상으로 로그 버퍼를 확장시킬 수 있도록 하였다.
+ * (ARM에서 영문 주석과 같은 해석이되려면:
+ *	나누기 2가 아니라 곱하기 2로 해야 한다)
+ */
 	if (cpu_extra <= __LOG_BUF_LEN / 2)
 		return;
 
@@ -875,6 +904,11 @@ static void __init log_buf_add_cpu(void)
 		cpu_extra);
 	pr_info("log_buf_len min size: %d bytes\n", __LOG_BUF_LEN);
 
+/* IAMROOT-12AB:
+ * -------------
+ * cpu_extra + 128K(ARM기준)로 로그 버퍼를 확장한다.
+ * (로그 사이즈는 2의 차수 단위로 round up하여 정렬한다.)
+ */
 	log_buf_len_update(cpu_extra + __LOG_BUF_LEN);
 }
 #else /* !CONFIG_SMP */
@@ -887,15 +921,29 @@ void __init setup_log_buf(int early)
 	char *new_log_buf;
 	int free;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 이미 확장된 경우 처리를 하지 않는다.
+ */
 	if (log_buf != __log_buf)
 		return;
 
+/* IAMROOT-12AB:
+ * -------------
+ * early: start_kernel()에서 호출하는 경우 early=0,
+ *	  x86 아키텍처에서는 setup_arch()에서 먼저 버퍼크기를 확장할 필요가 
+ *	  있어서 early=1로 진입한다.
+ */
 	if (!early && !new_log_buf_len)
 		log_buf_add_cpu();
 
 	if (!new_log_buf_len)
 		return;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 로그 버퍼용 메모리를 할당받는다.
+ */
 	if (early) {
 		new_log_buf =
 			memblock_virt_alloc(new_log_buf_len, LOG_ALIGN);

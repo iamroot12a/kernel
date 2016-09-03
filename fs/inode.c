@@ -1805,6 +1805,10 @@ void __init inode_init_early(void)
 	if (hashdist)
 		return;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 64K entries, 256KB
+ */
 	inode_hashtable =
 		alloc_large_system_hash("Inode-cache",
 					sizeof(struct hlist_head),

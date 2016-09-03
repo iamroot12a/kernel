@@ -172,6 +172,12 @@ static __always_inline void jump_label_init(void)
 	static_key_initialized = true;
 }
 
+/* IAMROOT-12AB:
+ * -------------
+ * HAVE_JUMP_LABEL이 선언되어 있지 않을 경우에는 key->enabled 값을 
+ * 여러번 증가할 수 있게 되어있다. 그 이유는???
+ * (HAVE_JUMP_LABEL이 선언되어 있는 경우는 0과 1로만 증감된다)
+ */
 static __always_inline bool static_key_false(struct static_key *key)
 {
 	if (unlikely(static_key_count(key) > 0))

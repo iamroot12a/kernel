@@ -3358,6 +3358,10 @@ static void __init dcache_init_early(void)
 	if (hashdist)
 		return;
 
+/* IAMROOT-12AB:
+ * -------------
+ * rpi2: 128K entry, 512KB
+ */
 	dentry_hashtable =
 		alloc_large_system_hash("Dentry cache",
 					sizeof(struct hlist_bl_head),

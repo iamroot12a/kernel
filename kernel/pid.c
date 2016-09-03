@@ -576,6 +576,12 @@ void __init pidhash_init(void)
 {
 	unsigned int i, pidhash_size;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 3번째 인수를 0으로 하여 16개 slot ~ 4096 slot 이내의 엔트리 수로
+ * 해쉬를 생성한다.
+ * (rpi2: max 4096개의 해쉬를 만드는 경우 16k 할당(4096 x 4 bytes)
+ */
 	pid_hash = alloc_large_system_hash("PID", sizeof(*pid_hash), 0, 18,
 					   HASH_EARLY | HASH_SMALL,
 					   &pidhash_shift, NULL,

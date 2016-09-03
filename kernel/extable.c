@@ -37,11 +37,23 @@ extern struct exception_table_entry __start___ex_table[];
 extern struct exception_table_entry __stop___ex_table[];
 
 /* Cleared by build time tools if the table is already sorted. */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 컴파일 타임에 툴에 의해 extable을 정렬하고 아래 변수 값까지 1로 바꿔주면 
+ * 커널 부트업 처리 시 소팅을 안해도 된다.
+ * (CONFIG_BUILDTIME_EXTABLE_SORT)
+ */
 u32 __initdata __visible main_extable_sort_needed = 1;
 
 /* Sort the kernel's built-in exception table */
 void __init sort_main_extable(void)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * 이분 검색(binary search)을 위해 extable을 정렬한다.
+ */
 	if (main_extable_sort_needed && __stop___ex_table > __start___ex_table) {
 		pr_notice("Sorting __ex_table...\n");
 		sort_extable(__start___ex_table, __stop___ex_table);

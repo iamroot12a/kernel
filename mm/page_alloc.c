@@ -215,7 +215,17 @@ static char * const zone_names[MAX_NR_ZONES] = {
 int min_free_kbytes = 1024;
 int user_min_free_kbytes = -1;
 
+/* IAMROOT-12AB:
+ * -------------
+ * lowmem - mem_page - cma_reserve 페이지 수
+ */
+
 static unsigned long __meminitdata nr_kernel_pages;
+
+/* IAMROOT-12AB:
+ * -------------
+ * 전체 free 페이지 수
+ */
 static unsigned long __meminitdata nr_all_pages;
 static unsigned long __meminitdata dma_reserve;
 
@@ -6668,11 +6678,28 @@ void *__init alloc_large_system_hash(const char *tablename,
 	void *table = NULL;
 
 	/* allow the kernel cmdline to have a say */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 만들어야 할 엔트리 수를 지정하지 않은 경우 nr_kernel 페이지를 1M 단위로 한 수
+ *	- HASH_SMALL 옵션: 최소 16개 엔트리 수
+ *	- 옵션 없는 경우:  최소 1페이지에 들어갈 엔트리 수
+ */
 	if (!numentries) {
 		/* round applicable memory size up to nearest megabyte */
+
+/* IAMROOT-12AB:
+ * -------------
+ * ZONE_NORMAL의 mem_map(및 cma_reserve)을 제외한 free 페이지 수
+ */
 		numentries = nr_kernel_pages;
 
 		/* It isn't necessary when PAGE_SIZE >= 1MB */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 페이지가 1M보다 작은 사이즈인 경우 1M 단위로 round up
+ */
 		if (PAGE_SHIFT < 20)
 			numentries = round_up(numentries, (1<<20)/PAGE_SIZE);
 
@@ -6686,29 +6713,64 @@ void *__init alloc_large_system_hash(const char *tablename,
 		if (unlikely(flags & HASH_SMALL)) {
 			/* Makes no sense without HASH_EARLY */
 			WARN_ON(!(flags & HASH_EARLY));
+
+/* IAMROOT-12AB:
+ * -------------
+ * numentries가 16보다 작으면 16으로 고정
+ *
+ * hash_shift: 기본 값이 4
+ */
 			if (!(numentries >> *_hash_shift)) {
 				numentries = 1UL << *_hash_shift;
 				BUG_ON(!numentries);
 			}
+
+/* IAMROOT-12AB:
+ * -------------
+ * 엔트리들의 사용이 한 페이지 미만인 경우 최소 한 페이지를 채운다.
+ */
 		} else if (unlikely((numentries * bucketsize) < PAGE_SIZE))
 			numentries = PAGE_SIZE / bucketsize;
 	}
+
+/* IAMROOT-12AB:
+ * -------------
+ * 2의 차수단위로 round up
+ */
 	numentries = roundup_pow_of_two(numentries);
 
 	/* limit allocation size to 1/16 total memory by default */
+
+/* IAMROOT-12AB:
+ * -------------
+ * limit 값으로 max에 0을 설정하는 경우 전체 free 메모리의 1/16에 해당하는 크기를
+ * 초과하지 않도록 한다. (최대: 0x80000000)
+ */
 	if (max == 0) {
 		max = ((unsigned long long)nr_all_pages << PAGE_SHIFT) >> 4;
 		do_div(max, bucketsize);
 	}
 	max = min(max, 0x80000000ULL);
 
+/* IAMROOT-12AB:
+ * -------------
+ * low_limit <= numentries <= max 와 같이 제한
+ */
 	if (numentries < low_limit)
 		numentries = low_limit;
 	if (numentries > max)
 		numentries = max;
 
+/* IAMROOT-12AB:
+ * -------------
+ * ilog2(4096) -> 12
+ */
 	log2qty = ilog2(numentries);
 
+/* IAMROOT-12AB:
+ * -------------
+ * 할당이 안되면 log2qty를 줄여가며 반복하여 할당을 시도한다.
+ */
 	do {
 		size = bucketsize << log2qty;
 		if (flags & HASH_EARLY)
