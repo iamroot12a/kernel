@@ -319,3 +319,11 @@ page_address_init()
 ### 71주차
 - 2016.08.27, 선릉 Kosslab (9명, 권경환, 김종철, 문영일, 박진영, 양유석, 유계성, 윤창호, 조현철, 최영민)
  - jump_label_init()
+
+### 72주차
+- 2016.09.03, 토즈 선릉점 (9명, 권경환, 김종철, 문영일, 박진영, 양유석, 유계성, 윤창호, 조현철, 최영민)
+ - setup_log_buf()
+ - pidhash_init()
+ - vfs_caches_init_early()
+ - sort_main_extable()
+ - trap_init()
