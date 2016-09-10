@@ -327,3 +327,7 @@ page_address_init()
  - vfs_caches_init_early()
  - sort_main_extable()
  - trap_init()
+
+### 73주차
+- 2016.09.10, 선릉 Kosslab (8명, 권경환, 문영일, 박진영, 유계성, 윤창호, 조현철, 최영민, 한상종)
+ - mm_init() -> page_ext_init_flatmem()
