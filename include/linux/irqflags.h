@@ -144,6 +144,8 @@
 /* IAMROOT-12AB:
  * -------------
  * TRACE가 아닌 실제 
+ *
+ * 현재 irq mask 상태를 저장하고 cpu core irq(CPSR)를 disable한다.
  */
 #define local_irq_enable()	do { raw_local_irq_enable(); } while (0)
 #define local_irq_disable()	do { raw_local_irq_disable(); } while (0)
@@ -151,6 +153,10 @@
 	do {							\
 		raw_local_irq_save(flags);			\
 	} while (0)
+/* IAMROOT-12AB:
+ * -------------
+ * 저장했던 irq mask 상태를 복원한다.
+ */
 #define local_irq_restore(flags) do { raw_local_irq_restore(flags); } while (0)
 #define local_save_flags(flags)	do { raw_local_save_flags(flags); } while (0)
 #define irqs_disabled()		(raw_irqs_disabled())

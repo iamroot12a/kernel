@@ -113,6 +113,12 @@ void __meminit pgdat_page_ext_init(struct pglist_data *pgdat)
 	pgdat->node_page_ext = NULL;
 }
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * page로 page_ext를 찾는다.
+ */
+
 struct page_ext *lookup_page_ext(struct page *page)
 {
 	unsigned long pfn = page_to_pfn(page);

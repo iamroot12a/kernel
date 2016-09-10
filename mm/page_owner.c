@@ -71,6 +71,13 @@ void __reset_page_owner(struct page *page, unsigned int order)
 	}
 }
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * page_ext에 order, gfp_mask를 설정하고 플래그에 
+ * PAGE_EXT_OWNER 비트를 설정한다.
+ */
+
 void __set_page_owner(struct page *page, unsigned int order, gfp_t gfp_mask)
 {
 	struct page_ext *page_ext = lookup_page_ext(page);
@@ -303,6 +310,11 @@ static void init_early_allocated_pages(void)
 {
 	pg_data_t *pgdat;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 왜 drain_all_pages()를 하는가?
+ * HOTPLUG 의 경우?
+ */
 	drain_all_pages(NULL);
 
 /* IAMROOT-12AB:

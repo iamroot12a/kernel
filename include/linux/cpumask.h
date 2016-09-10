@@ -223,6 +223,10 @@ int cpumask_set_cpu_local_first(int i, int numa_node, cpumask_t *dstp);
  *
  * After the loop, cpu is >= nr_cpu_ids.
  */
+/* IAMROOT-12AB:
+ * -------------
+ * cpu: mask에서 나오는 출력 인수
+ */
 #define for_each_cpu(cpu, mask)				\
 	for ((cpu) = -1;				\
 		(cpu) = cpumask_next((cpu), (mask)),	\
@@ -541,6 +545,13 @@ static inline void cpumask_copy(struct cpumask *dstp,
  * @src2p: the second input
  *
  * Returns >= nr_cpu_ids if no cpus set in both.  See also cpumask_next_and().
+ */
+
+/* IAMROOT-12AB:
+ * -------------
+ * src1p 마스크(비트맵)와 src2p 마스크를 엔드 연산을 해서 set 비트가 가장 
+ * 처음 발견되는 비트위치
+ * ex) (*src1p=0b_1010_1010, *src2p=0b_0000_1111) => 0b_0000_1010 => 1
  */
 #define cpumask_first_and(src1p, src2p) cpumask_next_and(-1, (src1p), (src2p))
 

@@ -716,6 +716,7 @@ static inline int free_pages_check(struct page *page)
  * And clear the zone's pages_scanned counter, to hold off the "all pages are
  * pinned" detection logic.
  */
+
 static void free_pcppages_bulk(struct zone *zone, int count,
 					struct per_cpu_pages *pcp)
 {
@@ -1363,6 +1364,11 @@ void drain_zone_pages(struct zone *zone, struct per_cpu_pages *pcp)
  * thread pinned to the current processor or a processor that
  * is not online.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * pcp에서 관리하는 order 0 페이지를 버디 시스템으로 내보낸다.
+ */
 static void drain_pages_zone(unsigned int cpu, struct zone *zone)
 {
 	unsigned long flags;
@@ -1386,6 +1392,12 @@ static void drain_pages_zone(unsigned int cpu, struct zone *zone)
  * The processor must either be the current processor and the
  * thread pinned to the current processor or a processor that
  * is not online.
+ */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 모든 활성화 된 zone의 pcp에서 관리하는 order 0 페이지를 
+ * 버디 시스템으로 내보낸다.
  */
 static void drain_pages(unsigned int cpu)
 {

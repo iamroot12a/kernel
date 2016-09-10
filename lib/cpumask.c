@@ -34,6 +34,19 @@ EXPORT_SYMBOL(__next_cpu_nr);
  *
  * Returns >= nr_cpu_ids if no further cpus set in both.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * n:이전 검색되었던 위치
+ * *src1p: 비트맵
+ * *src2p: 비트맵
+ * (*src1p & *src2p) 에서 n이 가리키는 다음 비트에서 발견되는 set 비트 위치 
+ * 발견되지 않으면 nr_cpu_ids와 같거나 큰 값
+ * ex) (n=-1, *src1p=0b_1010_1010, *src2p=0b_0000_1111) => 1
+ * ex) (n= 0, *src1p=0b_1010_1010, *src2p=0b_0000_1111) => 1
+ * ex) (n= 1, *src1p=0b_1010_1010, *src2p=0b_0000_1111) => 3
+ * ex) (n= 2, *src1p=0b_1010_1010, *src2p=0b_0000_1111) => 3
+ */
 int cpumask_next_and(int n, const struct cpumask *src1p,
 		     const struct cpumask *src2p)
 {

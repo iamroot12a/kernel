@@ -241,6 +241,16 @@ extern int _find_next_bit_be(const unsigned long *p, int size, int offset);
 #define find_first_zero_bit(p,sz)	_find_first_zero_bit_le(p,sz)
 #define find_next_zero_bit(p,sz,off)	_find_next_zero_bit_le(p,sz,off)
 #define find_first_bit(p,sz)		_find_first_bit_le(p,sz)
+/*
+ * IAMROOT-12AB:
+ * -------------
+ * p: 비트맵 주소
+ * sz: 검색할 비트수
+ * off: 검색을 시작할 비트번호(0번부터~)
+ * ex) 비트 0에서 1이 발견된 경우 (*p=0000_0001, sz=8, off=0) => 0
+ *                                (*p=0000_0100, sz=8, off=0) => 2
+ *                발견되지 않으면 (*p=0000_0000, sz=8, off=0) => 8
+ */
 #define find_next_bit(p,sz,off)		_find_next_bit_le(p,sz,off)
 
 #else

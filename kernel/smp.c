@@ -105,12 +105,23 @@ void __init call_function_init(void)
  * previous function call. For multi-cpu calls its even more interesting
  * as we'll have to ensure no other cpu is observing our csd.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * IPI 
+ */
+
 static void csd_lock_wait(struct call_single_data *csd)
 {
 	while (csd->flags & CSD_FLAG_LOCK)
 		cpu_relax();
 }
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 락이 걸려있으면 기다렸다가 자기가 락을 다시 건다. 
+ */
 static void csd_lock(struct call_single_data *csd)
 {
 	csd_lock_wait(csd);
@@ -385,6 +396,14 @@ EXPORT_SYMBOL_GPL(smp_call_function_any);
  * hardware interrupt handler or from a bottom half handler. Preemption
  * must be disabled when calling this function.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * IPI 콜을 이용해서 다른 online cpu들 중 maskcpu 한테 smp_call_function()을
+ * 실행하도록 인터럽트를 보낸다. (자기 cpu는 제외) 
+ *
+ * wait: csd lock 메커니즘을 이용해서 다른 cpu 처리가 다 끝날때 까지 기다린다.
+ */
 void smp_call_function_many(const struct cpumask *mask,
 			    smp_call_func_t func, void *info, bool wait)
 {
@@ -414,6 +433,15 @@ void smp_call_function_many(const struct cpumask *mask,
 	if (next_cpu == this_cpu)
 		next_cpu = cpumask_next_and(next_cpu, mask, cpu_online_mask);
 
+/* IAMROOT-12AB:
+ * -------------
+ * 처리할 cpu가 1개이면서 자기 cpu인 경우 처리하지 않고 리턴
+
+ * Fastpath:
+ * 	처리할 cpu가 1개이면서 자기 cpu가 아닌 경우 smp_call_function_single() 호출 
+ * Slowpath:
+ * 	자료구조를 준비한 다음에 arch_send_call_function_ipi_mask() 호출
+ */
 	/* Fastpath: do that cpu by itself. */
 	if (next_cpu >= nr_cpu_ids) {
 		smp_call_function_single(cpu, func, info, wait);
@@ -425,10 +453,15 @@ void smp_call_function_many(const struct cpumask *mask,
 	cpumask_and(cfd->cpumask, mask, cpu_online_mask);
 	cpumask_clear_cpu(this_cpu, cfd->cpumask);
 
+
 	/* Some callers race with other cpus changing the passed mask */
 	if (unlikely(!cpumask_weight(cfd->cpumask)))
 		return;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 처리할 각 cpu의 call_single_queue에 준비한 자료구조 &csd를 추가
+ */
 	for_each_cpu(cpu, cfd->cpumask) {
 		struct call_single_data *csd = per_cpu_ptr(cfd->csd, cpu);
 
@@ -438,6 +471,17 @@ void smp_call_function_many(const struct cpumask *mask,
 		llist_add(&csd->llist, &per_cpu(call_single_queue, cpu));
 	}
 
+/* IAMROOT-12AB:
+ * -------------
+ * rpi2의 경우
+ * set_smp_cross_call()를 사용하여 bcm2835_send_doorbell()함수를 등록하여
+ * 호출한다.
+ * rpi2(armv7)의 경우는 cpu간 통신을 하는 IPI를 위해 mailbox를 사용한다.
+ * 일반적으로 arm cpu를 사용하는 경우는 GIC를 같이 사용하여 IPI를 제공한다.
+ *
+ * 최초 mm_init()에서 호출한 시점에는 살아있는 cpu는 master 뿐이라 이코드는
+ * 호출되지 않을 것이다.
+ */
 	/* Send a message to all CPUs in the map */
 	arch_send_call_function_ipi_mask(cfd->cpumask);
 
@@ -610,11 +654,23 @@ EXPORT_SYMBOL(on_each_cpu);
 void on_each_cpu_mask(const struct cpumask *mask, smp_call_func_t func,
 			void *info, bool wait)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * get_cpu() 에서 preempt_disable() 선점 못하게 막고
+ * set_cpu() 에서 preempt_enable()
+ */
 	int cpu = get_cpu();
 
 	smp_call_function_many(mask, func, info, wait);
+
+/* IAMROOT-12AB:
+ * -------------
+ * 자기 cpu(master)에 대한 처리가 필요한 경우 직접 함수를 호출한다.
+ */
 	if (cpumask_test_cpu(cpu, mask)) {
 		unsigned long flags;
+
 		local_irq_save(flags);
 		func(info);
 		local_irq_restore(flags);

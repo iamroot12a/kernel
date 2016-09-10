@@ -49,6 +49,12 @@ do { \
 
 #define preempt_enable_no_resched() sched_preempt_enable_no_resched()
 
+/* IAMROOT-12AB:
+ * -------------
+ * 임베디드용 CONFIG_PREEMPT => rpi2
+ * 데스크탑용 CONFIG_PREEMPT_VOLOUNTARY
+ * 서버용 설정은 안한다.
+ */
 #ifdef CONFIG_PREEMPT
 #define preempt_enable() \
 do { \

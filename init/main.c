@@ -594,6 +594,18 @@ static void __init mm_init(void)
 	 * page_ext requires contiguous pages,
 	 * bigger than MAX_ORDER unless SPARSEMEM.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 1) &debug_guardpage_ops
+ * 2) &page_poisoning_ops
+ * 3) &page_owner_ops
+ *
+ * flatmem에서 상기 3개 항목에대한 invoke_need_callbacks()와 
+ * invoke_init_callbacks() 콜백 함수를 호출한다.
+ *
+ * sparse mem에서는 page_ext를 나중에 초기화 한다.(page_ext_init())
+ */
 	page_ext_init_flatmem();
 	mem_init();
 	kmem_cache_init();
