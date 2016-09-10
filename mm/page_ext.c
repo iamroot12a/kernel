@@ -51,6 +51,11 @@
  * can utilize this callback to initialize the state of it correctly.
  */
 
+/* IAMROOT-12AB:
+ * -------------
+ * debug_guardpage_ops에는 null로 초기화되어 있고,
+ * 나머지 두 개의 ops에는 각각 2개씩 함수가 연결되어 있다.
+ */
 static struct page_ext_operations *page_ext_ops[] = {
 	&debug_guardpage_ops,
 #ifdef CONFIG_PAGE_POISONING
@@ -63,11 +68,20 @@ static struct page_ext_operations *page_ext_ops[] = {
 
 static unsigned long total_usage;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 등록되어 있는 page_ext_ops[]의 need에 연결된 함수들 중 하나의 결과가 true가 
+ * 발생하면 true를 반환한다. 그렇지 않으면 false
+ */
 static bool __init invoke_need_callbacks(void)
 {
 	int i;
 	int entries = ARRAY_SIZE(page_ext_ops);
 
+/* IAMROOT-12AB:
+ * -------------
+ * 컴파일 옵션에 따라 1~3개의 엔트리를 가진다.
+ */
 	for (i = 0; i < entries; i++) {
 		if (page_ext_ops[i]->need && page_ext_ops[i]->need())
 			return true;
@@ -81,6 +95,10 @@ static void __init invoke_init_callbacks(void)
 	int i;
 	int entries = ARRAY_SIZE(page_ext_ops);
 
+/* IAMROOT-12AB:
+ * -------------
+ * page_ext_ops[]->init에 등록된 초기화 함수를 호출한다.
+ */
 	for (i = 0; i < entries; i++) {
 		if (page_ext_ops[i]->init)
 			page_ext_ops[i]->init();
@@ -123,6 +141,12 @@ static int __init alloc_node_page_ext(int nid)
 	unsigned long table_size;
 	unsigned long nr_pages;
 
+/* IAMROOT-12AB:
+ * -------------
+ * page_ext 구조체용 메모리를 페이지 수 만큼 할당한다.
+ * (정렬되어 있지 않은 경우 MAX_ORDER_NR_PAGES(2^(MAX_ORDER-1))만큼 추가 할당한다)
+ * 노드 구조체의 node_page_ext는 이 page_ext를 가리킨다.
+ */
 	nr_pages = NODE_DATA(nid)->node_spanned_pages;
 	if (!nr_pages)
 		return 0;
@@ -148,14 +172,27 @@ static int __init alloc_node_page_ext(int nid)
 	return 0;
 }
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * FLATMEM을 사용하는 32bit ARM에서 사용
+ */
 void __init page_ext_init_flatmem(void)
 {
-
 	int nid, fail;
 
+/* IAMROOT-12AB:
+ * -------------
+ * page_ext_ops[]->need에 등록된 함수들에서 하나도 true 발생하지 않으면 return 
+ */
 	if (!invoke_need_callbacks())
 		return;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 노드가 사용하는 페이지 만큼 page_ext[]를 각 노드에 할당한다.
+ * 각 노드의 node_page_ext는 할당된 메모리를 가리킨다.
+ */
 	for_each_online_node(nid)  {
 		fail = alloc_node_page_ext(nid);
 		if (fail)

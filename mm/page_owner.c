@@ -12,6 +12,10 @@ bool page_owner_inited __read_mostly;
 
 static void init_early_allocated_pages(void);
 
+/* IAMROOT-12AB:
+ * -------------
+ * 커널 파라메터 "page_owner=on"를 지정하는 경우 page_owner_disabled=false가 대입된다.
+ */
 static int early_page_owner_param(char *buf)
 {
 	if (!buf)
@@ -24,6 +28,12 @@ static int early_page_owner_param(char *buf)
 }
 early_param("page_owner", early_page_owner_param);
 
+/* IAMROOT-12AB:
+ * -------------
+ * 커널 파라메터 "page_owner=on"를 지정하는 경우 page_owner_disabled=false가 
+ * 대입되고 이 함수에서 true를 반환한다. 그리고 지정되어 있지 않은 경우 
+ * false를 반환한다.
+ */
 static bool need_page_owner(void)
 {
 	if (page_owner_disabled)
@@ -37,6 +47,10 @@ static void init_page_owner(void)
 	if (page_owner_disabled)
 		return;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 페이지를 누가 소유하고 있는지 추적할 수 있도록 page_owner_inited를 true로 설정한다.
+ */
 	page_owner_inited = true;
 	init_early_allocated_pages();
 }
@@ -271,6 +285,10 @@ static void init_zones_in_node(pg_data_t *pgdat)
 	struct zone *node_zones = pgdat->node_zones;
 	unsigned long flags;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 노드에서 활성화된 zone에 대한 page_ext[]를 초기화한다.
+ */
 	for (zone = node_zones; zone - node_zones < MAX_NR_ZONES; ++zone) {
 		if (!populated_zone(zone))
 			continue;
@@ -286,6 +304,11 @@ static void init_early_allocated_pages(void)
 	pg_data_t *pgdat;
 
 	drain_all_pages(NULL);
+
+/* IAMROOT-12AB:
+ * -------------
+ * 각 노드에서 활성화된 zone에 대한 page_ext[]를 초기화한다.
+ */
 	for_each_online_pgdat(pgdat)
 		init_zones_in_node(pgdat);
 }

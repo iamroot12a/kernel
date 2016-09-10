@@ -5,6 +5,11 @@
 #include <linux/stacktrace.h>
 
 struct pglist_data;
+
+/* IAMROOT-12AB:
+ * -------------
+ * page_ext에서 사용하는 ops
+ */
 struct page_ext_operations {
 	bool (*need)(void);
 	void (*init)(void);

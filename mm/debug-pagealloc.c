@@ -10,6 +10,12 @@ static bool page_poisoning_enabled __read_mostly;
 
 static bool need_page_poisoning(void)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * _debug_pagealloc_enabled 상태를 반환한다.
+ * 커널 파라메터 "debug_pagealloc=on"을 사용하여 커널 컴파일 없이 디버깅을 할 수 있다.
+ * (CONFIG_DEBUG_PAGEALLOC 커널 옵션을 미리 사용하여 컴파일 되어 있어야 한다.)
+ */
 	if (!debug_pagealloc_enabled())
 		return false;
 
@@ -21,6 +27,11 @@ static void init_page_poisoning(void)
 	if (!debug_pagealloc_enabled())
 		return;
 
+/* IAMROOT-12AB:
+ * -------------
+ * page_poisoning_enabled를 true로 설정하여 추후 페이지 할당자에서 
+ * poison을 이용한 디버깅을 할 수 있도록 한다.
+ */
 	page_poisoning_enabled = true;
 }
 

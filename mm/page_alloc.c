@@ -419,6 +419,11 @@ unsigned int _debug_guardpage_minorder;
 bool _debug_pagealloc_enabled __read_mostly;
 bool _debug_guardpage_enabled __read_mostly;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 커널 파라메터 "debug_pagealloc=on"을 사용하여 커널 컴파일 없이 디버깅을 할 수 있다.
+ * (CONFIG_DEBUG_PAGEALLOC 커널 옵션을 미리 사용하여 컴파일 되어 있어야 한다.)
+ */
 static int __init early_debug_pagealloc(char *buf)
 {
 	if (!buf)
@@ -1426,6 +1431,11 @@ void drain_all_pages(struct zone *zone)
 	 * Allocate in the BSS so we wont require allocation in
 	 * direct reclaim path for CONFIG_CPUMASK_OFFSTACK=y
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 버디시스템에서 사용하는 pcp가 사용되는 경우 cpu별로 마스크한다.
+ */
 	static cpumask_t cpus_with_pcps;
 
 	/*
@@ -1434,11 +1444,23 @@ void drain_all_pages(struct zone *zone)
 	 * cpu to drain that CPU pcps and on_each_cpu_mask
 	 * disables preemption as part of its processing
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * online cpu 수만큼 루프를 돈다.
+ */
 	for_each_online_cpu(cpu) {
 		struct per_cpu_pageset *pcp;
 		struct zone *z;
 		bool has_pcps = false;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 인수 zone이 지정되는 경우 해당 zone만 검색하고 
+ * 그렇지 않은 경우 전체 활성화된 zone에 대해서 수행한다.
+ *
+ * 해당 zone의 pcp가 해당 cpu에서 사용되고 있는 경우 has_pcps가 true로 설정된다.
+ */
 		if (zone) {
 			pcp = per_cpu_ptr(zone->pageset, cpu);
 			if (pcp->pcp.count)
@@ -1453,11 +1475,20 @@ void drain_all_pages(struct zone *zone)
 			}
 		}
 
+/* IAMROOT-12AB:
+ * -------------
+ * 현재 cpu에 해당하는 비트를 clear하거나 set한다.
+ */
 		if (has_pcps)
 			cpumask_set_cpu(cpu, &cpus_with_pcps);
 		else
 			cpumask_clear_cpu(cpu, &cpus_with_pcps);
 	}
+
+/* IAMROOT-12AB:
+ * -------------
+ * pcp를 drain 해야할 cpu에 대해 IPI를 사용하여 수행한다.
+ */
 	on_each_cpu_mask(&cpus_with_pcps, (smp_call_func_t) drain_local_pages,
 								zone, 1);
 }
