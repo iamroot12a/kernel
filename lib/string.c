@@ -809,6 +809,12 @@ static void *check_bytes8(const u8 *start, u8 value, unsigned int bytes)
  * returns the address of the first character other than @c, or %NULL
  * if the whole buffer contains just @c.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 지정된 주소부터 bytes 만큼 c가 아닌 값이 있는지 찾아 그 주소를 반환한다.
+ * 정상적으로 모든 값이 c가 있는 경우 null을 반환한다.
+ */
 void *memchr_inv(const void *start, int c, size_t bytes)
 {
 	u8 value = c;

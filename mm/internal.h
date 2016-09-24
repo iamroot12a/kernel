@@ -17,6 +17,11 @@
 void free_pgtables(struct mmu_gather *tlb, struct vm_area_struct *start_vma,
 		unsigned long floor, unsigned long ceiling);
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 페이지의 사용카운터를 설정한다.
+ */
 static inline void set_page_count(struct page *page, int v)
 {
 	atomic_set(&page->_count, v);
@@ -39,6 +44,11 @@ static inline unsigned long ra_submit(struct file_ra_state *ra,
 /*
  * Turn a non-refcounted page (->_count == 0) into refcounted with
  * a count of one.
+ */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 페이지가 참조(사용)된 횟수를 설정한다.
  */
 static inline void set_page_refcounted(struct page *page)
 {

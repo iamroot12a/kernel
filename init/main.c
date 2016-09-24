@@ -614,7 +614,6 @@ static void __init mm_init(void)
 	vmalloc_init();
 }
 
-
 /* IAMROOT-12A:
  * ------------
  * asmlinkage: extern "C"

@@ -539,6 +539,11 @@ free_memmap(unsigned long start_pfn, unsigned long end_pfn)
 /*
  * The mem_map array can get very big.  Free the unused area of the memory map.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 실제 메모리를 관리하지 않는 mem_map 공간을 제거(free)한다.
+ */
 static void __init free_unused_memmap(void)
 {
 	unsigned long start, prev_end = 0;
@@ -564,12 +569,22 @@ static void __init free_unused_memmap(void)
 		 * memmap entries are valid from the bank start aligned to
 		 * MAX_ORDER_NR_PAGES.
 		 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * mem_map은 최소 MAX_ORDER_NR_PAGES(arm32=4M) 메모리 공간단위로 관리한다.
+ */
 		start = round_down(start, MAX_ORDER_NR_PAGES);
 #endif
 		/*
 		 * If we had a previous bank, and there is a space
 		 * between the current bank and the previous, free it.
 		 */
+/* IAMROOT-12AB:
+ * -------------
+ * 이전 memblock의 끝 주소와 현재 memblock의 시작 주소간에 공간이 있는 경우 
+ * 그 공간을 커버하는 mem_map을 free 한다.
+ */
 		if (prev_end && prev_end < start)
 			free_memmap(prev_end, start);
 
@@ -582,6 +597,10 @@ static void __init free_unused_memmap(void)
 				 MAX_ORDER_NR_PAGES);
 	}
 
+/* IAMROOT-12AB:
+ * -------------
+ * 남은 메모리가 섹션보다 작은 경우 관리할 필요가 없는 mem_map 공간을 free 한다.
+ */
 #ifdef CONFIG_SPARSEMEM
 	if (!IS_ALIGNED(prev_end, PAGES_PER_SECTION))
 		free_memmap(prev_end,
@@ -658,6 +677,10 @@ void __init mem_init(void)
 	extern u32 itcm_end;
 #endif
 
+/* IAMROOT-12AB:
+ * -------------
+ * 전역 max_mapnr에 유효한 mem_map 최대 갯수
+ */
 	set_max_mapnr(pfn_to_page(max_pfn) - mem_map);
 
 	/* this will put all unused low memory onto the freelists */

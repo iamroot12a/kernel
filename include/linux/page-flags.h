@@ -397,6 +397,11 @@ static inline void ClearPageCompound(struct page *page)
  * because PageCompound is always set for compound pages and not for
  * pages on the LRU and/or pagecache.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * compound 페이지 여부를 반환한다.
+ */
 TESTPAGEFLAG(Compound, compound)
 __SETPAGEFLAG(Head, compound)  __CLEARPAGEFLAG(Head, compound)
 

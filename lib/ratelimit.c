@@ -25,11 +25,20 @@
  * 0 means callbacks will be suppressed.
  * 1 means go ahead and do it.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 함수 결과가 1인 경우 계속 진행한다는 의미
+ */
 int ___ratelimit(struct ratelimit_state *rs, const char *func)
 {
 	unsigned long flags;
 	int ret;
 
+/* IAMROOT-12AB:
+ * -------------
+ * interval이 0으로 설정되면 제한 없이 계속 진행한다는 의미
+ */
 	if (!rs->interval)
 		return 1;
 
@@ -42,9 +51,18 @@ int ___ratelimit(struct ratelimit_state *rs, const char *func)
 	if (!raw_spin_trylock_irqsave(&rs->lock, flags))
 		return 0;
 
+/* IAMROOT-12AB:
+ * -------------
+ * begin이 0인 경우 bigin에 현재 jiffies를 기록한다.
+ */
 	if (!rs->begin)
 		rs->begin = jiffies;
 
+/* IAMROOT-12AB:
+ * ------------ -
+ * interval 이후에는 missed 카운트가 발생한 경우 정산하여 출력한다.
+ * (출력시에 더 이상 호출을 포기한 callback 함수명과 missed 카운트를 나타낸다)
+ */
 	if (time_is_before_jiffies(rs->begin + rs->interval)) {
 		if (rs->missed)
 			printk(KERN_WARNING "%s: %d callbacks suppressed\n",
@@ -53,6 +71,11 @@ int ___ratelimit(struct ratelimit_state *rs, const char *func)
 		rs->printed = 0;
 		rs->missed  = 0;
 	}
+
+/* IAMROOT-12AB:
+ * -------------
+ * 정상 호출 시 printed가 증가되고, 그렇지 않은 경우 missed가 증가된다.
+ */
 	if (rs->burst && rs->burst > rs->printed) {
 		rs->printed++;
 		ret = 1;

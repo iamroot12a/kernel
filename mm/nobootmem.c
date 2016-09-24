@@ -28,6 +28,12 @@ struct pglist_data __refdata contig_page_data;
 EXPORT_SYMBOL(contig_page_data);
 #endif
 
+/* IAMROOT-12AB:
+ * -------------
+ * min_low_pfn: DRAM 가장 하위 pfn 
+ * max_low_pfn: highmem 시작 pfn 
+ * max_pfn: DRAM 끝 pfn+1
+ */
 unsigned long max_low_pfn;
 unsigned long min_low_pfn;
 unsigned long max_pfn;
@@ -87,11 +93,30 @@ static void __init __free_pages_memory(unsigned long start, unsigned long end)
 	int order;
 
 	while (start < end) {
+
+/* IAMROOT-12AB:
+ * -------------
+ * 버디 시스템은 MAX_ORDER-1 단위의 order를 등록하지 않기 때문에 min() 함수로 
+ * 잘라낸다. (arm32: MAX_ORDER=11, 버디시스템에 최대 4M 단위 페이지가 등록된다)
+ *
+ * 메모리 영역의 시작 부분 관련
+ *	- 시작 pfn으로 order를 먼저 결정을 한다. 
+ *	- 단 MAX_ORDER-1을 넘지 않도록 제한한다.
+ */
 		order = min(MAX_ORDER - 1UL, __ffs(start));
 
+/* IAMROOT-12AB:
+ * -------------
+ * 메모리 영역의 끝 부분 관련
+ *	- order를 더해 end를 초과하는 경우 order를 줄여나간다. 
+ */
 		while (start + (1UL << order) > end)
 			order--;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 해재할 메모리를 order 단위로 버디시스템에 돌려준다(free)
+ */
 		__free_pages_bootmem(pfn_to_page(start), order);
 
 		start += (1UL << order);
@@ -102,6 +127,11 @@ static unsigned long __init __free_memory_core(phys_addr_t start,
 				 phys_addr_t end)
 {
 	unsigned long start_pfn = PFN_UP(start);
+
+/* IAMROOT-12AB:
+ * -------------
+ * 지정된 end 영역이 lowmem을 초과하지 않도록 한다.
+ */
 	unsigned long end_pfn = min_t(unsigned long,
 				      PFN_DOWN(end), max_low_pfn);
 
@@ -119,11 +149,22 @@ static unsigned long __init free_low_memory_core_early(void)
 	phys_addr_t start, end;
 	u64 i;
 
+/* IAMROOT-12AB:
+ * -------------
+ * memblock 전체에서 MEMBLOCK_HOTPLUG 플래그를 제거한다.
+ */
 	memblock_clear_hotplug(0, -1);
 
 	for_each_free_mem_range(i, NUMA_NO_NODE, &start, &end, NULL)
 		count += __free_memory_core(start, end);
 
+/* IAMROOT-12AB:
+ * -------------
+ * memblock을 관리하는 구조체들이 버디시스템으로 전환 후에 필요 없어지므로 
+ * 사용했던 구조체들을 삭제한다. 
+ * (단 HOTPLUG 옵션이 사용되는 경우 memblock은 계속 필요하다)
+ *
+ */
 #ifdef CONFIG_ARCH_DISCARD_MEMBLOCK
 	{
 		phys_addr_t size;
@@ -145,6 +186,10 @@ static unsigned long __init free_low_memory_core_early(void)
 
 static int reset_managed_pages_done __initdata;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 지정된 노드에 있는 zone의 managed_pages를 clear 한다.
+ */
 void reset_node_managed_pages(pg_data_t *pgdat)
 {
 	struct zone *z;
@@ -153,10 +198,18 @@ void reset_node_managed_pages(pg_data_t *pgdat)
 		z->managed_pages = 0;
 }
 
+/* IAMROOT-12AB:
+ * -------------
+ * 전체 노드의 zone->managed_pages를 clear 한다.
+ */
 void __init reset_all_zones_managed_pages(void)
 {
 	struct pglist_data *pgdat;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 두 번 이상 호출되는 것을 막는다.
+ */
 	if (reset_managed_pages_done)
 		return;
 

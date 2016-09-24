@@ -65,6 +65,10 @@ void __reset_page_owner(struct page *page, unsigned int order)
 	int i;
 	struct page_ext *page_ext;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 2^order 만큼의 페이지에 대해 page_ext를 찾아 PAGE_EXT_ONWER 플래그를 clear한다.
+ */
 	for (i = 0; i < (1 << order); i++) {
 		page_ext = lookup_page_ext(page + i);
 		__clear_bit(PAGE_EXT_OWNER, &page_ext->flags);

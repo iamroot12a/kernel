@@ -47,6 +47,13 @@ struct page {
 	/* First double word block */
 	unsigned long flags;		/* Atomic flags, some possibly
 					 * updated asynchronously */
+/* IAMROOT-12AB:
+ * -------------
+ * page->mapping은 다음과 같이 두 가지 용도로 사용한다.
+ *      1) 원래 address_space 구조체를 가리킨다.
+ *      2) 특별히 PAGE_MAPPING_ANON 비트를 같이 설정하여
+ *      anon_vma 구조체를 가리키는 용도로도 사용한다.
+ */
 	union {
 		struct address_space *mapping;	/* If low bit clear, points to
 						 * inode address_space, or NULL.
@@ -107,6 +114,11 @@ struct page {
 					 * never succeed on tail
 					 * pages.
 					 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 페이지 매핑된 경우 증가
+ */
 					atomic_t _mapcount;
 
 					struct { /* SLUB */
@@ -116,6 +128,11 @@ struct page {
 					};
 					int units;	/* SLOB */
 				};
+
+/* IAMROOT-12AB:
+ * -------------
+ * 참조(사용) 카운터
+ */
 				atomic_t _count;		/* Usage count, see below. */
 			};
 			unsigned int active;	/* SLAB */
@@ -147,6 +164,13 @@ struct page {
 		/* First tail page of compound page */
 		struct {
 			compound_page_dtor *compound_dtor;
+
+/* IAMROOT-12AB:
+ * -------------
+ * 버디에 등록된 compound 페이지의 order 정보는 두 번째 page에 저장된다.
+ * 첫 번째 페이지는 버디리스트에 연결될 때 lru를 사용하는데 같은 union으로 
+ * 이용된다.
+ */
 			unsigned long compound_order;
 		};
 
@@ -172,6 +196,11 @@ struct page {
 #endif
 #endif
 		struct kmem_cache *slab_cache;	/* SL[AU]B: Pointer to slab */
+
+/* IAMROOT-12AB:
+ * -------------
+ * compound 페이지 구성 시 두번째 페이지 부터 첫번째 page 구조체를 가리킨다.
+ */
 		struct page *first_page;	/* Compound tail pages */
 	};
 

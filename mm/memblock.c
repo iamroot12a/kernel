@@ -380,6 +380,11 @@ static void __init_memblock memblock_remove_region(struct memblock_type *type, u
 
 #ifdef CONFIG_ARCH_DISCARD_MEMBLOCK
 
+/* IAMROOT-12AB:
+ * -------------
+ * memblock.reserved.regions 구조체의 주소를 출력인수 addr에 저장하고 
+ * 할당된 엔트리 갯 수를 반환한다.
+ */
 phys_addr_t __init_memblock get_allocated_memblock_reserved_regions_info(
 					phys_addr_t *addr)
 {
@@ -952,6 +957,15 @@ int __init_memblock memblock_reserve(phys_addr_t base, phys_addr_t size)
  *
  * Return 0 on succees, -errno on failure.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 지정된 영역의 flag를 변경
+ *	- 먼저 지정된 영역을 isolation한 후
+ *	- 플래그를 설정/해제 하고 
+ *	- memblock을 merge한다.(flag가 같은 노드 메모리는 통합 가능)
+ */
+
 static int __init_memblock memblock_setclr_flag(phys_addr_t base,
 				phys_addr_t size, int set, int flag)
 {
@@ -990,6 +1004,11 @@ int __init_memblock memblock_mark_hotplug(phys_addr_t base, phys_addr_t size)
  * @size: the size of the region
  *
  * Return 0 on succees, -errno on failure.
+ */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 지정된 영역의 MEMBLOCK_HOTPLUG 플래그를 제거한다.
  */
 int __init_memblock memblock_clear_hotplug(phys_addr_t base, phys_addr_t size)
 {

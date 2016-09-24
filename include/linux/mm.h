@@ -335,6 +335,11 @@ static inline int get_freepage_migratetype(struct page *page)
 /*
  * Drop a ref, return true if the refcount fell to zero (the page has no users)
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 페이지 참조 카운터를 감소시킨다. 감소 시킨 결과가 0이면 true를 반환한다.
+ */
 static inline int put_page_testzero(struct page *page)
 {
 	VM_BUG_ON_PAGE(atomic_read(&page->_count) == 0, page);
@@ -671,7 +676,7 @@ static inline int compound_order(struct page *page)
 
 /* IAMROOT-12AB:
  * -------------
- * compound page인 경우 두 번째 페이지에 저장된 compound_order 값을 반환한다.
+ * compound page인 경우 두 번째 페이지에 저장된 compound order 값을 반환한다.
  */
 	return page[1].compound_order;
 }
@@ -797,12 +802,21 @@ void do_set_pte(struct vm_area_struct *vma, unsigned long address,
 #error SECTIONS_WIDTH+NODES_WIDTH+ZONES_WIDTH > BITS_PER_LONG - NR_PAGEFLAGS
 #endif
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * zone, node, 섹션, last_cpupid, zoneid에 필요한 마스크
+ */
 #define ZONES_MASK		((1UL << ZONES_WIDTH) - 1)
 #define NODES_MASK		((1UL << NODES_WIDTH) - 1)
 #define SECTIONS_MASK		((1UL << SECTIONS_WIDTH) - 1)
 #define LAST_CPUPID_MASK	((1UL << LAST_CPUPID_SHIFT) - 1)
 #define ZONEID_MASK		((1UL << ZONEID_SHIFT) - 1)
 
+/* IAMROOT-12AB:
+ * -------------
+ * page->flags에서 zone을 추출하여 반환한다. (0~3)
+ */
 static inline enum zone_type page_zonenum(const struct page *page)
 {
 	return (page->flags >> ZONES_PGSHIFT) & ZONES_MASK;
@@ -960,6 +974,10 @@ static inline bool cpupid_match_pid(struct task_struct *task, int cpupid)
 }
 #endif /* CONFIG_NUMA_BALANCING */
 
+/* IAMROOT-12AB:
+ * -------------
+ * 페이지로 노드를 구한 후 다시 zone 번호를 추출하여 반환한다. (0~3)
+ */
 static inline struct zone *page_zone(const struct page *page)
 {
 	return &NODE_DATA(page_to_nid(page))->node_zones[page_zonenum(page)];
@@ -1100,6 +1118,14 @@ void page_address_init(void);
  * address_space which maps the page from disk; whereas "page_mapped"
  * refers to user virtual address space into which the page is mapped.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * page->mapping은 다음과 같이 두 가지 용도로 사용한다.
+ *      1) 원래 address_space 구조체를 가리킨다.
+ *      2) 특별히 PAGE_MAPPING_ANON 비트를 같이 설정하여
+ *      anon_vma 구조체를 가리키는 용도로도 사용한다.
+ */
 #define PAGE_MAPPING_ANON	1
 #define PAGE_MAPPING_KSM	2
 #define PAGE_MAPPING_FLAGS	(PAGE_MAPPING_ANON | PAGE_MAPPING_KSM)
@@ -1123,6 +1149,11 @@ struct address_space *page_file_mapping(struct page *page)
 	return page->mapping;
 }
 
+
+/* IAMROOT-12AB:
+ * -------------
+ * 페이지가 anon 매핑인 경우 true를 반환한다.
+ */
 static inline int PageAnon(struct page *page)
 {
 	return ((unsigned long)page->mapping & PAGE_MAPPING_ANON) != 0;
@@ -2224,6 +2255,11 @@ kernel_map_pages(struct page *page, int numpages, int enable)
 	if (!debug_pagealloc_enabled())
 		return;
 
+/* IAMROOT-12AB:
+ * -------------
+ * "debug_pagealloc=on"을 사용한 경우 아래 함수를 통해 페이지 poison 
+ * 디버깅을 진행할 수 있다.
+ */
 	__kernel_map_pages(page, numpages, enable);
 }
 #ifdef CONFIG_HIBERNATION

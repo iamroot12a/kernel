@@ -676,6 +676,11 @@ out:
 	zone->free_area[order].nr_free++;
 }
 
+/* IAMROOT-12AB:
+ * -------------
+ * 페이지를 free 하기 전에 문제가 있는 경우 메시지 출력을 하고,
+ * 모든 플래그들을 모두 초기화한다.
+ */
 static inline int free_pages_check(struct page *page)
 {
 	const char *bad_reason = NULL;
@@ -700,6 +705,11 @@ static inline int free_pages_check(struct page *page)
 		return 1;
 	}
 	page_cpupid_reset_last(page);
+
+/* IAMROOT-12AB:
+ * -------------
+ * page->flags에 flag 비트들을 모두 clear 한다. (zone, node, ... 정보는 제외)
+ */
 	if (page->flags & PAGE_FLAGS_CHECK_AT_PREP)
 		page->flags &= ~PAGE_FLAGS_CHECK_AT_PREP;
 	return 0;
@@ -789,14 +799,28 @@ static void free_one_page(struct zone *zone,
 	spin_unlock(&zone->lock);
 }
 
+/* IAMROOT-12AB:
+ * -------------
+ * compound tail 페이지가 아닌 경우 1을 반환
+ */
 static int free_tail_pages_check(struct page *head_page, struct page *page)
 {
 	if (!IS_ENABLED(CONFIG_DEBUG_VM))
 		return 0;
+
+/* IAMROOT-12AB:
+ * -------------
+ * compound 페이지 구성에서 요청한 페이지가 tail 페이지가 아닌 경우 1을 반환
+ */
 	if (unlikely(!PageTail(page))) {
 		bad_page(page, "PageTail not set", 0);
 		return 1;
 	}
+
+/* IAMROOT-12AB:
+ * -------------
+ * 현재 페이지가 첫 번째 compound 페이지를 가리키지 않는 경우 1을 반환
+ */
 	if (unlikely(page->first_page != head_page)) {
 		bad_page(page, "first_page not consistent", 0);
 		return 1;
@@ -809,24 +833,51 @@ static bool free_pages_prepare(struct page *page, unsigned int order)
 	bool compound = PageCompound(page);
 	int i, bad = 0;
 
+/* IAMROOT-12AB:
+ * -------------
+ * compound 페이지의 경우 첫 페이지가 tail 비트가 설정되어 있으면 버그!
+ * compound 페이지의 경우 두번째 페이지에 order 값이 
+ */
 	VM_BUG_ON_PAGE(PageTail(page), page);
 	VM_BUG_ON_PAGE(compound && compound_order(page) != order, page);
 
+/* IAMROOT-12AB:
+ * -------------
+ * 아래 3함수는 디버그 용도로 생략
+ */
 	trace_mm_page_free(page, order);
 	kmemcheck_free_shadow(page, order);
 	kasan_free_pages(page, order);
 
+/* IAMROOT-12AB:
+ * -------------
+ * free할 페이지가 anon 매핑 용도로 사용된 경우 clear 한다.
+ */
 	if (PageAnon(page))
 		page->mapping = NULL;
+
+/* IAMROOT-12AB:
+ * -------------
+ * 페이지를 free 하기전에 모든 flag 들을 clear 한다.
+ */
 	bad += free_pages_check(page);
 	for (i = 1; i < (1 << order); i++) {
 		if (compound)
 			bad += free_tail_pages_check(page, page + i);
 		bad += free_pages_check(page + i);
 	}
+
+/* IAMROOT-12AB:
+ * -------------
+ * bad 페이지가 확인되면 함수를 빠져나간다.
+ */
 	if (bad)
 		return false;
 
+/* IAMROOT-12AB:
+ * -------------
+ * page_ext->flags에서 PAGE_EXT_OWNER 플래그를 clear 한다.
+ */
 	reset_page_owner(page, order);
 
 	if (!PageHighMem(page)) {
@@ -835,6 +886,11 @@ static bool free_pages_prepare(struct page *page, unsigned int order)
 		debug_check_no_obj_freed(page_address(page),
 					   PAGE_SIZE << order);
 	}
+
+/* IAMROOT-12AB:
+ * -------------
+ * arm에서는 ARCH_HAVE_FREE_PAGE
+ */
 	arch_free_page(page, order);
 	kernel_map_pages(page, 1 << order, 0);
 
@@ -864,17 +920,53 @@ void __init __free_pages_bootmem(struct page *page, unsigned int order)
 	struct page *p = page;
 	unsigned int loop;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 변경하고자하는 page 구조체의 포인터 주소를 캐시에 프리로드한다.
+ */
 	prefetchw(p);
 	for (loop = 0; loop < (nr_pages - 1); loop++, p++) {
+
+/* IAMROOT-12AB:
+ * -------------
+ * 다음 page 구조체의 포인터 주소도 캐시에 프리로드한다.
+ * (참고로 _count가 구조체의 2번째 double word에 존재한다)
+ */
 		prefetchw(p + 1);
+
+/* IAMROOT-12AB:
+ * -------------
+ * Reserved 비트를 클리어한다.
+ */
 		__ClearPageReserved(p);
+
+/* IAMROOT-12AB:
+ * -------------
+ * 사용 카운터(_count) 값도 0으로 한다.
+ */
 		set_page_count(p, 0);
 	}
+
+/* IAMROOT-12AB:
+ * -------------
+ * 마지막 페이지 처리
+ */
 	__ClearPageReserved(p);
 	set_page_count(p, 0);
 
 	page_zone(page)->managed_pages += nr_pages;
+
+/* IAMROOT-12AB:
+ * -------------
+ * order 페이지의 첫 페이지를 사용중(1)으로 설정 
+ * (아래 __free_pages() 함수를 통해서 참조 카운터를 감소시켜 비사용중으로 바뀐다.)
+ */
 	set_page_refcounted(page);
+
+/* IAMROOT-12AB:
+ * -------------
+ * 현재 order 페이지를 버디 시스템에 추가(free)
+ */
 	__free_pages(page, order);
 }
 
@@ -1555,6 +1647,11 @@ void free_hot_cold_page(struct page *page, bool cold)
 
 	if (!free_pages_prepare(page, 0))
 		return;
+
+/* IAMROOT-12AB:
+ * -------------
+ * 진행중...
+ */
 
 	migratetype = get_pfnblock_migratetype(page, pfn);
 	set_freepage_migratetype(page, migratetype);
@@ -2969,7 +3066,17 @@ EXPORT_SYMBOL(get_zeroed_page);
 
 void __free_pages(struct page *page, unsigned int order)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * 참조 카운터를 줄여서 0이된 경우 버디 시스템에 등록한다.
+ */
 	if (put_page_testzero(page)) {
+
+/* IAMROOT-12AB:
+ * -------------
+ * order 0 페이지는 pcp 캐시의 hot 방향에 등록한다.
+ */
 		if (order == 0)
 			free_hot_cold_page(page, false);
 		else

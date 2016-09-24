@@ -53,8 +53,27 @@
 
 /* IAMROOT-12AB:
  * -------------
- * debug_guardpage_ops에는 null로 초기화되어 있고,
- * 나머지 두 개의 ops에는 각각 2개씩 함수가 연결되어 있다.
+ * page_ext를 사용하는 3가지 디버깅 방법
+ *
+ * 각각의 디버깅용 콜백 구조체 ops에 2개의 함수가 연결되어 있다.
+ *	- need_로 시작되는 함수는 이 기능을 사용하는지 여부를 체크 
+ *	- init_으로 시자되는 함수는 이 기능을 사용하는 경우 초기화를 위한 
+ *	  함수를 호출하게 된다.
+ *
+ * 3개의 구조체 모두 컴파일 타임에 빌드에 포함되지 않을 경우 구조체를 만들 수가
+ * 없으므로 첫 항목에는 이 기능을 사용하지 않을 경우에도 항목이 존재하게 두었고 
+ * 그 내부 콜백 변수를 null로 초기화 한다.
+ *
+ * 각각의 기능들을 사용하기 위해 컴파일 옵션과 커널 파라메터를 켜서 사용한다.
+ *	1) Guard Page: 
+ *		- CONFIG_DEBUG_PAGEALLOC
+ *		- "debug_pagealloc=on"
+ *	2) Posioning:
+ *		- CONFIG_PAGE_POISONING 
+ *		- "debug_pagealloc=on"
+ *	3) Page Owner:
+ *		- CONFIG_PAGE_OWNER 
+ *		- "page_owner=on"
  */
 static struct page_ext_operations *page_ext_ops[] = {
 	&debug_guardpage_ops,
@@ -66,6 +85,10 @@ static struct page_ext_operations *page_ext_ops[] = {
 #endif
 };
 
+/* IAMROOT-12AB:
+ * -------------
+ * page_ext 구조체에 사용되는 전체 노드 메모리의 양을 출력하기 위해 사용(pages)
+ */
 static unsigned long total_usage;
 
 /* IAMROOT-12AB:
@@ -116,9 +139,9 @@ void __meminit pgdat_page_ext_init(struct pglist_data *pgdat)
 
 /* IAMROOT-12AB:
  * -------------
- * page로 page_ext를 찾는다.
+ * sparse 메모리 모델이 아닌 경우 page로 node_page_ext를 
+ * 찾은 후 page_ext를 찾아 반환한다.
  */
-
 struct page_ext *lookup_page_ext(struct page *page)
 {
 	unsigned long pfn = page_to_pfn(page);
@@ -136,6 +159,12 @@ struct page_ext *lookup_page_ext(struct page *page)
 	if (unlikely(!base))
 		return NULL;
 #endif
+
+/* IAMROOT-12AB:
+ * -------------
+ * offset은 mem_map에서 구한 후 함수에서 반환 시에 base(page_ext *)에 
+ * offset을 더해 반환하여 page_ext 포인터 주소를 알려준다.
+ */
 	offset = pfn - round_down(node_start_pfn(page_to_nid(page)),
 					MAX_ORDER_NR_PAGES);
 	return base + offset;
@@ -189,6 +218,8 @@ void __init page_ext_init_flatmem(void)
 
 /* IAMROOT-12AB:
  * -------------
+ * 디버깅을 위해 page_ext 구조체 할당이 필요한지 여부를 체크한다.
+ *
  * page_ext_ops[]->need에 등록된 함수들에서 하나도 true 발생하지 않으면 return 
  */
 	if (!invoke_need_callbacks())
@@ -215,6 +246,11 @@ fail:
 
 #else /* CONFIG_FLAT_NODE_MEM_MAP */
 
+/* IAMROOT-12AB:
+ * -------------
+ * SPARSE 메모리 모델인 경우 page로 mem_section을 구한 후 
+ * page_ext를 찾는다.
+ */
 struct page_ext *lookup_page_ext(struct page *page)
 {
 	unsigned long pfn = page_to_pfn(page);
