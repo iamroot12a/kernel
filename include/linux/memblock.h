@@ -212,6 +212,11 @@ void __next_mem_pfn_range(int *idx, int nid, unsigned long *out_start_pfn,
  * Walks over free (memory && !reserved) areas of memblock.  Available as
  * soon as memblock is initialized.
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * memblock의 사이 free 공간에 대한 interation 루프
+ */
 #define for_each_free_mem_range(i, nid, p_start, p_end, p_nid)		\
 	for_each_mem_range(i, &memblock.memory, &memblock.reserved,	\
 			   nid, p_start, p_end, p_nid)

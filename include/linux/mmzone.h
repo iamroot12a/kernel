@@ -86,13 +86,26 @@ enum {
 
 extern int page_group_by_mobility_disabled;
 
+/* IAMROOT-12AB:
+ * -------------
+ * NR_MIGRATETYPE_BITS(mobility 특성)에 3bits를 사용한다.
+ */
 #define NR_MIGRATETYPE_BITS (PB_migrate_end - PB_migrate + 1)
+
+/* IAMROOT-12AB:
+ * -------------
+ * MIGRATETYPE_MASK에 0b111 (3개 bits)을 사용한다.
+ */
 #define MIGRATETYPE_MASK ((1UL << NR_MIGRATETYPE_BITS) - 1)
 
 #define get_pageblock_migratetype(page)					\
 	get_pfnblock_flags_mask(page, page_to_pfn(page),		\
 			PB_migrate_end, MIGRATETYPE_MASK)
 
+/* IAMROOT-12AB:
+ * -------------
+ * page에 해당하는 페이지블럭에서 migratetype(0~7)을 알아온다.
+ */
 static inline int get_pfnblock_migratetype(struct page *page, unsigned long pfn)
 {
 	BUILD_BUG_ON(PB_migrate_end - PB_migrate != 2);
@@ -408,6 +421,13 @@ struct zone {
 	 * Flags for a pageblock_nr_pages block. See pageblock-flags.h.
 	 * In SPARSEMEM, this map is stored in struct mem_section
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 페이지블럭단위로 mobility 특성을 담고 있다.
+ *      FLATMEM: zone->pageblock_flags 
+ *      SPARSEMEM: mem_section[]->pageblock_flags
+ */
 	unsigned long		*pageblock_flags;
 #endif /* CONFIG_SPARSEMEM */
 
@@ -463,6 +483,14 @@ struct zone {
 	 * adjust_managed_page_count() should be used instead of directly
 	 * touching zone->managed_pages and totalram_pages.
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * managed_pages: 버디 시스템이 관리하는 free 페이지 수
+ *                (초반에는 메모리 크기에서 대략 mem_map의 크기를 감소시켜 계산하였지만 
+ *                 memblock을 버디시스템으로 migration할 때에는 0으로 clear하고,
+ *                 버디 시스템에 free할 때마다 증가한다.)
+ */
 	unsigned long		managed_pages;
 	unsigned long		spanned_pages;
 	unsigned long		present_pages;

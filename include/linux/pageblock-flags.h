@@ -26,6 +26,12 @@
 #include <linux/types.h>
 
 /* Bit indices that affect a whole block of pages */
+
+/* IAMROOT-12AB:
+ * -------------
+ * PB_migrate는 mobility 특성에 3개 비트를 사용, 
+ * PB_migrate_skip은 페이지 회수에서 사용하는 compaction에 1비트를 사용
+ */
 enum pageblock_bits {
 	PB_migrate,
 	PB_migrate_end = PB_migrate + 3 - 1,

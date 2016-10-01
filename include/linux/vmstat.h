@@ -33,6 +33,10 @@ DECLARE_PER_CPU(struct vm_event_state, vm_event_states);
  */
 static inline void __count_vm_event(enum vm_event_item item)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * per-cpu로 만들어진 vm_event_states의 event[]항목을 1증가 시킨다.
+ */
 	raw_cpu_inc(vm_event_states.event[item]);
 }
 
@@ -229,6 +233,10 @@ void set_pgdat_percpu_threshold(pg_data_t *pgdat,
 static inline void __mod_zone_page_state(struct zone *zone,
 			enum zone_stat_item item, int delta)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * 요청한 zone 통계 항목에 delta 값을 추가한다.
+ */
 	zone_page_state_add(delta, zone, item);
 }
 
@@ -280,7 +288,17 @@ static inline void drain_zonestat(struct zone *zone,
 static inline void __mod_zone_freepage_state(struct zone *zone, int nr_pages,
 					     int migratetype)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * zone 통계의 NR_FREE_PAGES 항목에 nr_pages 만큼 증가시킨다.
+ */
 	__mod_zone_page_state(zone, NR_FREE_PAGES, nr_pages);
+
+/* IAMROOT-12AB:
+ * -------------
+ * zone 통계의 NR_FREE_CMA_PAGES 항목에 nr_pages 만큼 증가시킨다.
+ */
 	if (is_migrate_cma(migratetype))
 		__mod_zone_page_state(zone, NR_FREE_CMA_PAGES, nr_pages);
 }

@@ -4,6 +4,10 @@
 #ifdef CONFIG_MEMORY_ISOLATION
 static inline bool has_isolate_pageblock(struct zone *zone)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * isolate된 페이지 블럭이 있는지 여부를 반환한다.
+ */
 	return zone->nr_isolate_pageblock;
 }
 static inline bool is_migrate_isolate_page(struct page *page)

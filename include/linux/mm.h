@@ -303,6 +303,11 @@ struct inode;
 /* It's valid only if the page is free path or free_list */
 static inline void set_freepage_migratetype(struct page *page, int migratetype)
 {
+
+/* IAMROOT-12AB:
+ * -------------
+ * 버디시스템에서는 page->index를 용도를 바꾸어 migratetype을 저장한다.
+ */
 	page->index = migratetype;
 }
 
@@ -598,6 +603,10 @@ static inline void init_page_count(struct page *page)
  */
 #define PAGE_BUDDY_MAPCOUNT_VALUE (-128)
 
+/* IAMROOT-12AB:
+ * -------------
+ * _mapcount가 버디에서 사용될 때는 buddy 여부를 저장한다.
+ */
 static inline int PageBuddy(struct page *page)
 {
 	return atomic_read(&page->_mapcount) == PAGE_BUDDY_MAPCOUNT_VALUE;
@@ -609,6 +618,11 @@ static inline void __SetPageBuddy(struct page *page)
 	atomic_set(&page->_mapcount, PAGE_BUDDY_MAPCOUNT_VALUE);
 }
 
+/* IAMROOT-12AB:
+ * -------------
+ * _mapcount가 버디에서 사용될 때는 buddy 여부를 저장하는데 
+ * -1 값은 buddy 시스템에서 잠시 벗어났음을 표시한다.
+ */
 static inline void __ClearPageBuddy(struct page *page)
 {
 	VM_BUG_ON_PAGE(!PageBuddy(page), page);

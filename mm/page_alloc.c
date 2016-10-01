@@ -110,6 +110,11 @@ EXPORT_SYMBOL(node_states);
 /* Protect totalram_pages and zone->managed_pages */
 static DEFINE_SPINLOCK(managed_page_count_lock);
 
+/* IAMROOT-12AB:
+ * -------------
+ * 남은 free 페이지 수(버디 시스템이 관리하는 페이지 수)
+ * 각 zone->managed_pages을 더한 수와 동일
+ */
 unsigned long totalram_pages __read_mostly;
 unsigned long totalreserve_pages __read_mostly;
 unsigned long totalcma_pages __read_mostly;
@@ -520,6 +525,10 @@ static inline void set_page_order(struct page *page, unsigned int order)
 
 static inline void rmv_page_order(struct page *page)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * 요청 페이지를 버디 시스템에 없다고 인식시킨다.
+ */
 	__ClearPageBuddy(page);
 	set_page_private(page, 0);
 }
@@ -539,6 +548,11 @@ static inline void rmv_page_order(struct page *page)
  *
  * For recording page's order, we use page_private(page).
  */
+
+/* IAMROOT-12AB:
+ * -------------
+ * buddy 페이지가 버디시스템에 같은 order로 되어 있는지 여부를 반환한다.
+ */
 static inline int page_is_buddy(struct page *page, struct page *buddy,
 							unsigned int order)
 {
@@ -554,6 +568,10 @@ static inline int page_is_buddy(struct page *page, struct page *buddy,
 		return 1;
 	}
 
+/* IAMROOT-12AB:
+ * -------------
+ * buddy 페이지가 버디시스템에 있으면서 요청 order와 동일한 경우
+ */
 	if (PageBuddy(buddy) && page_order(buddy) == order) {
 		/*
 		 * zone check is done late to avoid uselessly
@@ -622,6 +640,10 @@ static inline void __free_one_page(struct page *page,
 		__mod_zone_freepage_state(zone, 1 << order, migratetype);
 	}
 
+/* IAMROOT-12AB:
+ * -------------
+ * pfn 값으로 max_order 내에서 인덱스를 산출한다. (max_order=11일 경우, 0~0x7ff)
+ */
 	page_idx = pfn & ((1 << max_order) - 1);
 
 	VM_BUG_ON_PAGE(page_idx & ((1 << order) - 1), page);
@@ -629,13 +651,30 @@ static inline void __free_one_page(struct page *page,
 
 	while (order < max_order - 1) {
 		buddy_idx = __find_buddy_index(page_idx, order);
+
+/* IAMROOT-12AB:
+ * -------------
+ * 요청한 order 페이지의 버디 페이지 구조체 주소를 알아온다.
+ */
 		buddy = page + (buddy_idx - page_idx);
+
+/* IAMROOT-12AB:
+ * -------------
+ * buddy 페이지가 버디시스템에 등록되어 있지 않으면 버디시스템에 바로 등록하기 위해 
+ * 루프를 벗어난다.
+ */
 		if (!page_is_buddy(page, buddy, order))
 			break;
 		/*
 		 * Our buddy is free or it is CONFIG_DEBUG_PAGEALLOC guard page,
 		 * merge with it and move up one order.
 		 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 기존에 있는 buddy 페이지를 버디 시스템에서 제거하고 order를 상승시켜 
+ * free 요청한 페이지와 buddy 페이지를 합쳐서 루프를 돌며 재시도한다.
+ */
 		if (page_is_guard(buddy)) {
 			clear_page_guard(zone, buddy, order, migratetype);
 		} else {
@@ -658,6 +697,14 @@ static inline void __free_one_page(struct page *page,
 	 * so it's less likely to be used soon and more likely to be merged
 	 * as a higher order page
 	 */
+
+/* IAMROOT-12AB:
+ * -------------
+ * 최고 order 두 개를 제외한 order (MAX_ORDER=11인 경우 8까지)에서 
+ * 버디시스템에 등록을 하려할 때 그 상위 order의 버디페이지가 이미 
+ * 등록된 경우 cold 페이지로 등록하게 하여 combine 가능성을 높여 
+ * 효율을 올려준다.
+ */
 	if ((order < MAX_ORDER-2) && pfn_valid_within(page_to_pfn(buddy))) {
 		struct page *higher_page, *higher_buddy;
 		combined_idx = buddy_idx & page_idx;
@@ -671,6 +718,10 @@ static inline void __free_one_page(struct page *page,
 		}
 	}
 
+/* IAMROOT-12AB:
+ * -------------
+ * 버디시스템에 추가
+ */
 	list_add(&page->lru, &zone->free_area[order].free_list[migratetype]);
 out:
 	zone->free_area[order].nr_free++;
@@ -731,10 +782,24 @@ static void free_pcppages_bulk(struct zone *zone, int count,
 					struct per_cpu_pages *pcp)
 {
 	int migratetype = 0;
+
+/* IAMROOT-12AB:
+ * -------------
+ * batch_free: 마지막 소 루프에서 이동시킬 페이지 수
+ *			- 3개의 리스트에 엔트리가 있을 때에는 1개 
+ *			- 리스트 하나가 비는 순간 다음 리스트에서 2개 
+ *			- 리스트 두개가 비는 순간 전부 
+ * to_free: free할 남은 페이지 수
+ */
 	int batch_free = 0;
 	int to_free = count;
 	unsigned long nr_scanned;
 
+/* IAMROOT-12AB:
+ * -------------
+ * pcp에 있는 order 0 페이지들을 count 만큼 버디시스템으로 돌려준다.
+ * (pcp를 적정 페이지 수(pcp->high) 이내에서 관리되도록 한다.)
+ */
 	spin_lock(&zone->lock);
 	nr_scanned = zone_page_state(zone, NR_PAGES_SCANNED);
 	if (nr_scanned)
@@ -765,9 +830,20 @@ static void free_pcppages_bulk(struct zone *zone, int count,
 		do {
 			int mt;	/* migratetype of the to-be-freed page */
 
+/* IAMROOT-12AB:
+ * -------------
+ * pcp list의 꼬리 페이지
+ */
 			page = list_entry(list->prev, struct page, lru);
 			/* must delete as __free_one_page list manipulates */
 			list_del(&page->lru);
+
+/* IAMROOT-12AB:
+ * -------------
+ * pcp에 등록된 free 페이지에서 migratetype(0~5까지만 존재)으로 버디시스템으로 
+ * 옮기는데 만일 isolation이 발생되는 경우 다시 페이지블록(갱신되었을 수 있는)에서
+ * 가져온 migratetype을 이용한다.
+ */
 			mt = get_freepage_migratetype(page);
 			if (unlikely(has_isolate_pageblock(zone)))
 				mt = get_pageblock_migratetype(page);
@@ -791,6 +867,10 @@ static void free_one_page(struct zone *zone,
 	if (nr_scanned)
 		__mod_zone_page_state(zone, NR_PAGES_SCANNED, -nr_scanned);
 
+/* IAMROOT-12AB:
+ * -------------
+ * isolation이 진행중에 있는 경우 요청 페이지에 대한 migratetype을 다시 한 번 확인해온다.
+ */
 	if (unlikely(has_isolate_pageblock(zone) ||
 		is_migrate_isolate(migratetype))) {
 		migratetype = get_pfnblock_migratetype(page, pfn);
@@ -906,6 +986,11 @@ static void __free_pages_ok(struct page *page, unsigned int order)
 	if (!free_pages_prepare(page, order))
 		return;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 2개 페이지 이상을 회수 시킬때 이 함수가 호출된다.
+ * 대표 페이지블럭의 migratetype을 읽어와서 첫 page[]에 설정한다.
+ */
 	migratetype = get_pfnblock_migratetype(page, pfn);
 	local_irq_save(flags);
 	__count_vm_events(PGFREE, 1 << order);
@@ -958,7 +1043,7 @@ void __init __free_pages_bootmem(struct page *page, unsigned int order)
 
 /* IAMROOT-12AB:
  * -------------
- * order 페이지의 첫 페이지를 사용중(1)으로 설정 
+ * order 페이지의 첫 페이지를 사용중(1 이상)으로 설정 
  * (아래 __free_pages() 함수를 통해서 참조 카운터를 감소시켜 비사용중으로 바뀐다.)
  */
 	set_page_refcounted(page);
@@ -1645,13 +1730,12 @@ void free_hot_cold_page(struct page *page, bool cold)
 	unsigned long pfn = page_to_pfn(page);
 	int migratetype;
 
-	if (!free_pages_prepare(page, 0))
-		return;
-
 /* IAMROOT-12AB:
  * -------------
- * 진행중...
+ * 버디시스템으로 회수하기 전에 page 구조체의 flag들을 모두 clear한다.
  */
+	if (!free_pages_prepare(page, 0))
+		return;
 
 	migratetype = get_pfnblock_migratetype(page, pfn);
 	set_freepage_migratetype(page, migratetype);
@@ -1666,6 +1750,13 @@ void free_hot_cold_page(struct page *page, bool cold)
 	 * excessively into the page allocator
 	 */
 	if (migratetype >= MIGRATE_PCPTYPES) {
+
+/* IAMROOT-12AB:
+ * -------------
+ * pcp는 3가지 migratetype만을 관리한다.(unmovable, reclaimable, movable)
+ * isolate 타입은 pcp로 관리하지않고 버디로 직접 회수시킨다.
+ * reserve, cma에 할당되었던 것을 회수시킬 때에는 movable로 바꾸어 pcp에 회수시킨다.
+ */
 		if (unlikely(is_migrate_isolate(migratetype))) {
 			free_one_page(zone, page, pfn, 0, migratetype);
 			goto out;
@@ -1679,6 +1770,11 @@ void free_hot_cold_page(struct page *page, bool cold)
 	else
 		list_add_tail(&page->lru, &pcp->lists[migratetype]);
 	pcp->count++;
+
+/* IAMROOT-12AB:
+ * -------------
+ * pcp가 관리하는 페이지 수가 pcp->high 이상인 경우 batch 수 만큼 버디로 되돌린다.
+ */
 	if (pcp->count >= pcp->high) {
 		unsigned long batch = ACCESS_ONCE(pcp->batch);
 		free_pcppages_bulk(zone, batch, pcp);
@@ -6997,6 +7093,11 @@ unsigned long get_pfnblock_flags_mask(struct page *page, unsigned long pfn,
 	unsigned long bitidx, word_bitidx;
 	unsigned long word;
 
+/* IAMROOT-12AB:
+ * -------------
+ * page구조체로 부터 zone을 알아온다. (FLATMEM에서는 zone에 pageblock_flags에 비트맵이 담긴다) 
+ * 비트맵에서 pfn 값에 해당하는 페이지블럭을 찾아서 4bit중 3bit를 mask하여 반환한다. (0~7까지 반환)
+ */
 	zone = page_zone(page);
 	bitmap = get_pageblock_bitmap(zone, pfn);
 	bitidx = pfn_to_bitidx(zone, pfn);

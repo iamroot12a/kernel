@@ -116,6 +116,24 @@ static void __init __free_pages_memory(unsigned long start, unsigned long end)
 /* IAMROOT-12AB:
  * -------------
  * 해재할 메모리를 order 단위로 버디시스템에 돌려준다(free)
+ *
+ * 예) start=0x12345, end=0x13456
+ *              start		order 
+ *              -------		-----
+ *     loop 01:	0x12345		0
+ *     loop 02: 0x12346         1
+ *     loop 03: 0x12348		3
+ *     loop 04: 0x12350		4
+ *     loop 05: 0x12360		5
+ *     loop 06: 0x12380		7
+ *     loop 07: 0x12400		10
+ *     loop 08: 0x12800		10 
+ *     loop 09: 0x12c00		10 
+ *     loop 10: 0x13000		10
+ *     loop 11: 0x13400		6
+ *     loop 12: 0x13440		4
+ *     loop 13: 0x13450		2
+ *     loop 14: 0x13454		1
  */
 		__free_pages_bootmem(pfn_to_page(start), order);
 
@@ -228,6 +246,10 @@ unsigned long __init free_all_bootmem(void)
 {
 	unsigned long pages;
 
+/* IAMROOT-12AB:
+ * -------------
+ * 각 zone->managed_pages을 clear한다.
+ */
 	reset_all_zones_managed_pages();
 
 	/*
