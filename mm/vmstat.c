@@ -599,14 +599,33 @@ void drain_zonestat(struct zone *zone, struct per_cpu_pageset *pset)
  * zone is the local node. This is useful for daemons who allocate
  * memory on behalf of other processes.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * NUMA 시스템일 때만 동작한다.
+ */
 void zone_statistics(struct zone *preferred_zone, struct zone *z, gfp_t flags)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 요청 zone과 preferred_zone의 노드가 동일한 경우 요청 노드에서 메모리를 
+ * 접근한 경우이므로 NUMA_HIT 카운터를 증가시킨다.
+ */
 	if (z->zone_pgdat == preferred_zone->zone_pgdat) {
 		__inc_zone_state(z, NUMA_HIT);
 	} else {
 		__inc_zone_state(z, NUMA_MISS);
 		__inc_zone_state(preferred_zone, NUMA_FOREIGN);
 	}
+
+/* IAMROOT-12:
+ * -------------
+ * 요청 zone의 노드가 원하던 로컬 노드인경우 
+ *     (__GFP_OTHER_NODE 플래그를 사용한 경우 preferred_zone을 사용하고,
+ *      그렇지 않은 경우 현재 cpu의 노드로 비교한다)
+ * NUMA_LOCAL 카운터를 증가시키고 그렇지 않은 경우 NUMA_OTHER를 증가시킨다.
+ */
 	if (z->node == ((flags & __GFP_OTHER_NODE) ?
 			preferred_zone->node : numa_node_id()))
 		__inc_zone_state(z, NUMA_LOCAL);

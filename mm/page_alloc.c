@@ -1104,8 +1104,22 @@ static inline void expand(struct zone *zone, struct page *page,
 	int low, int high, struct free_area *area,
 	int migratetype)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * size: 페이지 수
+ */
 	unsigned long size = 1 << high;
 
+/* IAMROOT-12:
+ * -------------
+ * high: current_order (버디시스템에서 결정한 order)
+ * low:  order (요청한 order)
+ * area: 처음 값은 current_order의 버디 슬롯 리스트 
+ *
+ * 최상위 high를 반으로 잘라서 low까지 각각 등록한다.
+ *       (high=low인 경우는 expand 루틴이 동작하지 않는다.)
+ */
 	while (high > low) {
 		area--;
 		high--;
@@ -1211,15 +1225,35 @@ struct page *__rmqueue_smallest(struct zone *zone, unsigned int order,
 	/* Find a page of the appropriate size in the preferred list */
 	for (current_order = order; current_order < MAX_ORDER; ++current_order) {
 		area = &(zone->free_area[current_order]);
+
+/* IAMROOT-12:
+ * -------------
+ * 요청 order 슬롯에 free 페이지가 하나도 등록되어 있지 않은 경우 skip
+ */
 		if (list_empty(&area->free_list[migratetype]))
 			continue;
 
 		page = list_entry(area->free_list[migratetype].next,
 							struct page, lru);
+/* IAMROOT-12:
+ * -------------
+ * current_order 슬롯에서 첫 hot 페이지를 리스트에서 제거한다.
+ */
 		list_del(&page->lru);
 		rmv_page_order(page);
 		area->nr_free--;
+
+/* IAMROOT-12:
+ * -------------
+ * current_order 부터 order까지 감소시키며 각 슬롯에 하나씩 등록한다.
+ * (current_order > order인 경우만 수행한다)
+ */
 		expand(zone, page, order, current_order, area, migratetype);
+
+/* IAMROOT-12:
+ * -------------
+ * 할당할 페이지에 migratetype을 기록한다.
+ */
 		set_freepage_migratetype(page, migratetype);
 		return page;
 	}
@@ -1231,6 +1265,17 @@ struct page *__rmqueue_smallest(struct zone *zone, unsigned int order,
 /*
  * This array describes the order lists are fallen back to when
  * the free lists for the desirable migrate type are depleted
+ */
+
+/* IAMROOT-12:
+ * -------------
+ * 버디 시스템에 요청한 migratetype에서 할당을 실패한 경우 다음 시도할 
+ * fallback migratetype 타입들
+ *
+ * migratetype별로 fallback에서 시도할 migratetype을 리스트로 가지고 있다.
+ * (MIGRATE_RESERVE는 끝 표기)
+ *
+ * MIGRATE_CMA와 MIGRATE_RESERVE 타입은 fallback에서 이용할 migratetype이 없다.
  */
 static int fallbacks[MIGRATE_TYPES][4] = {
 	[MIGRATE_UNMOVABLE]   = { MIGRATE_RECLAIMABLE, MIGRATE_MOVABLE,     MIGRATE_RESERVE },
@@ -1302,6 +1347,14 @@ int move_freepages_block(struct zone *zone, struct page *page,
 	unsigned long start_pfn, end_pfn;
 	struct page *start_page, *end_page;
 
+/* IAMROOT-12:
+ * -------------
+ * start_pfn이 소속된 페이지블럭의 가장 첫 페이지와 가장 마지막 페이지를 산출
+ *
+ * start_pfn=0x450 일때 
+ *	- 조정된 start_pfn = 0x400
+ *	-        end_pfn = 0x7ff
+ */
 	start_pfn = page_to_pfn(page);
 	start_pfn = start_pfn & ~(pageblock_nr_pages-1);
 	start_page = pfn_to_page(start_pfn);
@@ -1309,6 +1362,13 @@ int move_freepages_block(struct zone *zone, struct page *page,
 	end_pfn = start_pfn + pageblock_nr_pages - 1;
 
 	/* Do not cross zone boundaries */
+
+/* IAMROOT-12:
+ * -------------
+ * 페이지 블럭의 시작이 zone에 포함되지 않은 경우 시작 페이지를 
+ * 요청 페이지 부터 계산하게 한다.
+ * 페이지 블럭의 끝이 zone에 포함되지 않은 경우 0을 반환 
+ */
 	if (!zone_spans_pfn(zone, start_pfn))
 		start_page = page;
 	if (!zone_spans_pfn(zone, end_pfn))
@@ -1320,6 +1380,13 @@ int move_freepages_block(struct zone *zone, struct page *page,
 static void change_pageblock_range(struct page *pageblock_page,
 					int start_order, int migratetype)
 {
+/* IAMROOT-12:
+ * -------------
+ * 1개 페이지 블럭 이상의 migratetype을 설정한다.
+ *
+ * start_order가 페이지 블럭단위의 order를 초과하는 경우 그 페이지 블럭 수만큼 
+ * migratetype을 각 블럭에 저장한다.
+ */
 	int nr_pageblocks = 1 << (start_order - pageblock_order);
 
 	while (nr_pageblocks--) {
@@ -1349,6 +1416,12 @@ static void try_to_steal_freepages(struct zone *zone, struct page *page,
 	int current_order = page_order(page);
 
 	/* Take ownership for orders >= pageblock_order */
+
+/* IAMROOT-12:
+ * -------------
+ * 요청 order가 pageblock_order 보다 큰 경우 pageblock의 migratetype을 
+ * 원래 요청했었던 migratetype으로 설정한다.
+ */
 	if (current_order >= pageblock_order) {
 		change_pageblock_range(page, current_order, start_type);
 		return;
@@ -1363,6 +1436,13 @@ static void try_to_steal_freepages(struct zone *zone, struct page *page,
 		pages = move_freepages_block(zone, page, start_type);
 
 		/* Claim the whole block if over half of it is free */
+
+/* IAMROOT-12:
+ * -------------
+ * 옮긴 페이지 수가 페이지블럭의 절반 이상인 경우 또는 
+ * page_group_by_mobility_disabled가 설정된 경우 해당 페이지 블럭의 
+ * migratetype을 요청한 타입으로 바꾸어준다.
+ */
 		if (pages >= (1 << (pageblock_order-1)) ||
 				page_group_by_mobility_disabled)
 			set_pageblock_migratetype(page, start_type);
@@ -1451,6 +1531,10 @@ static struct page *__rmqueue(struct zone *zone, unsigned int order,
 retry_reserve:
 	page = __rmqueue_smallest(zone, order, migratetype);
 
+/* IAMROOT-12:
+ * -------------
+ * 드문 확률로 페이지 할당이 실패하였으면서 MIGRATE_RESERVE 타입이 아닌 경우
+ */
 	if (unlikely(!page) && migratetype != MIGRATE_RESERVE) {
 		page = __rmqueue_fallback(zone, order, migratetype);
 
@@ -1459,6 +1543,12 @@ retry_reserve:
 		 * is used because __rmqueue_smallest is an inline function
 		 * and we want just one call site
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 차선책(fallback) 할당도 실패한 경우 MIGRATE_RESERVE 타입으로 요청을 한 번만
+ * 더 시도한다.
+ */
 		if (!page) {
 			migratetype = MIGRATE_RESERVE;
 			goto retry_reserve;
@@ -1907,8 +1997,18 @@ struct page *buffered_rmqueue(struct zone *preferred_zone,
 {
 	unsigned long flags;
 	struct page *page;
+
+/* IAMROOT-12:
+ * -------------
+ * 특별히 cold 방향의 페이지를 요청하는 경우 __GFP_COLD 플래그를 사용한다.
+ */
 	bool cold = ((gfp_flags & __GFP_COLD) != 0);
 
+
+/* IAMROOT-12:
+ * -------------
+ * order 0 페이지를 요청하는 경우 pcp에서 할당한다.
+ */
 	if (likely(order == 0)) {
 		struct per_cpu_pages *pcp;
 		struct list_head *list;
@@ -1916,6 +2016,12 @@ struct page *buffered_rmqueue(struct zone *preferred_zone,
 		local_irq_save(flags);
 		pcp = &this_cpu_ptr(zone->pageset)->pcp;
 		list = &pcp->lists[migratetype];
+
+/* IAMROOT-12:
+ * -------------
+ * pcp에 free 페이지가 하나도 없는 경우 batch 수 만큼 버디시스템에서 
+ * free 페이지를 가져온다.
+ */
 		if (list_empty(list)) {
 			pcp->count += rmqueue_bulk(zone, 0,
 					pcp->batch, list,
@@ -1924,6 +2030,10 @@ struct page *buffered_rmqueue(struct zone *preferred_zone,
 				goto failed;
 		}
 
+/* IAMROOT-12:
+ * -------------
+ * pcp list[]의 cold 방향은 리스트의 가장 우측을 의미한다.
+ */
 		if (cold)
 			page = list_entry(list->prev, struct page, lru);
 		else
@@ -1950,16 +2060,37 @@ struct page *buffered_rmqueue(struct zone *preferred_zone,
 		spin_unlock(&zone->lock);
 		if (!page)
 			goto failed;
+/* IAMROOT-12AB:
+ * -------------
+ * zone 통계의 NR_FREE_PAGES 항목에 2^order 페이지 수 만큼 감소시킨다.
+ */
 		__mod_zone_freepage_state(zone, -(1 << order),
 					  get_freepage_migratetype(page));
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * NR_ALLOC_BATCH 카운터를 요청한 order 페이지 수 만큼 감소시킨다.
+ * (zone의 free page 갯수가 담김)
+ *
+ * 이 값이 0이하가 되는 경우 zone->flags에 ZONE_FAIR_DEPLETED 플래그를 설정한다.
+ */
 	__mod_zone_page_state(zone, NR_ALLOC_BATCH, -(1 << order));
 	if (atomic_long_read(&zone->vm_stat[NR_ALLOC_BATCH]) <= 0 &&
 	    !test_bit(ZONE_FAIR_DEPLETED, &zone->flags))
 		set_bit(ZONE_FAIR_DEPLETED, &zone->flags);
 
+/* IAMROOT-12:
+ * -------------
+ * PGALLOC 카운터에 order 페이지 수 만큼 증가시킨다.
+ * (PGALLOC: 할당된 페이지 수)
+ */
 	__count_zone_vm_events(PGALLOC, zone, 1 << order);
+
+/* IAMROOT-12:
+ * -------------
+ * NUMA 관련 통계를 업데이트 한다.
+ */
 	zone_statistics(preferred_zone, zone, gfp_flags);
 	local_irq_restore(flags);
 
@@ -6400,6 +6531,11 @@ EXPORT_SYMBOL(free_reserved_area);
 #ifdef	CONFIG_HIGHMEM
 void free_highmem_page(struct page *page)
 {
+/* IAMROOT-12:
+ * -------------
+ * 버디시스템에 himem 1개 page를 되돌린다.
+ * 이 때 totalram_pages, zone->managed_pages, totalhigh_pages가 1씩 증가한다.
+ */
 	__free_reserved_page(page);
 	totalram_pages++;
 	page_zone(page)->managed_pages++;

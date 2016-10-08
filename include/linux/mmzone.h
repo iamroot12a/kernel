@@ -307,6 +307,11 @@ struct per_cpu_pages {
 	int batch;		/* chunk size for buddy add/remove */
 
 	/* Lists of pages, one per migrate type stored on the pcp-lists */
+
+/* IAMROOT-12:
+ * -------------
+ * pcp는 unmovable, reclaimable, movable 등 3개 리스트만 관리한다.
+ */
 	struct list_head lists[MIGRATE_PCPTYPES];
 };
 
@@ -408,6 +413,11 @@ struct zone {
 	unsigned int inactive_ratio;
 
 	struct pglist_data	*zone_pgdat;
+
+/* IAMROOT-12:
+ * -------------
+ * 버디시스템의 order 0 페이지만을 관리하는 페이지 캐시(pcp)
+ */
 	struct per_cpu_pageset __percpu *pageset;
 
 	/*
@@ -547,6 +557,11 @@ struct zone {
 
 	ZONE_PADDING(_pad1_)
 	/* free areas of different sizes */
+
+/* IAMROOT-12:
+ * -------------
+ * 버디 core(free 페이지들을 order 단위로 관리)
+ */
 	struct free_area	free_area[MAX_ORDER];
 
 	/* zone flags, see below */
@@ -598,9 +613,19 @@ struct zone {
 
 	ZONE_PADDING(_pad3_)
 	/* Zone statistics */
+
+/* IAMROOT-12:
+ * -------------
+ * zone 통계는 per-cpu로된 pageset->vm_stat_diff[] 통계를 더해 사용한다.
+ */
 	atomic_long_t		vm_stat[NR_VM_ZONE_STAT_ITEMS];
 } ____cacheline_internodealigned_in_smp;
 
+
+/* IAMROOT-12:
+ * -------------
+ * zone 특성에 대한 플래그(메모리 회수 관련)
+ */
 enum zone_flags {
 	ZONE_RECLAIM_LOCKED,		/* prevents concurrent reclaim */
 	ZONE_OOM_LOCKED,		/* zone is in OOM killer zonelist */

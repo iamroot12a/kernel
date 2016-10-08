@@ -1837,6 +1837,12 @@ extern void mem_init_print_info(const char *str);
 /* Free the reserved page into the buddy system, so it gets managed. */
 static inline void __free_reserved_page(struct page *page)
 {
+/* IAMROOT-12:
+ * -------------
+ * 버디시스템에 1 페이지를 돌려준다.
+ * (돌려주기 직전에 사용카운터를 1로 만들어야 공통함수인 __free_page()에서 
+ *  사용카운터를 1 감소시켜 0이 되는 순간 버디시스템에 되돌릴 수 있다.)
+ */
 	ClearPageReserved(page);
 	init_page_count(page);
 	__free_page(page);

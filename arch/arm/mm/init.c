@@ -650,6 +650,11 @@ static void __init free_highpages(void)
 				res_start = end;
 			if (res_end > end)
 				res_end = end;
+
+/* IAMROOT-12:
+ * -------------
+ * reserved memblock 사이의 free 공간을 버디시스템으로 migration한다.
+ */
 			if (res_start != start)
 				free_area_high(start, res_start);
 			start = res_end;

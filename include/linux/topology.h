@@ -79,6 +79,16 @@ int arch_update_cpu_topology(void);
 #ifdef CONFIG_USE_PERCPU_NUMA_NODE_ID
 DECLARE_PER_CPU(int, numa_node);
 
+/* IAMROOT-12:
+ * -------------
+ * per-cpu 변수인 numa_node에는 각 cpu별로 노드 정보가 기록되어 있다.
+ *
+ * numa_node_id():
+ *      현재 cpu의 노드를 알아온다.
+ *
+ * cpu_to_node():
+ *      지정된 cpu의 노드를 알아온다.
+ */
 #ifndef numa_node_id
 /* Returns the number of the current Node. */
 static inline int numa_node_id(void)
