@@ -1,10 +1,8 @@
 # 최신 ARM 리눅스 커널 4.x 분석
 
-## 커뮤니티: IAMROOT 12차 AB팀
+## 커뮤니티: IAMROOT 12차
 - [www.iamroot.org][#iamroot] | IAMROOT 홈페이지
 - [jake.dothome.co.kr][#moonc] | 문c 블로그
-- [기존 WIKI][#old_wiki]
-[#old_wiki]: http://kernelstudy.kr/wiki/doku.php?id=%EC%8A%A4%ED%84%B0%EB%94%94:kernel_%EC%98%A4%EB%A6%AC%EC%A7%80%EB%84%90_%EC%8A%A4%ED%84%B0%EB%94%94_12%EC%B0%A8_a
 [#iamroot]: http://www.iamroot.org
 [#moonc]: http://jake.dothome.co.kr
 
@@ -346,5 +344,4 @@ page_address_init()
 ### 77주차
 - 2016.10.08, Kosslab (12명, 권경환, 김미르, 김민호, 김종철, 문영일, 박진영, 양유석, 윤창호, 임채훈, 조현철, 최영민, 한상종)
  - mm_init() -> mem_init()
- - 버디 할당 해제 ~
-  
+ - 버디 할당 해제 ~  
