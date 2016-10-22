@@ -110,6 +110,11 @@ static struct kmem_cache *sn_cache;
 
 /* Highest zone. An specific allocation for a zone below that is not
    policied. */
+
+/* IAMROOT-12:
+ * -------------
+ * 이 zone 이하에서만 메모리 할당하도록 제한하는 policy
+ */
 enum zone_type policy_zone = 0;
 
 /*
@@ -121,8 +126,20 @@ static struct mempolicy default_policy = {
 	.flags = MPOL_F_LOCAL,
 };
 
-static struct mempolicy preferred_node_policy[MAX_NUMNODES];
+/* IAMROOT-12:
+ * -------------
+ *  numa_policy_init()에서 초기 설정:
+ *	.mode = MPOL_PREFERRED,
+ *	.flags = MPOL_F_MOF | MPOL_F_MORON,
+ *	.v = { .preferred_node = nid, },
+ */
+struct mempolicy preferred_node_policy[MAX_NUMNODES];
 
+
+/* IAMROOT-12:
+ * -------------
+ * 태스크에 부여된 메모리 정책을 알아온다.
+ */
 struct mempolicy *get_task_policy(struct task_struct *p)
 {
 	struct mempolicy *pol = p->mempolicy;
@@ -132,6 +149,12 @@ struct mempolicy *get_task_policy(struct task_struct *p)
 		return pol;
 
 	node = numa_node_id();
+
+/* IAMROOT-12:
+ * -------------
+ 
+static* cpu에 노드id가 부여되지 않는 케이스도 있나???
+ */
 	if (node != NUMA_NO_NODE) {
 		pol = &preferred_node_policy[node];
 		/* preferred_node_policy is not initialised early in boot */
@@ -139,6 +162,11 @@ struct mempolicy *get_task_policy(struct task_struct *p)
 			return pol;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 태스크에 메모리 policy가 설정되지 않거나 노드별 preferred policy가 설정되지 않은 경우 
+ * 디폴트 policy로 preferred가 반환된다.
+ */
 	return &default_policy;
 }
 
@@ -1319,6 +1347,11 @@ SYSCALL_DEFINE6(mbind, unsigned long, start, unsigned long, len,
 }
 
 /* Set the process memory policy */
+
+/* IAMROOT-12:
+ * -------------
+ * "set_mempolicy" syscall 루틴
+ */
 SYSCALL_DEFINE3(set_mempolicy, int, mode, const unsigned long __user *, nmask,
 		unsigned long, maxnode)
 {
@@ -1624,6 +1657,13 @@ static int apply_policy_zone(struct mempolicy *policy, enum zone_type zone)
 	 * so if the following test faile, it implies
 	 * policy->v.nodes has movable memory only.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * v.nodes에는 ZONE_MOVABLE(NUMA시스템에서 해당 노드를 모두 지정)이 있는데 
+ * v.nodes에서 지정한 노드들에 highmem이 없는 경우 dynamic_policy_zone을 
+ * ZONE_MOVABLE로 변경한다.
+ */
 	if (!nodes_intersects(policy->v.nodes, node_states[N_HIGH_MEMORY]))
 		dynamic_policy_zone = ZONE_MOVABLE;
 
@@ -1637,6 +1677,14 @@ static int apply_policy_zone(struct mempolicy *policy, enum zone_type zone)
 static nodemask_t *policy_nodemask(gfp_t gfp, struct mempolicy *policy)
 {
 	/* Lower zones don't get a nodemask applied for MPOL_BIND */
+
+/* IAMROOT-12:
+ * -------------
+ * MPOL_BIND를 위해 policy_zone(최고 zone) 이상이면서 해당 노드의 메모리가
+ * 허락된 경우에만 policy->v.nodes를 반환한다. (필터 동작)
+ *
+ * 그렇지 않은 경우 null을 반환하여 전체 노드에서 할당되도록 한다. (필터 미동작)
+ */
 	if (unlikely(policy->mode == MPOL_BIND) &&
 			apply_policy_zone(policy, gfp_zone(gfp)) &&
 			cpuset_nodemask_valid_mems_allowed(&policy->v.nodes))
@@ -1651,6 +1699,13 @@ static struct zonelist *policy_zonelist(gfp_t gfp, struct mempolicy *policy,
 {
 	switch (policy->mode) {
 	case MPOL_PREFERRED:
+
+/* IAMROOT-12:
+ * -------------
+ * MPOL_PREFERRED:
+ *	MPOL_F_LOCAL 플래그가 없는 경우 preferred_node를 사용하게 한다.
+ *	그 외의 경우는 요청 노드를 사용한다.
+ */
 		if (!(policy->flags & MPOL_F_LOCAL))
 			nd = policy->v.preferred_node;
 		break;
@@ -1661,6 +1716,22 @@ static struct zonelist *policy_zonelist(gfp_t gfp, struct mempolicy *policy,
 		 * current node isn't part of the mask, we use the zonelist for
 		 * the first node in the mask instead.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * MPOL_BIND:
+ *	보통 local 노드를 포함해서 특정 노드들을 지정하여 바인드를 하는데,
+ *	만일 gfp_mask를 통해 다른 노드의 사용을 허용하지 않게 하면서 
+ *	현재 태스크의 policy가 해당 노드를 포함하지 않는 경우 v.nodes에서 
+ *	첫 노드를 배정해준다.
+ *
+ *	1) case: __GFP_THIS가 없는 경우 
+ *		 요청 노드를 최우선으로하여 전체 노드의 zone으로 fallback을 허용한다.
+ *	2) case: __GFP_THIS가 있고, v.nodes에 현재 노드가 포함된 경우
+ *		 요청 노드의 zone만으로 fallback을 제한한다.
+ *	3) case: __GFP_THIS가 있고, v.nodes에 현재 노드가 없는 경우
+ *		 v.nodes의 첫 번째 노드의 zone만으로 fallback을 제한한다.
+ */
 		if (unlikely(gfp & __GFP_THISNODE) &&
 				unlikely(!node_isset(nd, policy->v.nodes)))
 			nd = first_node(policy->v.nodes);
@@ -1668,10 +1739,22 @@ static struct zonelist *policy_zonelist(gfp_t gfp, struct mempolicy *policy,
 	default:
 		BUG();
 	}
+
+/* IAMROOT-12:
+ * -------------
+ * 산출된 노드 id에서 zonelist를 반환한다.
+ * (__GFP_THISNODE가 요청된 경우에는 산출된 노드의 zonelist만 반환한다.)
+ */
 	return node_zonelist(nd, gfp);
 }
 
 /* Do dynamic interleaving for a process */
+
+/* IAMROOT-12:
+ * -------------
+ * interleave policy 모드에서 다음 사용할 노드 id를 반환한다.
+ * (il_next에는 다음 차례에 사용할 노드 id를 저장해둔다.)
+ */
 static unsigned interleave_nodes(struct mempolicy *policy)
 {
 	unsigned nid, next;
@@ -1929,6 +2012,12 @@ static struct page *alloc_page_interleave(gfp_t gfp, unsigned order,
 
 	zl = node_zonelist(nid, gfp);
 	page = __alloc_pages(gfp, order, zl);
+
+/* IAMROOT-12:
+ * -------------
+ * 페이지 할당되었고 zonelist의 fallback을 사용하지 않은 경우 
+ * NUMA_INTERLEAVE_HIT 카운터를 증가시킨다.
+ */
 	if (page && page_zone(page) == zonelist_zone(&zl->_zonerefs[0]))
 		inc_zone_page_state(page, NUMA_INTERLEAVE_HIT);
 	return page;
@@ -2039,6 +2128,11 @@ struct page *alloc_pages_current(gfp_t gfp, unsigned order)
 		pol = get_task_policy(current);
 
 retry_cpuset:
+
+/* IAMROOT-12:
+ * -------------
+ * 시퀀스 락
+ */
 	cpuset_mems_cookie = read_mems_allowed_begin();
 
 	/*
@@ -2048,10 +2142,25 @@ retry_cpuset:
 	if (pol->mode == MPOL_INTERLEAVE)
 		page = alloc_page_interleave(gfp, order, interleave_nodes(pol));
 	else
+
+/* IAMROOT-12:
+ * -------------
+ * NUMA 메모리 policy에 따라 할당되는 노드와 zonelist를 제공
+ *
+ * 3번째 인수: zonelist
+ *	node별로 만들어졌던 zonelist를 대상으로 policy에 따라 최종 zonelist
+ * 4번째 인수: nodemask
+ *	노드마스크도 policy(BIND만 가능)에 따라 지정된 노드로 변경 + 
+ *	특정 application(task)에 지정된 노드를 대상으로 필터
+ */
 		page = __alloc_pages_nodemask(gfp, order,
 				policy_zonelist(gfp, pol, numa_node_id()),
 				policy_nodemask(gfp, pol));
 
+/* IAMROOT-12:
+ * -------------
+ * 페이지 할당이 실패한 경우이면서 cpuset에 변화가 생겼을 때 재시도
+ */
 	if (unlikely(!page && read_mems_allowed_retry(cpuset_mems_cookie)))
 		goto retry_cpuset;
 

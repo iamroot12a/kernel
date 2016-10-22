@@ -127,6 +127,12 @@ unsigned long totalcma_pages __read_mostly;
 unsigned long dirty_balance_reserve __read_mostly;
 
 int percpu_pagelist_fraction;
+
+/* IAMROOT-12:
+ * -------------
+ * 부트업 타임에는 3개(wait, io, fs) 플래그를 제거하여 동작시키며,
+ * 나중에 부트업이 끝나면 다시 전체 access가 가능하게 한다.
+ */
 gfp_t gfp_allowed_mask __read_mostly = GFP_BOOT_MASK;
 
 #ifdef CONFIG_PM_SLEEP
@@ -258,6 +264,10 @@ EXPORT_SYMBOL(nr_node_ids);
 EXPORT_SYMBOL(nr_online_nodes);
 #endif
 
+/* IAMROOT-12:
+ * -------------
+ * page_group_by_mobility_disabled가 설정되는 경우 unmovable로만 동작
+ */
 int page_group_by_mobility_disabled __read_mostly;
 
 void set_pageblock_migratetype(struct page *page, int migratetype)
@@ -1305,6 +1315,11 @@ int move_freepages(struct zone *zone,
 	unsigned long order;
 	int pages_moved = 0;
 
+/* IAMROOT-12:
+ * -------------
+ * start_page부터 end_page까지 버디 시스템에서 관리하는 모든 페이지들을 
+ * 요청한 migratetype으로 옮긴다.
+ */
 #ifndef CONFIG_HOLES_IN_ZONE
 	/*
 	 * page_zone is not safe to call in this context when
@@ -1325,12 +1340,21 @@ int move_freepages(struct zone *zone,
 			continue;
 		}
 
+/* IAMROOT-12:
+ * -------------
+ * 버디 시스템에서 관리하지 않는 페이지는 skip
+ */
 		if (!PageBuddy(page)) {
 			page++;
 			continue;
 		}
 
 		order = page_order(page);
+
+/* IAMROOT-12:
+ * -------------
+ * 기존에 있던 리스트에서 꺼내와서 지정한 migratetype으로 옮긴다.
+ */
 		list_move(&page->lru,
 			  &zone->free_area[order].free_list[migratetype]);
 		set_freepage_migratetype(page, migratetype);
@@ -1374,6 +1398,10 @@ int move_freepages_block(struct zone *zone, struct page *page,
 	if (!zone_spans_pfn(zone, end_pfn))
 		return 0;
 
+/* IAMROOT-12:
+ * -------------
+ * 해당 페이지블럭의 모든 버디 페이지들을 migratetype으로 옮긴다.
+ */
 	return move_freepages(zone, start_page, end_page, migratetype);
 }
 
@@ -1427,6 +1455,10 @@ static void try_to_steal_freepages(struct zone *zone, struct page *page,
 		return;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 오더가 작으면서 movable인 경우는 옮기지 않는다.
+ */
 	if (current_order >= pageblock_order / 2 ||
 	    start_type == MIGRATE_RECLAIMABLE ||
 	    start_type == MIGRATE_UNMOVABLE ||
@@ -1458,6 +1490,13 @@ __rmqueue_fallback(struct zone *zone, unsigned int order, int start_migratetype)
 	struct page *page;
 
 	/* Find the largest possible block of pages in the other list */
+
+/* IAMROOT-12:
+ * -------------
+ * 스틸링에서는 큰 order를 가져온다.
+ * 어짜피 해당 migratetype이 부족해서 가져와야 하기 때문에 큰 걸 가져와야 
+ * 다음에 또 필요할 때 여러번 스틸링하는 것을 막는다.
+ */
 	for (current_order = MAX_ORDER-1;
 				current_order >= order && current_order <= MAX_ORDER-1;
 				--current_order) {
@@ -1467,6 +1506,11 @@ __rmqueue_fallback(struct zone *zone, unsigned int order, int start_migratetype)
 			int buddy_type = start_migratetype;
 
 			/* MIGRATE_RESERVE handled later if necessary */
+
+/* IAMROOT-12:
+ * -------------
+ * fallback에서 MIGRATE_RESERVE를 만나면 더 이상 스틸할 수 없는 것을 의미한다.
+ */
 			if (migratetype == MIGRATE_RESERVE)
 				break;
 
@@ -1496,6 +1540,10 @@ __rmqueue_fallback(struct zone *zone, unsigned int order, int start_migratetype)
 			list_del(&page->lru);
 			rmv_page_order(page);
 
+/* IAMROOT-12:
+ * -------------
+ * 큰 오더로 스틸하기 때문에 필요한 order만큼으로 expand 시켜서 사용한다.
+ */
 			expand(zone, page, order, current_order, area,
 					buddy_type);
 
@@ -2125,6 +2173,13 @@ __setup("fail_page_alloc=", setup_fail_page_alloc);
 
 static bool should_fail_alloc_page(gfp_t gfp_mask, unsigned int order)
 {
+/* IAMROOT-12:
+ * -------------
+ * CONFIG_FAIL_PAGE_ALLOC 커널 옵션을 사용하는 경우에 동작한다.
+ *
+ * fail인 경우 should_fail()루틴을 호출하지 않고 false를 리턴하여 정상적인 메모리 할당 루틴을 
+ * 동작하게 한다.
+ */
 	if (order < fail_page_alloc.min_order)
 		return false;
 	if (gfp_mask & __GFP_NOFAIL)
@@ -2139,6 +2194,10 @@ static bool should_fail_alloc_page(gfp_t gfp_mask, unsigned int order)
 
 #ifdef CONFIG_FAULT_INJECTION_DEBUG_FS
 
+/* IAMROOT-12:
+ * -------------
+ * /debug/fs/ignore-gfp-wait
+ */
 static int __init fail_page_alloc_debugfs(void)
 {
 	umode_t mode = S_IFREG | S_IRUSR | S_IWUSR;
@@ -3193,18 +3252,36 @@ __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order,
 	unsigned int cpuset_mems_cookie;
 	int alloc_flags = ALLOC_WMARK_LOW|ALLOC_CPUSET|ALLOC_FAIR;
 	gfp_t alloc_mask; /* The gfp_t that was actually used for allocation */
+
+/* IAMROOT-12:
+ * -------------
+ * 할당 요청 사항을 ac에 저장
+ */
 	struct alloc_context ac = {
 		.high_zoneidx = gfp_zone(gfp_mask),
 		.nodemask = nodemask,
 		.migratetype = gfpflags_to_migratetype(gfp_mask),
 	};
 
+/* IAMROOT-12:
+ * -------------
+ * 부트업 타임에는 wait, fs, io가 동작하지 않도록 제한한다.
+ */
 	gfp_mask &= gfp_allowed_mask;
 
 	lockdep_trace_alloc(gfp_mask);
 
+/* IAMROOT-12:
+ * -------------
+ * PREEMPT_VOLUANTRY 커널 옵션을 사용하는 경우 양보에 의해 높은 우선순위 요청 태스크에 
+ * preemption을 허용한다. 물론 __GFP_WAIT가 요청된 경우.
+ */
 	might_sleep_if(gfp_mask & __GFP_WAIT);
 
+/* IAMROOT-12:
+ * -------------
+ * CONFIG_FAIL_PAGE_ALLOC 커널 옵션을 사용하는 경우 디버그 용도로 사용한다.
+ */
 	if (should_fail_alloc_page(gfp_mask, order))
 		return NULL;
 
@@ -3213,9 +3290,19 @@ __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order,
 	 * valid zone. It's possible to have an empty zonelist as a result
 	 * of GFP_THISNODE and a memoryless node
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * GFP_THISNODE로 요청되었으며 해당 노드가 메모리가 없는 노드인 경우 zonelist가 
+ * 비어 있을 수 있다. 이 때문에 할당이 안되는 케이스가 발생한다.
+ */
 	if (unlikely(!zonelist->_zonerefs->zone))
 		return NULL;
 
+/* IAMROOT-12:
+ * -------------
+ * CMA를 사용할 때 movable 타입을 요청하는 경우 alloc_flags에 ALLOC_CMA를 추가하는 이유???
+ */
 	if (IS_ENABLED(CONFIG_CMA) && ac.migratetype == MIGRATE_MOVABLE)
 		alloc_flags |= ALLOC_CMA;
 
