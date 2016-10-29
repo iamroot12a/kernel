@@ -186,6 +186,7 @@ void __init dma_contiguous_reserve(phys_addr_t limit)
 /* IAMROOT-12AB:
  * -------------
  * cma 영역을 할당하고 cma_areas[] 및 dma_mmu_remap[]에 엔트리를 추가한다.
+ * rpi2: selected_size=5M 
  */
 		dma_contiguous_reserve_area(selected_size, selected_base,
 					    selected_limit,

@@ -1204,6 +1204,12 @@ static void __init fill_pmd_gaps(void)
 	unsigned long addr, next = 0;
 	pmd_t *pmd;
 
+/* IAMROOT-12:
+ * -------------
+ * PMD 엔트리들은 항상 페어를 이루어서 매핑을 한다.
+ * 등록된 static_cmlist의 엔트리들을 모두 읽어서 pmd 페어 매핑이 되지 않은 
+ * 경우 매핑을 한다.
+ */
 	list_for_each_entry(svm, &static_vmlist, list) {
 		vm = &svm->vm;
 		addr = (unsigned long)vm->addr;
@@ -1215,6 +1221,11 @@ static void __init fill_pmd_gaps(void)
 		 * If so and the first section entry for this PMD is free
 		 * then we block the corresponding virtual address.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 엔트리의 하단 부분에 짝을 이루지 못한 pmd에 대해 매핑을 하게 한다.
+ */
 		if ((addr & ~PMD_MASK) == SECTION_SIZE) {
 			pmd = pmd_off_k(addr);
 			if (pmd_none(*pmd))
@@ -1226,6 +1237,10 @@ static void __init fill_pmd_gaps(void)
 		 * If so and the second section entry for this PMD is empty
 		 * then we block the corresponding virtual address.
 		 */
+/* IAMROOT-12:
+ * -------------
+ * 엔트리의 상단 부분에 짝을 이루지 못한 pmd에 대해 매핑을 하게 한다.
+ */
 		addr += vm->size;
 		if ((addr & ~PMD_MASK) == SECTION_SIZE) {
 			pmd = pmd_off_k(addr) + 1;
@@ -1247,6 +1262,11 @@ static void __init pci_reserve_io(void)
 {
 	struct static_vm *svm;
 
+/* IAMROOT-12:
+ * -------------
+ * PCI를 사용하는 시스템에서 머신 함수가 제공되지 않는 경우 arm 리눅스 표준 코드를 수행하여 
+ * 가상주소 0xfee0_0000 ~ 0xfeff_ffff를 PCI 영역으로 매핑하여 사용한다.
+ */
 	svm = find_static_vm_vaddr((void *)PCI_IO_VIRT_BASE);
 	if (svm)
 		return;

@@ -194,6 +194,13 @@ static inline int __nodes_equal(const nodemask_t *src1p,
 	return bitmap_equal(src1p->bits, src2p->bits, nbits);
 }
 
+
+/* IAMROOT-12:
+ * -------------
+ * 두 개의 비트맵을 대상으로 nbits 수 만큼 and 연산한 값을 반환한다.
+ * 예) src1p->0b00001111, src2p=>0b00001010, nbits=2
+ *     결과는:0b00000010
+ */
 #define nodes_intersects(src1, src2) \
 			__nodes_intersects(&(src1), &(src2), MAX_NUMNODES)
 static inline int __nodes_intersects(const nodemask_t *src1p,
@@ -368,6 +375,19 @@ static inline void __nodes_fold(nodemask_t *dstp, const nodemask_t *origp,
 
 /*
  * Bitmasks that are kept for all the nodes.
+ */
+
+/* IAMROOT-12:
+ * -------------
+ * NUMA를 위한 노드 상태 배열
+ *
+ * N_POSSIBLE:      possible 노드 비트맵 
+ * N_ONLINE:        online 노드 비트맵
+ * N_NORMAL_MEMORY: normal zone이 있는 노드 비트맵 
+ * N_HIGH_MEMORY:   higmem zone이 있는 노드 비트맵 
+ * N_MEMORY:        memory가 존재하는 노드 비트맵 
+ *                  (아키텍처에 따라 memoryless 노드가 있다)
+ * N_CPU:           CPU가 있는 노드 비트맵
  */
 enum node_states {
 	N_POSSIBLE,		/* The node could become online at some point */

@@ -139,6 +139,10 @@ static int __meminit sparse_index_init(unsigned long section_nr, int nid)
 	if (!section)
 		return -ENOMEM;
 
+/* IAMROOT-12:
+ * -------------
+ * 할당 받은 2차 mem_section[] 배열의 첫 주소를 1차 *mem_section[]에 연결한다.
+ */
 	mem_section[root] = section;
 
 	return 0;
@@ -287,6 +291,8 @@ void __init memory_present(int nid, unsigned long start, unsigned long end)
  * -------------
  * section_mem_map이 null인 경우 노드 id와 섹션에 메모리 존재 플래그를 설정한다.
  * 노드 id는 나중에 섹션에 mem_map이 연결되어 사용되어질 때 삭제된다.
+ * (section_mem_map 변수를 나중에 mem_map에 연결하여 사용하기 전에 임시로 
+ *  early하게 node id를 저장하는 용도로 사용한다.)
  */
 		if (!ms->section_mem_map)
 			ms->section_mem_map = sparse_encode_early_nid(nid) |

@@ -2121,7 +2121,8 @@ struct page *buffered_rmqueue(struct zone *preferred_zone,
  * NR_ALLOC_BATCH 카운터를 요청한 order 페이지 수 만큼 감소시킨다.
  * (zone의 free page 갯수가 담김)
  *
- * 이 값이 0이하가 되는 경우 zone->flags에 ZONE_FAIR_DEPLETED 플래그를 설정한다.
+ * 이 값이 0이하가 되는 경우 zone->flags에 ZONE_FAIR_DEPLETED 플래그를 설정하여 
+ * 해당 zone을 다 할당하였다고 보고한다. (해당 zone에 대한 free 페이지 고갈 상태)
  */
 	__mod_zone_page_state(zone, NR_ALLOC_BATCH, -(1 << order));
 	if (atomic_long_read(&zone->vm_stat[NR_ALLOC_BATCH]) <= 0 &&
@@ -2368,14 +2369,34 @@ static int zlc_zone_worth_trying(struct zonelist *zonelist, struct zoneref *z,
 	int i;				/* index of *z in zonelist zones */
 	int n;				/* node that zone *z is on */
 
+
+/* IAMROOT-12:
+ * -------------
+ * zone list cache를 사용하지 않는 경우 1로 종료
+ * (NUMA 시스템이 아닌 경우 zlc를 사용하지 않는다)
+ */
 	zlc = zonelist->zlcache_ptr;
 	if (!zlc)
 		return 1;
 
+/* IAMROOT-12:
+ * -------------
+ * zonelist->_zonerefs[i] = z와 동일
+ */
 	i = z - zonelist->_zonerefs;
+
+/* IAMROOT-12:
+ * -------------
+ * node id를 구해온다.
+ */
 	n = zlc->z_to_n[i];
 
 	/* This zone is worth trying if it is allowed but not full */
+
+/* IAMROOT-12:
+ * -------------
+ * fullzone 비트맵의 i번째 비트가 0인 경우 성공(zone이 가득 차지 않은 경우)
+ */
 	return node_isset(n, *allowednodes) && !test_bit(i, zlc->fullzones);
 }
 
@@ -2461,6 +2482,13 @@ static void reset_alloc_batches(struct zone *preferred_zone)
 {
 	struct zone *zone = preferred_zone->zone_pgdat->node_zones;
 
+/* IAMROOT-12:
+ * -------------
+ * preferred_zone이 있는 노드의 zone에 대해 루프를 돈다.
+ *
+ * NR_ALLOC_BATCH zone 카운터를 high - low 워터마크 페이지 수로 설정하고, 
+ * ZONE_FAIR_DEPLETED 플래그를 설정하여 할당할 free 페이지가 남았다고 보고한다.
+ */
 	do {
 		mod_zone_page_state(zone, NR_ALLOC_BATCH,
 			high_wmark_pages(zone) - low_wmark_pages(zone) -
@@ -2496,13 +2524,31 @@ zonelist_scan:
 	 * Scan zonelist, looking for a zone with enough free.
 	 * See also __cpuset_node_allowed() comment in kernel/cpuset.c.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * iteration 출력: zone 포인터와 z(zoneref 포인터)
+ * filter 항목: ac->high_zoneidx 초과 zone, ac->nodemask에 포함되지 않은 노드
+ */
 	for_each_zone_zonelist_nodemask(zone, z, zonelist, ac->high_zoneidx,
 								ac->nodemask) {
 		unsigned long mark;
 
+/* IAMROOT-12:
+ * -------------
+ * zlc를 검사하여 해당 zone이 가득차 있는지 검사한다. (1=full, 0=ok)
+ * 가득차 있는 경우 해당 zone을 skip한다.
+ */
 		if (IS_ENABLED(CONFIG_NUMA) && zlc_active &&
 			!zlc_zone_worth_trying(zonelist, z, allowednodes))
 				continue;
+
+/* IAMROOT-12:
+ * -------------
+ * cpuset 사용이 enable 되었고 alloc_flags에 ALLOC_CPUSET을 주어 cpuset 검사를 
+ * 요청한 경우 해당 zone에 대한 노드를 찾아 cpuset을 이용하여 사용 가능한 상태가 
+ * 아닌 경우 skip 한다. (cpuset 부적격 zone에 대해 skip)
+ */
 		if (cpusets_enabled() &&
 			(alloc_flags & ALLOC_CPUSET) &&
 			!cpuset_zone_allowed(zone, gfp_mask))
@@ -2514,8 +2560,22 @@ zonelist_scan:
 		 * time the page has in memory before being reclaimed.
 		 */
 		if (alloc_flags & ALLOC_FAIR) {
+
+/* IAMROOT-12:
+ * -------------
+ * 현재 zone의 노드가 preferred_zone이 사용하는 노드가 아닌 경우
+ * fallback을 사용하지 않고 break한다.
+ *
+ * 그 이후 루프의 아래 루틴에서 다시 ALLOC_FAIR 플래그를 제거하고 1회 재시도를 한다.
+ */
 			if (!zone_local(ac->preferred_zone, zone))
 				break;
+
+/* IAMROOT-12:
+ * -------------
+ * 해당 zone의 free 페이지가 없는 경우 공정하게 처리할 여력이 없으므로 
+ * nr_fair_skipped 카운터를 증가시키고 다음 zone으로 skip
+ */
 			if (test_bit(ZONE_FAIR_DEPLETED, &zone->flags)) {
 				nr_fair_skipped++;
 				continue;
@@ -2636,12 +2696,28 @@ this_zone_full:
 	 * include remote zones now, before entering the slowpath and waking
 	 * kswapd: prefer spilling to a remote zone over swapping locally.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * ALLOC_FAIR 플래그를 사용한 경우 ALLOC_FAIR 플래그를 제거하고 아래 2가지 조건중
+ * 하나를 만족한 경우 리스캔을 시도한다.
+ */
 	if (alloc_flags & ALLOC_FAIR) {
 		alloc_flags &= ~ALLOC_FAIR;
+
+/* IAMROOT-12:
+ * -------------
+ * ZONE_FAIR_DEPLETED 플래그를 사용한 경우 nr_fair_skipped가 증가되었었다.
+ */
 		if (nr_fair_skipped) {
 			zonelist_rescan = true;
 			reset_alloc_batches(ac->preferred_zone);
 		}
+
+/* IAMROOT-12:
+ * -------------
+ * 온라인 노드가 여러 개인 경우 재스캔
+ */
 		if (nr_online_nodes > 1)
 			zonelist_rescan = true;
 	}
@@ -3243,6 +3319,14 @@ got_pg:
 /*
  * This is the 'heart' of the zoned buddy allocator.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * nodemask:
+ *      - 할당 가능 노드를 의미하며,
+ *	- null인 경우 전체 노드를 대상으로 할당한다.
+ *	- 노드 비트맵이 설정된 경우 해당 노드만을 대상으로 할당한다.
+ */
 struct page *
 __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order,
 			struct zonelist *zonelist, nodemask_t *nodemask)
@@ -3255,7 +3339,9 @@ __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order,
 
 /* IAMROOT-12:
  * -------------
- * 할당 요청 사항을 ac에 저장
+ * 할당 요청 사항을 ac에 저장한다
+ *
+ * .high_zoneidx: gfp_mask에서 지정된 zone
  */
 	struct alloc_context ac = {
 		.high_zoneidx = gfp_zone(gfp_mask),
@@ -3307,19 +3393,49 @@ __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order,
 		alloc_flags |= ALLOC_CMA;
 
 retry_cpuset:
+
+/* IAMROOT-12:
+ * -------------
+ * NUMA에서 메모리 정책이 바뀌었는지 확인하기 위해 리드 시퀀스 락을 사용한다.
+ * 메모리 할당이 실패한 동안에 메모리 정책이 바뀐 경우 이 루틴으로 다시 
+ * 재진입할 수 있도록 한다.
+ */
 	cpuset_mems_cookie = read_mems_allowed_begin();
 
 	/* We set it here, as __alloc_pages_slowpath might have changed it */
+
+/* IAMROOT-12:
+ * -------------
+ * ac.zonelist는 slowpath에서 바뀌므로 루프를 돌아 다시 재시도하는 경우를 위해 
+ * 처음 요청한 zonelist 인수에서 받은 값을 다시 적용한다.
+ * cpuset_current_mems_allowed: 현재 task에 허용되는 메모리 노드
+ */
 	ac.zonelist = zonelist;
 	/* The preferred zone is used for statistics later */
 	preferred_zoneref = first_zones_zonelist(ac.zonelist, ac.high_zoneidx,
 				ac.nodemask ? : &cpuset_current_mems_allowed,
 				&ac.preferred_zone);
+
+/* IAMROOT-12:
+ * -------------
+ * 조건에 맞는 zone이 없는 경우 out으로 이동
+ */
 	if (!ac.preferred_zone)
 		goto out;
+
+/* IAMROOT-12:
+ * -------------
+ * preferred_zoneref에서 zone_idx(0~3)
+ */
 	ac.classzone_idx = zonelist_zone_idx(preferred_zoneref);
 
 	/* First allocation attempt */
+
+/* IAMROOT-12:
+ * -------------
+ * Fastpath:
+ *	- 처음 get_page_from_freelist() 함수를 호출할 때 __GFP_HARDWALL을 사용한다.
+ */
 	alloc_mask = gfp_mask|__GFP_HARDWALL;
 	page = get_page_from_freelist(alloc_mask, order, alloc_flags, &ac);
 	if (unlikely(!page)) {
@@ -3345,6 +3461,12 @@ out:
 	 * the mask is being updated. If a page allocation is about to fail,
 	 * check if the cpuset changed during allocation and if so, retry.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * NUMA에서 사용되는 메모리 정책이 변경된 경우 시퀀스가 변경되므로 페이지 
+ * 할당이 실패한 경우 다시 한 번 시도를 하도록 기회를 준다.
+ */
 	if (unlikely(!page && read_mems_allowed_retry(cpuset_mems_cookie)))
 		goto retry_cpuset;
 

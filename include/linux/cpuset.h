@@ -44,17 +44,38 @@ extern void cpuset_update_active_cpus(bool cpu_online);
 extern void cpuset_cpus_allowed(struct task_struct *p, struct cpumask *mask);
 extern void cpuset_cpus_allowed_fallback(struct task_struct *p);
 extern nodemask_t cpuset_mems_allowed(struct task_struct *p);
+
+/* IAMROOT-12:
+ * -------------
+ * cpuset Cgroup을 위해 CONFIG_CPUSETS 커널 옵션이 사용될 때 사용된다.
+ * 현재 태스크에 허용된 메모리 노드 비트맵
+ */
 #define cpuset_current_mems_allowed (current->mems_allowed)
 void cpuset_init_current_mems_allowed(void);
 int cpuset_nodemask_valid_mems_allowed(nodemask_t *nodemask);
 
 extern int __cpuset_node_allowed(int node, gfp_t gfp_mask);
 
+/* IAMROOT-12:
+ * -------------
+ * cpuset 서브시스템에 하부 디렉토리(cs)가 추가된 경우 
+ * cpuset을 이용하여 요청 노드가 사용가능한지 여부를 반환한다. (1=allowed)
+ *
+ * cpuset 서브시스템에 하부 디렉토리가 하나도 등록되지 않은 경우 
+ * 기본 cpuset가 1개이므로 nr_cpusets() 값은 항상 1이다.
+ *
+ * CONFIG_CPUSET이 설정되지 않은 경우 아래 별도의 함수에서 항상 1을 리턴
+ */
 static inline int cpuset_node_allowed(int node, gfp_t gfp_mask)
 {
 	return nr_cpusets() <= 1 || __cpuset_node_allowed(node, gfp_mask);
 }
 
+/* IAMROOT-12:
+ * -------------
+ * 요청 zone으로 노드를 찾아 cpuset을 이용하여 요청 노드가 
+ * 사용가능한지 여부를 반환한다. (1=allowed)
+ */
 static inline int cpuset_zone_allowed(struct zone *z, gfp_t gfp_mask)
 {
 	return cpuset_node_allowed(zone_to_nid(z), gfp_mask);
@@ -104,6 +125,10 @@ extern void cpuset_print_task_mems_allowed(struct task_struct *p);
  */
 static inline unsigned int read_mems_allowed_begin(void)
 {
+/* IAMROOT-12:
+ * -------------
+ * 현재 태스크의 mems_allowed_seq에 시퀀스 락 값을 읽어온다.
+ */
 	return read_seqcount_begin(&current->mems_allowed_seq);
 }
 
@@ -158,6 +183,11 @@ static inline nodemask_t cpuset_mems_allowed(struct task_struct *p)
 	return node_possible_map;
 }
 
+/* IAMROOT-12:
+ * -------------
+ * cpuset Cgroup을 위해 CONFIG_CPUSETS 커널 옵션이 사용되지 않는 경우 사용된다.
+ * 메모리가 있는 모든 노드 비트맵
+ */
 #define cpuset_current_mems_allowed (node_states[N_MEMORY])
 static inline void cpuset_init_current_mems_allowed(void) {}
 

@@ -135,6 +135,11 @@ struct zone_padding {
 #define ZONE_PADDING(name)
 #endif
 
+/* IAMROOT-12:
+ * -------------
+ * NR_ALLOC_BATCH:
+ *      free page 수 (zone->managed_pages)
+ */
 enum zone_stat_item {
 	/* First 128 byte cacheline (assuming 64 bit words) */
 	NR_FREE_PAGES,
@@ -751,6 +756,11 @@ static inline bool zone_is_empty(struct zone *zone)
 
 
 struct zonelist_cache {
+
+/* IAMROOT-12:
+ * -------------
+ * z_to_n[]: zone x numa 노드 수 만큼으로 이루어져 zonelist의 zoneref[]에 대응한다.
+ */
 	unsigned short z_to_n[MAX_ZONES_PER_ZONELIST];		/* zone->nid */
 
 /* IAMROOT-12AB:
@@ -1187,6 +1197,10 @@ static inline struct zoneref *first_zones_zonelist(struct zonelist *zonelist,
 					nodemask_t *nodes,
 					struct zone **zone)
 {
+/* IAMROOT-12:
+ * -------------
+ * zonelist에서 highest_zoneidx 이하의 zone과 요청 노드로 제한한 첫 zoneref를 반환한다.
+ */
 	struct zoneref *z = next_zones_zonelist(zonelist->_zonerefs,
 							highest_zoneidx, nodes);
 	*zone = zonelist_zone(z);
@@ -1203,6 +1217,13 @@ static inline struct zoneref *first_zones_zonelist(struct zonelist *zonelist,
  *
  * This iterator iterates though all zones at or below a given zone index and
  * within a given nodemask
+ */
+
+/* IAMROOT-12:
+ * -------------
+ * zlist(zonelist)에서 highidx 초과한 zone을 filter 하고, nodemask에 표현되지 않은
+ * 노드를 filter(nodemask=null인 경우는 모든 노드를 필터없이 사용)하여 iterator를 
+ * 제공한다. 각 interation마다 출력되는 항목은 zone 포인터, z(zoneref 포인터)
  */
 #define for_each_zone_zonelist_nodemask(zone, z, zlist, highidx, nodemask) \
 	for (z = first_zones_zonelist(zlist, highidx, nodemask, &zone);	\
@@ -1367,6 +1388,12 @@ struct mem_section {
  * 섹션 번호로 루트 번호를 산출한다.
  */
 #define SECTION_NR_TO_ROOT(sec)	((sec) / SECTIONS_PER_ROOT)
+
+/* IAMROOT-12:
+ * -------------
+ * SPARSEMEM_EXTREME: 1단계 엔트리 크기 - 전체 섹션 갯수 / 루트 섹션 갯수(2레벨 엔트리 갯수)
+ * SPARSEMEM_STATIC:  1(2)단계 엔트리 크기 - 전체 섹션 갯수와 동일
+ */
 #define NR_SECTION_ROOTS	DIV_ROUND_UP(NR_MEM_SECTIONS, SECTIONS_PER_ROOT)
 #define SECTION_ROOT_MASK	(SECTIONS_PER_ROOT - 1)
 

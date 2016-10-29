@@ -183,6 +183,12 @@ static inline void __iomem *__typesafe_io(unsigned long addr)
 #endif
 
 /* PCI fixed i/o mapping */
+
+/* IAMROOT-12:
+ * -------------
+ * arm 아키텍처가 제시한 표준 PCI 매핑 주소(가상)로 여기서 PCI가 2M를 사용한다.
+ * (0xfee0_0000 ~ 0xfeff_ffff)
+ */
 #define PCI_IO_VIRT_BASE	0xfee00000
 #define PCI_IOBASE		((void __iomem *)PCI_IO_VIRT_BASE)
 

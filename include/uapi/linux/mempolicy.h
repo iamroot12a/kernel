@@ -14,6 +14,12 @@
  * The MPOL_MODE_FLAGS macro determines the legal set of optional mode flags.
  */
 
+
+/* IAMROOT-12:
+ * -------------
+ * NUMA 시스템에서 메모리 할당 시 사용하는 정책
+ */
+
 /* Policies */
 enum {
 	MPOL_DEFAULT,

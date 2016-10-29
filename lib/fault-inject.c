@@ -134,6 +134,10 @@ bool should_fail(struct fault_attr *attr, ssize_t size)
 	if (!fail_stacktrace(attr))
 		return false;
 
+/* IAMROOT-12:
+ * -------------
+ * 문제에 대한 dump 후 true를 반환하면 메모리 할당을 포기한다.
+ */
 	fail_dump(attr);
 
 	if (atomic_read(&attr->times) != -1)

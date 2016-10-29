@@ -46,6 +46,11 @@ struct mempolicy {
 	unsigned short flags;	/* See set_mempolicy() MPOL_F_* above */
 	union {
 		short 		 preferred_node; /* preferred */
+
+/* IAMROOT-12:
+ * -------------
+ * 아래 노드 마스크는 interleave/bind policy에서 사용된다.
+ */
 		nodemask_t	 nodes;		/* interleave/bind */
 		/* undefined for default */
 	} v;

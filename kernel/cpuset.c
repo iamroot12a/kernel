@@ -99,6 +99,7 @@ struct cpuset {
 
 	/* user-configured CPUs and Memory Nodes allow to tasks */
 	cpumask_var_t cpus_allowed;
+
 	nodemask_t mems_allowed;
 
 	/* effective CPUs and Memory Nodes allow to tasks */
@@ -2427,6 +2428,13 @@ nodemask_t cpuset_mems_allowed(struct task_struct *tsk)
  *
  * Are any of the nodes in the nodemask allowed in current->mems_allowed?
  */
+
+/* IAMROOT-12:
+ * -------------
+ * 요청한 노드와 태스크에 지정된 노드와 and 연산하여 반환한다.
+ * (사용가능한 노드비트맵을 반환한다.)
+ */
+
 int cpuset_nodemask_valid_mems_allowed(nodemask_t *nodemask)
 {
 	return nodes_intersects(*nodemask, current->mems_allowed);
@@ -2440,6 +2448,14 @@ int cpuset_nodemask_valid_mems_allowed(nodemask_t *nodemask)
  */
 static struct cpuset *nearest_hardwall_ancestor(struct cpuset *cs)
 {
+/* IAMROOT-12:
+ * -------------
+ * 자신을 포함한 가장 가까운 조상 cpuset의 flag가 CS_MEM_EXCLUSIVE 또는 
+ *    CS_MEM_HARDWALL가 있는 경우 해당 cpuset 반환한다.
+ *
+ * cgroup 설정을 상속하여 사용할 수 있는데 exclusive(독점적) 설정이 되어 
+ * 있는 경우와 hardwall 설정된 경우는 부모 cpuset을 상속하여 사용할 수 없다. 
+ */
 	while (!(is_mem_exclusive(cs) || is_mem_hardwall(cs)) && parent_cs(cs))
 		cs = parent_cs(cs);
 	return cs;
@@ -2499,6 +2515,29 @@ int __cpuset_node_allowed(int node, gfp_t gfp_mask)
 	int allowed;			/* is allocation in zone z allowed? */
 	unsigned long flags;
 
+/* IAMROOT-12:
+ * -------------
+ * cpuset을 이용하여 요청 노드가 사용가능한지 여부를 반환한다. (1=allowed)
+ *
+ * 1. 인터럽트 핸들링 중일때는 허용
+ *
+ * 2. __GFP_THISNODE를 사용한 경우 지정된 노드의 zonelist[1]를 사용한다.
+ *    (다른 노드의 zone 정보를 사용하지 않고 오직 지정된 노드 하나만 대상.)
+ *
+ * 3. 현재 태스크에 요청 노드가 포함된 경우 허용 
+ *    (cgroup을 사용하여 해당 user task에서 cpu(노드) 지정을 한 경우)
+ *
+ * 4. OOM으로 인해 TIF_MEMDIE 플래그가 설정된 상태인 경우 허용 
+ *    (유저 태스크의 사망 처리 중 메모리 할당)
+ *
+ * 5. __GFP_HARDWALL(user 요청 또는 커널에서 fastpath 요청 시)이 설정된 경우 
+ *    아래 조건을 더 이상 체크하지 않고 실패하도록 한다.
+ *
+ * 6. 태스크가 종료 중인 경우 허용
+ *
+ * 7. 자신을 포함한 가장 가까운 조상 cpuset의 flag가 CS_MEM_EXCLUSIVE 또는 
+ *    CS_MEM_HARDWALL가 있는 경우 해당 cpuset을 사용하여 노드의 허가 여부를 판단한다.
+ */
 	if (in_interrupt() || (gfp_mask & __GFP_THISNODE))
 		return 1;
 	if (node_isset(node, current->mems_allowed))

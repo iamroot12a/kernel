@@ -60,6 +60,14 @@ struct zoneref *next_zones_zonelist(struct zoneref *z,
 	 * Find the next suitable zone to use for the allocation.
 	 * Only filter based on nodemask if it's set
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * zonelist에서 highest_zoneidx 이하이면서 nodes(노드마스크)에 포함된 zonefer를 
+ * 찾아 반환한다. 단 현재 zoneref를 포함해서 검색한다.
+ *
+ * zonelist ------(filter: highest_zoneidx, nodes)-----> z(zoneref)
+ */
 	if (likely(nodes == NULL))
 		while (zonelist_zone_idx(z) > highest_zoneidx)
 			z++;

@@ -1588,6 +1588,11 @@ struct task_struct {
  * mems_allowed: 허용 노드 비트맵(현재 태스크에 대해 노드를 제한하는 비트 마스크)
  */
 	nodemask_t mems_allowed;	/* Protected by alloc_lock */
+
+/* IAMROOT-12:
+ * -------------
+ * 각 태스크별로 메모리에 관련된 시퀀스 락
+ */
 	seqcount_t mems_allowed_seq;	/* Seqence no to catch updates */
 	int cpuset_mem_spread_rotor;
 	int cpuset_slab_spread_rotor;
@@ -1616,6 +1621,12 @@ struct task_struct {
 #endif
 #ifdef CONFIG_NUMA
 	struct mempolicy *mempolicy;	/* Protected by alloc_lock */
+
+/* IAMROOT-12:
+ * -------------
+ * il_next: (interleave_next)
+ *      현재 태스크에서 interleave policy 모드인 경우 다음 사용할 노드 id 값을 저장한다.
+ */
 	short il_next;
 	short pref_node_fork;
 #endif

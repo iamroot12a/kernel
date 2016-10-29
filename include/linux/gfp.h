@@ -182,6 +182,13 @@ struct vm_area_struct;
  * __GFP_MOVABLE: Flag that this page will be movable by the page migration
  * mechanism or reclaimed
  */
+
+/* IAMROOT-12:
+ * -------------
+ * __GFP_THISNODE:
+ *      지정된 노드의 zonelist[1]번을 사용하여 다른 노드의 zone을 사용하지 않게 한다.
+ */
+
 #define __GFP_WAIT	((__force gfp_t)___GFP_WAIT)	/* Can wait and reschedule? */
 #define __GFP_HIGH	((__force gfp_t)___GFP_HIGH)	/* Should access emergency pools? */
 #define __GFP_IO	((__force gfp_t)___GFP_IO)	/* Can start physical IO? */
@@ -254,6 +261,13 @@ struct vm_area_struct;
 			__GFP_NORETRY|__GFP_MEMALLOC|__GFP_NOMEMALLOC)
 
 /* Control slab gfp mask during early boot */
+
+/* IAMROOT-12:
+ * -------------
+ * 부트 프로세스 동작중에 전체 GFP 비트마스크중 3개(WAIT, IO, FS)를 제거
+ * 아직 스케쥴러가 동작하지 않고, 디바이스 입출력 장치도 준비가 안된 
+ * 상태이기 때문에 해당 기능들을 제거하게 만든다.
+ */
 #define GFP_BOOT_MASK (__GFP_BITS_MASK & ~(__GFP_WAIT|__GFP_IO|__GFP_FS))
 
 /* Control allocation constraints */
@@ -273,6 +287,13 @@ struct vm_area_struct;
 /* Convert GFP flags to their corresponding migrate type */
 static inline int gfpflags_to_migratetype(const gfp_t gfp_flags)
 {
+/* IAMROOT-12:
+ * -------------
+ * gfp 마스크를 해석하여 mobility를 반환한다.
+ *      0=MIGRATE_UNMOVABLE
+ *      1=MIGRATE_RECLAIMABLE
+ *      2=MIGRATE_MOVABLE
+ */
 	WARN_ON((gfp_flags & GFP_MOVABLE_MASK) == GFP_MOVABLE_MASK);
 
 	if (unlikely(page_group_by_mobility_disabled))
@@ -401,6 +422,8 @@ static inline int gfpflags_to_migratetype(const gfp_t gfp_flags)
  * GFP_ZONE_TABLE로 부터 요청 gfp 플래그에 해당하는 zone 인덱스 번호를 반환한다. 
  * (시스템에 따라 0 ~ 3까지)
  * (rpi2: 0(ZONE_NORMAL) ~ 1(ZONE_MOVABLE))
+ *
+ * flags에 zone에 대해 아무것도 지정하지 않은 경우 ZONE_NORMAL을 반환한다.
  */
 static inline enum zone_type gfp_zone(gfp_t flags)
 {
@@ -439,6 +462,10 @@ static inline int gfp_zonelist(gfp_t flags)
  */
 static inline struct zonelist *node_zonelist(int nid, gfp_t flags)
 {
+/* IAMROOT-12:
+ * -------------
+ * 각 노드에 미리 만들어놓은 zone fallback list
+ */
 	return NODE_DATA(nid)->node_zonelists + gfp_zonelist(flags);
 }
 
@@ -482,6 +509,13 @@ static inline struct page *alloc_pages_exact_node(int nid, gfp_t gfp_mask,
 extern struct page *alloc_pages_current(gfp_t gfp_mask, unsigned order);
 
 static inline struct page *
+
+/* IAMROOT-12:
+ * -------------
+ * order 페이지를 할당한다. 
+ *      - NUMA: alloc_pages_current() -> 노드 선택 알고리즘 사용
+ *      - UMA:  alloc_pages_node() -> 자기 노드의 버디 시스템에서 할당
+ */
 alloc_pages(gfp_t gfp_mask, unsigned int order)
 {
 	return alloc_pages_current(gfp_mask, order);
@@ -499,6 +533,12 @@ extern struct page *alloc_pages_vma(gfp_t gfp_mask, int order,
 #define alloc_hugepage_vma(gfp_mask, vma, addr, order)	\
 	alloc_pages(gfp_mask, order)
 #endif
+
+/* IAMROOT-12:
+ * -------------
+ * alloc_page(): 1 페이지 할당
+ * alloc_pages(): order 만큼 할당
+ */
 #define alloc_page(gfp_mask) alloc_pages(gfp_mask, 0)
 #define alloc_page_vma(gfp_mask, vma, addr)			\
 	alloc_pages_vma(gfp_mask, 0, vma, addr, numa_node_id(), false)
