@@ -36,12 +36,14 @@ struct vm_area_struct;
 /* IAMROOT-12AB:
  * -------------
  * 할당 중 IO 요청 가능 
+ * (reclaim 불가능(clean 페이지, dirty 페이지), swap 불가능)
  */
 #define ___GFP_IO		0x40u
 
 /* IAMROOT-12AB:
  * -------------
- * 할당 중 File System Call 사용 가능
+ * 할당 중 File System Call 사용 가능 
+ * (reclaim에서 clean 페이지는 가능.(dirty 페이지는 불가능) swap 불가능)
  */
 #define ___GFP_FS		0x80u
 

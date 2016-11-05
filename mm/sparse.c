@@ -682,6 +682,12 @@ void __weak __meminit vmemmap_populate_print_last(void)
  *  alloc_usemap_and_memmap - memory alloction for pageblock flags and vmemmap
  *  @map: usemap_map for pageblock flags or mmap_map for vmemmap
  */
+
+/* IAMROOT-12:
+ * -------------
+ * 같은 노드에 소속된 섹션들끼리 합쳐서 할당을 할 수 있게 한다.
+ * (할당 사이즈에 메모리가 없는 섹션들은 반영되지 않는다)
+ */
 static void __init alloc_usemap_and_memmap(void (*alloc_func)
 					(void *, unsigned long, unsigned long,
 					unsigned long, int), void *data)
@@ -750,7 +756,7 @@ static void __init alloc_usemap_and_memmap(void (*alloc_func)
 
 /* IAMROOT-12AB:
  * -------------
- * 한 개 노드가 끝날 때마다 alloc_func()를 호출한다.
+ * 새로운 노드를 만났을 때마다 alloc_func()를 호출한다.
  */
 		/* ok, we need to take cake of from pnum_begin to pnum - 1*/
 		alloc_func(data, pnum_begin, pnum,

@@ -3,6 +3,11 @@
 
 #define MAX_NICE	19
 #define MIN_NICE	-20
+
+/* IAMROOT-12:
+ * -------------
+ * NICE_WIDTH=40
+ */
 #define NICE_WIDTH	(MAX_NICE - MIN_NICE + 1)
 
 /*
@@ -21,13 +26,30 @@
 #define MAX_USER_RT_PRIO	100
 #define MAX_RT_PRIO		MAX_USER_RT_PRIO
 
+
+/* IAMROOT-12:
+ * -------------
+ * MAX_PRIO=140
+ */
 #define MAX_PRIO		(MAX_RT_PRIO + NICE_WIDTH)
+
+/* IAMROOT-12:
+ * -------------
+ * DEFAULT_PRIO=120
+ */
 #define DEFAULT_PRIO		(MAX_RT_PRIO + NICE_WIDTH / 2)
 
 /*
  * Convert user-nice values [ -20 ... 0 ... 19 ]
  * to static priority [ MAX_RT_PRIO..MAX_PRIO-1 ],
  * and back.
+ */
+
+/* IAMROOT-12:
+ * -------------
+ * priority 값과 nice 값을 변환하는 매크로 
+ * 예) nice=10 -> priority=130
+ *     priority=100 -> nice=-20
  */
 #define NICE_TO_PRIO(nice)	((nice) + DEFAULT_PRIO)
 #define PRIO_TO_NICE(prio)	((prio) - DEFAULT_PRIO)

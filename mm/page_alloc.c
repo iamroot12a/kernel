@@ -2253,18 +2253,49 @@ static bool __zone_watermark_ok(struct zone *z, unsigned int order,
 	long free_cma = 0;
 
 	free_pages -= (1 << order) - 1;
+
+/* IAMROOT-12:
+ * -------------
+ * 인터럽트 핸들러등에서 GFP_ATOMIC(__GFP_HIGH)으로 요청을 하는 경우 
+ * 높은 우선 처리 요청을 한 경우인데 이 때 min 값을 절반으로 줄여 성공 확률을 높인다.
+ */
 	if (alloc_flags & ALLOC_HIGH)
 		min -= min / 2;
+
+/* IAMROOT-12:
+ * -------------
+ * slowpath 페이지 할당의 특정 요건에서 더 빠르게 처리해야 할 때 
+ * ALLOC_HARDER를 사용하여 min 값을 25% 줄여 성공 확률을 높인다.
+ */
 	if (alloc_flags & ALLOC_HARDER)
 		min -= min / 4;
+
+/* IAMROOT-12:
+ * -------------
+ * ALLOC_CMA(movable 타입) 요청을 하지 않은 경우 free CMA 페이지들을 알아온다.
+ */
 #ifdef CONFIG_CMA
 	/* If allocation can't use CMA areas don't use free CMA pages */
 	if (!(alloc_flags & ALLOC_CMA))
 		free_cma = zone_page_state(z, NR_FREE_CMA_PAGES);
 #endif
 
+/* IAMROOT-12:
+ * -------------
+ * unmovable이나 reclaimable 타입으로 할당 요청이 온 경우에는 free cma 영역은 
+ * 할당 할 수 없으므로 남은 free 페이지에서 감소시켜 워터마크와 비교해야 한다.
+ *
+ * 워터마크 값에 lowmem_reserve 영역을 더해서 비교한다.
+ * (lowmem_reserve도 보호해야하기 때문)
+ */
 	if (free_pages - free_cma <= min + z->lowmem_reserve[classzone_idx])
 		return false;
+
+/* IAMROOT-12:
+ * -------------
+ * 하위 order 페이지들은 free 페이지 계산에서 빼고 워터마크와 비교하는 것이 
+ * 목적인데 약간의 오류가 있어서 커널 v4.4-rc1에서 변경되었다.
+ */
 	for (o = 0; o < order; o++) {
 		/* At the next order, this order's pages become unavailable */
 		free_pages -= z->free_area[o].nr_free << o;
@@ -2439,6 +2470,11 @@ static bool zone_local(struct zone *local_zone, struct zone *zone)
 	return local_zone->node == zone->node;
 }
 
+/* IAMROOT-12:
+ * -------------
+ * 두 zone이 있는 노드끼리의 거리가 너무 멀면 false 
+ * (이러한 노드는 reclaim에서 사용하지 않는다.)
+ */
 static bool zone_allows_reclaim(struct zone *local_zone, struct zone *zone)
 {
 	return node_distance(zone_to_nid(local_zone), zone_to_nid(zone)) <
@@ -2512,6 +2548,12 @@ get_page_from_freelist(gfp_t gfp_mask, unsigned int order, int alloc_flags,
 	nodemask_t *allowednodes = NULL;/* zonelist_cache approximation */
 	int zlc_active = 0;		/* set if using zonelist_cache */
 	int did_zlc_setup = 0;		/* just call zlc_setup() one time */
+
+/* IAMROOT-12:
+ * -------------
+ * __GFP_WRITE 플래그가 사용된 경우 write용 파일 캐시 목적으로 페이지 할당을 
+ * 요청할 경우 (fastpath 페이지 할당 시 ALLOC_WMARK_LOW를 사용)
+ */
 	bool consider_zone_dirty = (alloc_flags & ALLOC_WMARK_LOW) &&
 				(gfp_mask & __GFP_WRITE);
 	int nr_fair_skipped = 0;
@@ -2607,19 +2649,47 @@ zonelist_scan:
 		 * will require awareness of zones in the
 		 * dirty-throttling and the flusher threads.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * dirty(write용 파일 캐시) 페이지 할당 요청 및 워터마크 제한을 사용하는 경우 
+ * 일정 분량의 zone dirty 제한 값 이내에서만 할당이 가능하도록 한다.
+ */
 		if (consider_zone_dirty && !zone_dirty_ok(zone))
 			continue;
 
+/* IAMROOT-12:
+ * -------------
+ * ALLOC 관련한 플래그들 중 3가지만 통과(MIN, LOW, HIGH)
+ * (ALLOC_NO_WATERMARKS(4)는 통과시키지 않는다)
+ */
 		mark = zone->watermark[alloc_flags & ALLOC_WMARK_MASK];
+
+/* IAMROOT-12:
+ * -------------
+ * 남은 free 페이지가 요청 order를 처리하도라도 워터마크보다 큰지 체크한다.
+ * (단 order가 1이상인 경우는 관련 order에 대한 버디리스트도 추가로 체크한다)
+ */
 		if (!zone_watermark_ok(zone, order, mark,
 				       ac->classzone_idx, alloc_flags)) {
 			int ret;
 
 			/* Checked here to keep the fast path fast */
 			BUILD_BUG_ON(ALLOC_NO_WATERMARKS < NR_WMARK);
+
+/* IAMROOT-12:
+ * -------------
+ * 워터마크 기준 이하라 하더라도 ALLOC_NO_WATERMARKS 플래그가 요청되어 
+ * 비상 상황인 경우 어떠한 영역이든 가리지 않고 시스템에서 할당을 시도한다.
+ */
 			if (alloc_flags & ALLOC_NO_WATERMARKS)
 				goto try_this_zone;
 
+/* IAMROOT-12:
+ * -------------
+ * 2개 이상의 노드가 있는 NUMA 시스템에서 did_zlc_setup이 
+ * false(함수 내부에서 첫 시도)인 경우
+ */
 			if (IS_ENABLED(CONFIG_NUMA) &&
 					!did_zlc_setup && nr_online_nodes > 1) {
 				/*
@@ -2632,6 +2702,12 @@ zonelist_scan:
 				did_zlc_setup = 1;
 			}
 
+/* IAMROOT-12:
+ * -------------
+ * NUMA가 아닌 경우 무조건 full 처리 
+ * 권장 zone의 노드와 처리하고자 하는 zone의 노드간 거리가 너무 멀리 떨어져 있는 
+ * 경우 해당 zone을 zlc를 통해 full 처리하고 skip한다.
+ */
 			if (zone_reclaim_mode == 0 ||
 			    !zone_allows_reclaim(ac->preferred_zone, zone))
 				goto this_zone_full;
@@ -2640,6 +2716,12 @@ zonelist_scan:
 			 * As we may have just activated ZLC, check if the first
 			 * eligible zone has failed zone_reclaim recently.
 			 */
+
+/* IAMROOT-12:
+ * -------------
+ * NUMA에서 해당 zone에 대한 zlc(zonelist cache)가 설정되어 있으면 free 페이지가 없다 
+ * 판단하여 skip 한다.
+ */
 			if (IS_ENABLED(CONFIG_NUMA) && zlc_active &&
 				!zlc_zone_worth_trying(zonelist, z, allowednodes))
 				continue;
@@ -2667,6 +2749,12 @@ zonelist_scan:
 				 * when the watermark is between the low and
 				 * min watermarks.
 				 */
+
+/* IAMROOT-12:
+ * -------------
+ * ALLOC_WMARK_MIN 요청에서 실패한 경우이거나 약간의 페이지 밖에 회수가 안된 경우는 
+ * zlc에 zone이 full 되었음을 알린다. 그 외의 경우는 zlc full 처리 없이 skip 한다.
+ */
 				if (((alloc_flags & ALLOC_WMARK_MASK) == ALLOC_WMARK_MIN) ||
 				    ret == ZONE_RECLAIM_SOME)
 					goto this_zone_full;
@@ -2684,6 +2772,11 @@ try_this_zone:
 			return page;
 		}
 this_zone_full:
+
+/* IAMROOT-12:
+ * -------------
+ * zlc 캐시에 현재 zone이 full 되었음을 마크한다.
+ */
 		if (IS_ENABLED(CONFIG_NUMA) && zlc_active)
 			zlc_mark_zone_full(zonelist, z);
 	}
@@ -3387,7 +3480,11 @@ __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order,
 
 /* IAMROOT-12:
  * -------------
- * CMA를 사용할 때 movable 타입을 요청하는 경우 alloc_flags에 ALLOC_CMA를 추가하는 이유???
+ * CMA를 사용할 때 movable 타입을 요청하는 경우 alloc_flags에 ALLOC_CMA를 추가하는 이유
+ *   -> CMA 영역을 movable 요청에 대해서만 허락하여 공간을 효율적으로 사용하도록 한다.
+ *      나중에 CMA 공간에 대해 할당 요청이 발생하는 경우 free 페이지가 부족하면 movable 
+ *      속성의 페이지들을 다른 곳으로 이주 시킬 수 있다.(빈번하지 않기 때문에 이런 식으로 
+ *      운용을 하는 것이 효율적이다)
  */
 	if (IS_ENABLED(CONFIG_CMA) && ac.migratetype == MIGRATE_MOVABLE)
 		alloc_flags |= ALLOC_CMA;
@@ -3444,6 +3541,10 @@ retry_cpuset:
 		 * can deadlock because I/O on the device might not
 		 * complete.
 		 */
+/* IAMROOT-12:
+ * -------------
+ * 현재 태스크가 io 처리를 하지 못하게 막은 경우 페이지 회수 시스템이 동작하지 못한다.
+ */
 		alloc_mask = memalloc_noio_flags(gfp_mask);
 
 		page = __alloc_pages_slowpath(alloc_mask, order, &ac);

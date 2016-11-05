@@ -2044,6 +2044,10 @@ extern void thread_group_cputime_adjusted(struct task_struct *p, cputime_t *ut, 
  */
 static inline gfp_t memalloc_noio_flags(gfp_t flags)
 {
+/* IAMROOT-12:
+ * -------------
+ * 현재 태스크가 io 처리를 하지 못하게 막은 경우 페이지 회수 시스템이 동작하지 못한다.
+ */
 	if (unlikely(current->flags & PF_MEMALLOC_NOIO))
 		flags &= ~(__GFP_IO | __GFP_FS);
 	return flags;

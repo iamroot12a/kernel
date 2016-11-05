@@ -184,6 +184,12 @@ static unsigned long zone_dirtyable_memory(struct zone *zone)
 {
 	unsigned long nr_pages;
 
+/* IAMROOT-12:
+ * -------------
+ * 페이지 캐시에 사용할 수 있는 메모리를 계산할 때 해당 zone에 남아 있는 
+ * free 페이지 + 이미 파일캐시에 사용중인 페이지들을 더하고 
+ * 약간의 reserve 메모리를 제외한 페이지 수를 사용한다.
+ */
 	nr_pages = zone_page_state(zone, NR_FREE_PAGES);
 	nr_pages -= min(nr_pages, zone->dirty_balance_reserve);
 
@@ -237,6 +243,14 @@ static unsigned long highmem_dirtyable_memory(unsigned long total)
 static unsigned long global_dirtyable_memory(void)
 {
 	unsigned long x;
+
+
+/* IAMROOT-12:
+ * -------------
+ * 시스템 내의 free 페이지 + 파일 캐시 페이지 - dirty_balance_reserve  + 1
+ * ("/proc/sys/vm/highmem_is_dirtyable" 0으로 설정된 경우 
+ *  highmem에서 dirtyable한 페이지를 제외한다.)
+ */
 
 	x = global_page_state(NR_FREE_PAGES);
 	x -= min(x, dirty_balance_reserve);
@@ -297,16 +311,35 @@ void global_dirty_limits(unsigned long *pbackground, unsigned long *pdirty)
  */
 static unsigned long zone_dirty_limit(struct zone *zone)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * dirty(write용 파일 캐시) 페이지로 사용할 수 있는 최대 페이지 수를 구해온다.
+ * (요청 zone의 free 페이지 + 이미 사용중인 파일 캐시 페이지 수 - 약간의 reserve)
+ */
 	unsigned long zone_memory = zone_dirtyable_memory(zone);
 	struct task_struct *tsk = current;
 	unsigned long dirty;
 
+/* IAMROOT-12:
+ * -------------
+ * "/proc/sys/vm/vm_dirty_bytes"가 설정된 경우 해당 크기를 
+ *  zone에 대한 dirty 비율만큼 반환한다.
+ *
+ * 설정되지 않은 경우 
+ * "/proc/sys/vm/vm_dirty_ratio" 백분율만큼 계산된 zone_memory를 반환한다.
+ */
 	if (vm_dirty_bytes)
 		dirty = DIV_ROUND_UP(vm_dirty_bytes, PAGE_SIZE) *
 			zone_memory / global_dirtyable_memory();
 	else
 		dirty = vm_dirty_ratio * zone_memory / 100;
 
+
+/* IAMROOT-12:
+ * -------------
+ * 태스크에 PF_LESS_THROTTLE 설정이 있거나 RT 태스크의 경우 dirty 값을 25% 증가시킨다.
+ */
 	if (tsk->flags & PF_LESS_THROTTLE || rt_task(tsk))
 		dirty += dirty / 4;
 
@@ -324,6 +357,11 @@ bool zone_dirty_ok(struct zone *zone)
 {
 	unsigned long limit = zone_dirty_limit(zone);
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 시스템에서 dirty 페이지 + NFS에 아직 기록되지 않은 페이지
+ *  + writeback 중인 페이지의 총 합이 zone에 대한 dirty limit 이하인 경우 OK(true)
+ */
 	return zone_page_state(zone, NR_FILE_DIRTY) +
 	       zone_page_state(zone, NR_UNSTABLE_NFS) +
 	       zone_page_state(zone, NR_WRITEBACK) <= limit;

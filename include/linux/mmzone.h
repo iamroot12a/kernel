@@ -405,6 +405,11 @@ struct zone {
 	 * on the higher zones). This array is recalculated at runtime if the
 	 * sysctl_lowmem_reserve_ratio sysctl changes.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 응급 상황에서 커널이 사용할 수 있는 소량의 메모리를 확보하도록 준비해둔다.
+ */
 	long lowmem_reserve[MAX_NR_ZONES];
 
 #ifdef CONFIG_NUMA
@@ -429,6 +434,11 @@ struct zone {
 	 * This is a per-zone reserve of pages that should not be
 	 * considered dirtyable memory.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * dirty 페이지로 사용하지 못하게 제한을 건 페이지 수
+ */
 	unsigned long		dirty_balance_reserve;
 
 #ifndef CONFIG_SPARSEMEM

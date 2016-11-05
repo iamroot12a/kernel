@@ -3,6 +3,11 @@
 
 #include <linux/sched/prio.h>
 
+
+/* IAMROOT-12:
+ * -------------
+ * RT 스케쥴러가 사용하는 priority 값이면 true를 반환한다.
+ */
 static inline int rt_prio(int prio)
 {
 	if (unlikely(prio < MAX_RT_PRIO))
@@ -10,6 +15,10 @@ static inline int rt_prio(int prio)
 	return 0;
 }
 
+/* IAMROOT-12:
+ * -------------
+ * RT 태스크 여부를 priority 값으로 확인한다.
+ */
 static inline int rt_task(struct task_struct *p)
 {
 	return rt_prio(p->prio);
