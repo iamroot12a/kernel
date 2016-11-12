@@ -128,6 +128,12 @@ static struct page *pageblock_pfn_to_page(unsigned long start_pfn,
 #ifdef CONFIG_COMPACTION
 
 /* Do not skip compaction more than 64 times */
+
+/* IAMROOT-12:
+ * -------------
+ * compaction 유예를 2^6 만큼 쌓이면 더 이상 유예하지 못한다.
+ * 즉, compaction을 진행해야 한다.
+ */
 #define COMPACT_MAX_DEFER_SHIFT 6
 
 /*
@@ -154,10 +160,20 @@ bool compaction_deferred(struct zone *zone, int order)
 {
 	unsigned long defer_limit = 1UL << zone->compact_defer_shift;
 
+/* IAMROOT-12:
+ * -------------
+ * 최근 실패시 order 값이 담겨 있고, 이 보다 작은 order만 compaction 시도한다.
+ */
 	if (order < zone->compact_order_failed)
 		return false;
 
 	/* Avoid possible overflow */
+
+/* IAMROOT-12:
+ * -------------
+ * compact_considered가 defer_limit 이상인 경우 그 값을 제한 시키고 
+ * compaction 시도하게 한다.
+ */
 	if (++zone->compact_considered > defer_limit)
 		zone->compact_considered = defer_limit;
 
@@ -166,6 +182,10 @@ bool compaction_deferred(struct zone *zone, int order)
 
 	trace_mm_compaction_deferred(zone, order);
 
+/* IAMROOT-12:
+ * -------------
+ * true인 경우 compaction 유예를 한다.
+ */
 	return true;
 }
 
@@ -190,9 +210,18 @@ void compaction_defer_reset(struct zone *zone, int order,
 /* Returns true if restarting compaction after many failures */
 bool compaction_restarting(struct zone *zone, int order)
 {
+/* IAMROOT-12:
+ * -------------
+ * 최근 compact 시 실패하였던 order 보다 작은 order로 요청한 경우 
+ * 리스타팅 중이 아니다.
+ */
 	if (order < zone->compact_order_failed)
 		return false;
 
+/* IAMROOT-12:
+ * -------------
+ * compacton 유예가 한도까지 온 경우이면서 
+ */
 	return zone->compact_defer_shift == COMPACT_MAX_DEFER_SHIFT &&
 		zone->compact_considered >= 1UL << zone->compact_defer_shift;
 }
@@ -218,12 +247,24 @@ static void __reset_isolation_suitable(struct zone *zone)
 	unsigned long end_pfn = zone_end_pfn(zone);
 	unsigned long pfn;
 
+/* IAMROOT-12:
+ * -------------
+ * migrate 스캐너(sync/async)에 zone 시작 pfn으로 리셋 (위로 증가)
+ * free 스캐너에 zone 끝 pfn으로 리셋 (아래로 증가)
+ */
 	zone->compact_cached_migrate_pfn[0] = start_pfn;
 	zone->compact_cached_migrate_pfn[1] = start_pfn;
 	zone->compact_cached_free_pfn = end_pfn;
 	zone->compact_blockskip_flush = false;
 
 	/* Walk the zone and mark every pageblock as suitable for isolation */
+
+/* IAMROOT-12:
+ * -------------
+ * start_pfn ~ end_pfn 까지의 페이지블럭단위로 페이지블럭의 PB_migrate_skip 비트를
+ * 클리어한다. (zone의 모든 페이지 블럭의 migrate skip 비트를 클리어해서 
+ * 다시 시작할 수 있도록 준비한다) 
+ */
 	for (pfn = start_pfn; pfn < end_pfn; pfn += pageblock_nr_pages) {
 		struct page *page;
 
@@ -1217,6 +1258,11 @@ static unsigned long __compaction_suitable(struct zone *zone, int order,
 	 * order == -1 is expected when compacting via
 	 * /proc/sys/vm/compact_memory
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * "echo 1 > /proc/ss/vm/compact_memory"를 수행하면 강제로 compaction을 수행한다.
+ */
 	if (order == -1)
 		return COMPACT_CONTINUE;
 
@@ -1225,6 +1271,11 @@ static unsigned long __compaction_suitable(struct zone *zone, int order,
 	 * If watermarks for high-order allocation are already met, there
 	 * should be no need for compaction at all.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 회수된 free 페이지가 low 워터마크를 초과 및 order 페이지가 있는 경우 skip
+ */
 	if (zone_watermark_ok(zone, order, watermark, classzone_idx,
 								alloc_flags))
 		return COMPACT_PARTIAL;
@@ -1234,6 +1285,13 @@ static unsigned long __compaction_suitable(struct zone *zone, int order,
 	 * This is because during migration, copies of pages need to be
 	 * allocated and for a short time, the footprint is higher
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * migration 하는 동안 order의 두 배 페이지 수만큼 잠시 짧은 시간동안 내부에서
+ * 할당을 하여 사용하므로 워터마크 기준을 상향시켜서 워터마크 기준을 통과하는지 
+ * 체크한다.
+ */
 	watermark += (2UL << order);
 	if (!zone_watermark_ok(zone, 0, watermark, classzone_idx, alloc_flags))
 		return COMPACT_SKIPPED;
@@ -1249,6 +1307,13 @@ static unsigned long __compaction_suitable(struct zone *zone, int order,
 	 *
 	 * Only compact if a failure would be due to fragmentation.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 요청 order로 compaction 할 때 성공 확률을 판단하기 위해 요청 order에 대한 
+ * 파편화 인덱스 값을 알아와서 그 값이 "/proc/sys/vm/extfrag_threshold" 
+ * 값(default=500)을 초과하는 경우 compaction을 시도하게 한다.
+ */
 	fragindex = fragmentation_index(zone, order);
 	if (fragindex >= 0 && fragindex <= sysctl_extfrag_threshold)
 		return COMPACT_NOT_SUITABLE_ZONE;
@@ -1261,6 +1326,11 @@ unsigned long compaction_suitable(struct zone *zone, int order,
 {
 	unsigned long ret;
 
+/* IAMROOT-12:
+ * -------------
+ * compaction 시도를 위한 조건(파편화 인덱스 비교)을 만족시키는지 알아온다.
+ * (COMPACT_NOT_SUITABLE_ZONE = 불만족하여 skip을 반환한댜)
+ */
 	ret = __compaction_suitable(zone, order, alloc_flags, classzone_idx);
 	trace_mm_compaction_suitable(zone, order, ret);
 	if (ret == COMPACT_NOT_SUITABLE_ZONE)
@@ -1278,6 +1348,13 @@ static int compact_zone(struct zone *zone, struct compact_control *cc)
 	const bool sync = cc->mode != MIGRATE_ASYNC;
 	unsigned long last_migrated_pfn = 0;
 
+/* IAMROOT-12:
+ * -------------
+ * compaction 시도를 위한 조건(파편화 인덱스 비교)을 만족시키는지 알아온다.
+ *   - COMPACT_PARTIAL: 비교 전에 이미 order에 맞는 free 페이지가 생겼다.
+ *   - COMPACT_SKIPPED: 파편화 인덱스 비교하여 적절하지 못하여 skip 
+ *   - COMPACT_CONTINUE: 파편화 인덱스 비교하여 적절하므로 compactio 시도 
+ */
 	ret = compaction_suitable(zone, cc->order, cc->alloc_flags,
 							cc->classzone_idx);
 	switch (ret) {
@@ -1295,6 +1372,13 @@ static int compact_zone(struct zone *zone, struct compact_control *cc)
 	 * is about to be retried after being deferred. kswapd does not do
 	 * this reset as it'll reset the cached information when going to sleep.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * compaction 실패가 마지막 횟수까지 도달하였고 kswapd가 활동 상태가 아닌 경우
+ * compaction을 다시 처음부터 하기 위해 zone의 usemap(pageblock_flags)에서 
+ * 모든 PB_migrate_skip 비트를 clear한다.
+ */
 	if (compaction_restarting(zone, cc->order) && !current_is_kswapd())
 		__reset_isolation_suitable(zone);
 
@@ -1429,6 +1513,11 @@ static unsigned long compact_zone_order(struct zone *zone, int order,
 		int alloc_flags, int classzone_idx)
 {
 	unsigned long ret;
+
+/* IAMROOT-12:
+ * -------------
+ * compact 요청 첫 시도시 nr_freepages가 0부터 시작
+ */
 	struct compact_control cc = {
 		.nr_freepages = 0,
 		.nr_migratepages = 0,
@@ -1479,6 +1568,10 @@ unsigned long try_to_compact_pages(gfp_t gfp_mask, unsigned int order,
 	*contended = COMPACT_CONTENDED_NONE;
 
 	/* Check if the GFP flags allow compaction */
+/* IAMROOT-12:
+ * -------------
+ * order 0 페이지는 compaction을 해도 소용 없다. 또한 fs/io 요청이 없는 경우 skip 한다.
+ */
 	if (!order || !may_enter_fs || !may_perform_io)
 		return COMPACT_SKIPPED;
 
@@ -1490,6 +1583,10 @@ unsigned long try_to_compact_pages(gfp_t gfp_mask, unsigned int order,
 		int status;
 		int zone_contended;
 
+/* IAMROOT-12:
+ * -------------
+ * compaction 유예 상황이면 skip
+ */
 		if (compaction_deferred(zone, order))
 			continue;
 

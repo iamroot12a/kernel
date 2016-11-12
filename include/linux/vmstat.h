@@ -151,6 +151,12 @@ static inline unsigned long zone_page_state(struct zone *zone,
 static inline unsigned long zone_page_state_snapshot(struct zone *zone,
 					enum zone_stat_item item)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * zone에 있는 vm_stat 카운터 값에 각 cpu가 가지고 있는 vm_stat_diff 
+ * 카운터 값들을 다 더해서 읽어온다.
+ */
 	long x = atomic_long_read(&zone->vm_stat[item]);
 
 #ifdef CONFIG_SMP

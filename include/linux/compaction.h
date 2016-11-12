@@ -19,6 +19,13 @@
 
 /* Used to signal whether compaction detected need_sched() or lock contention */
 /* No contention detected */
+
+/* IAMROOT-12:
+ * -------------
+ * compaction을 할 때 방해되는 혼잡도 
+ *  - 선점 요구 
+ *  - 같은 zone에서의 lock 사용
+ */
 #define COMPACT_CONTENDED_NONE	0
 /* Either need_sched() was true or fatal signal pending */
 #define COMPACT_CONTENDED_SCHED	1

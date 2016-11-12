@@ -2319,8 +2319,19 @@ bool zone_watermark_ok(struct zone *z, unsigned int order, unsigned long mark,
 bool zone_watermark_ok_safe(struct zone *z, unsigned int order,
 			unsigned long mark, int classzone_idx, int alloc_flags)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 워터마크 ok 체크를 위해서 free 페이지가 기준 이하로 내려가면 zone 카운터에 대해
+ * 더 정확히 비교를 하도록 한다.
+ */
 	long free_pages = zone_page_state(z, NR_FREE_PAGES);
 
+/* IAMROOT-12:
+ * -------------
+ * free 페이지가 zone의 percpu_drift_mark 보다 작으면 엄밀하게 zone 카운터를 
+ * 읽어오도록 한다.
+ */
 	if (z->percpu_drift_mark && free_pages < z->percpu_drift_mark)
 		free_pages = zone_page_state_snapshot(z, NR_FREE_PAGES);
 
@@ -3010,6 +3021,11 @@ __alloc_pages_direct_compact(gfp_t gfp_mask, unsigned int order,
 	if (!order)
 		return NULL;
 
+/* IAMROOT-12:
+ * -------------
+ * compaction을 하는 동안 페이지 할당이 필요하여 비상용 reserve 메모리를 
+ * 사용할 수 있도록 현재 태스크에 PF_MEMALLOC 플래그를 설정한다.
+ */
 	current->flags |= PF_MEMALLOC;
 	compact_result = try_to_compact_pages(gfp_mask, order, alloc_flags, ac,
 						mode, contended_compaction);
@@ -3141,6 +3157,11 @@ __alloc_pages_high_priority(gfp_t gfp_mask, unsigned int order,
 		page = get_page_from_freelist(gfp_mask, order,
 						ALLOC_NO_WATERMARKS, ac);
 
+/* IAMROOT-12:
+ * -------------
+ * __GFP_NOFAIL 요청인 경우 페이지 할당을 실패하더라도 잠시 20ms 쉬었다가
+ * 다시 시도한다.
+ */
 		if (!page && gfp_mask & __GFP_NOFAIL)
 			wait_iff_congested(ac->preferred_zone, BLK_RW_ASYNC,
 									HZ/50);
@@ -3162,7 +3183,18 @@ static void wake_all_kswapds(unsigned int order, const struct alloc_context *ac)
 static inline int
 gfp_to_alloc_flags(gfp_t gfp_mask)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * slowpath 첫 시도시 기본 옵션으로 min 워터마크 및 cpuset을 사용하게 한다.
+ */
 	int alloc_flags = ALLOC_WMARK_MIN | ALLOC_CPUSET;
+
+/* IAMROOT-12:
+ * -------------
+ * atomic 요청이 있는지 확인한다. 
+ * (wait이 있는 경우 sleep 가능)
+ */
 	const bool atomic = !(gfp_mask & (__GFP_WAIT | __GFP_NO_KSWAPD));
 
 	/* __GFP_HIGH is assumed to be the same as ALLOC_HIGH to save a branch. */
@@ -3174,6 +3206,11 @@ gfp_to_alloc_flags(gfp_t gfp_mask)
 	 * policy or is asking for __GFP_HIGH memory.  GFP_ATOMIC requests will
 	 * set both ALLOC_HARDER (atomic == true) and ALLOC_HIGH (__GFP_HIGH).
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * high(빠른 우선 처리) 요청이 있는 경우 alloc_flags에도 사용
+ */
 	alloc_flags |= (__force int) (gfp_mask & __GFP_HIGH);
 
 	if (atomic) {
@@ -3181,6 +3218,14 @@ gfp_to_alloc_flags(gfp_t gfp_mask)
 		 * Not worth trying to allocate harder for __GFP_NOMEMALLOC even
 		 * if it can't schedule.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * atomic인데도 비상용 메모리를 사용하지 못하게 요청한 경우 더 페이지 할당에
+ * 분발하도록 한다.
+ *
+ * atomic 요청 시에는 cpuset을 사용하지 못하게 한다.
+ */
 		if (!(gfp_mask & __GFP_NOMEMALLOC))
 			alloc_flags |= ALLOC_HARDER;
 		/*
@@ -3188,19 +3233,51 @@ gfp_to_alloc_flags(gfp_t gfp_mask)
 		 * comment for __cpuset_node_allowed().
 		 */
 		alloc_flags &= ~ALLOC_CPUSET;
+
+/* IAMROOT-12:
+ * -------------
+ * atomic 요청이 아니지만 커널 스레드에서 요청한 경우 이 때에도 분발한다.
+ */
 	} else if (unlikely(rt_task(current)) && !in_interrupt())
 		alloc_flags |= ALLOC_HARDER;
 
+/* IAMROOT-12:
+ * -------------
+ * 비상용 reserve 메모리를 사용하지 말라고 요청한 경우가 아니라면 
+ */
 	if (likely(!(gfp_mask & __GFP_NOMEMALLOC))) {
+
+/* IAMROOT-12:
+ * -------------
+ * 비상용 reserve 메모리를 사용해도 좋다라는 요청인 경우 no 워터마크 플래그를 
+ * 적용한다.
+ */
 		if (gfp_mask & __GFP_MEMALLOC)
 			alloc_flags |= ALLOC_NO_WATERMARKS;
+
+/* IAMROOT-12:
+ * -------------
+ * softirq 핸들링중이면서 현재 태스크에 PF_MEMALLOC이 붙어 있는 경우 no 워터마크 적용 
+ * (사례: RX 네트워크 패킷 처리중에 PF_MEMALLOC 붙여서 요청)
+ */
 		else if (in_serving_softirq() && (current->flags & PF_MEMALLOC))
 			alloc_flags |= ALLOC_NO_WATERMARKS;
+
+/* IAMROOT-12:
+ * -------------
+ * 태스크에서 할당 요청 중이면서 태스크에 PF_MEMALLOC 플래그 요청하거나 
+ * 태스크가 dead 되어가는 중인 경우 no 워터마크 적용
+ */
 		else if (!in_interrupt() &&
 				((current->flags & PF_MEMALLOC) ||
 				 unlikely(test_thread_flag(TIF_MEMDIE))))
 			alloc_flags |= ALLOC_NO_WATERMARKS;
 	}
+
+/* IAMROOT-12:
+ * -------------
+ * movable 타입인 경우 ALLOC_CMA 플래그를 주어 CMA 영역에서도 할당할 수 있게 한다.
+ */
 #ifdef CONFIG_CMA
 	if (gfpflags_to_migratetype(gfp_mask) == MIGRATE_MOVABLE)
 		alloc_flags |= ALLOC_CMA;
@@ -3217,6 +3294,12 @@ static inline struct page *
 __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
 						struct alloc_context *ac)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * __GFP_WAIT이 요청된 경우 sleep 가능하다. 이 때 페이지 회수가 가능하다.
+ * 추후 커널에서는 __GFP_RECLAIM으로 변경된다.
+ */
 	const gfp_t wait = gfp_mask & __GFP_WAIT;
 	struct page *page = NULL;
 	int alloc_flags;
@@ -3245,11 +3328,21 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
 	 * allowed per node queues are empty and that nodes are
 	 * over allocated.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * slowpath에 들어와서 GFP_THISNODE 요청을 하는 경우 noway.
+ */
 	if (IS_ENABLED(CONFIG_NUMA) &&
 	    (gfp_mask & GFP_THISNODE) == GFP_THISNODE)
 		goto nopage;
 
 retry:
+
+/* IAMROOT-12:
+ * -------------
+ * __GFP_NO_KSWAPD 플래그가 요청되지 않은 경우 필요한 kswapds들을 깨운다.
+ */
 	if (!(gfp_mask & __GFP_NO_KSWAPD))
 		wake_all_kswapds(order, ac);
 
@@ -3258,12 +3351,24 @@ retry:
 	 * reclaim. Now things get more complex, so set up alloc_flags according
 	 * to how we want to proceed.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * gfp 플래그 상태를 분석하여 alloc 플래그를 만들어준다
+ * (워터마크 경계를 없애거나, MIN으로 주거나, ALLOC_HARDER, ... 
+ */
 	alloc_flags = gfp_to_alloc_flags(gfp_mask);
 
 	/*
 	 * Find the true preferred zone if the allocation is unconstrained by
 	 * cpusets.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * slowpath에서는 atomic 호출을 하는 경우 cpuset을 제거하게 되는데 이러한 경우 
+ * fastpath 때와 조건이 바뀌어서 권장 zone이 바뀔 수도 있으므로 다시 알아온다.
+ */
 	if (!(alloc_flags & ALLOC_CPUSET) && !ac->nodemask) {
 		struct zoneref *preferred_zoneref;
 		preferred_zoneref = first_zones_zonelist(ac->zonelist,
@@ -3272,12 +3377,23 @@ retry:
 	}
 
 	/* This is the last chance, in general, before the goto nopage. */
+
+/* IAMROOT-12:
+ * -------------
+ * no 워터마크 옵션을 빼고, 즉 min 워터마크만 가지고 페이지 할당을 시도한다(2nd try).
+ */
 	page = get_page_from_freelist(gfp_mask, order,
 				alloc_flags & ~ALLOC_NO_WATERMARKS, ac);
 	if (page)
 		goto got_pg;
 
 	/* Allocate without watermarks if the context allows */
+
+/* IAMROOT-12:
+ * -------------
+ * no 워터마크가 주어진 경우 다시 페이지 할당을 시도한다(3rd try)
+ * (__GFP_NOFAIL 플래그 요청인 경우 페이지 할당이 될 때 까지 무한 반복)
+ */
 	if (alloc_flags & ALLOC_NO_WATERMARKS) {
 		/*
 		 * Ignore mempolicies if ALLOC_NO_WATERMARKS on the grounds
@@ -3294,6 +3410,10 @@ retry:
 	}
 
 	/* Atomic allocations - we can't balance anything */
+/* IAMROOT-12:
+ * -------------
+ * sleep 가능하지 않는 경우 최종 에러 처리로 이동한다.
+ */
 	if (!wait) {
 		/*
 		 * All existing users of the deprecated __GFP_NOFAIL are
@@ -3305,10 +3425,19 @@ retry:
 	}
 
 	/* Avoid recursion of direct reclaim */
+/* IAMROOT-12:
+ * -------------
+ * direct-reclaim의 재귀 호출을 피하기 위해 현재 태스크가 PF_MEMALLOC 요청 중인 경우 
+ * 에러 처리로 이동한다.
+ */
 	if (current->flags & PF_MEMALLOC)
 		goto nopage;
 
 	/* Avoid allocations with no watermarks from looping endlessly */
+/* IAMROOT-12:
+ * -------------
+ * 현재 태스크가 dying 이면서 __GFP_NOFAIL이 아닌 경우 에러 처리로 이동
+ */
 	if (test_thread_flag(TIF_MEMDIE) && !(gfp_mask & __GFP_NOFAIL))
 		goto nopage;
 
@@ -6170,6 +6299,9 @@ static void __init_refok alloc_node_mem_map(struct pglist_data *pgdat)
  * 실제 노드의 시작 주소를 가리킬 때에는 mem_map에서 그 오차 페이지
  * 수 만큼 위를 가리키게 해야 한다.
  * (따라서 mem_map[]의 위아래는 사용안되는 영역이 있을 수 있다.)
+ *
+ * node_mem_map에 map의 가상 주소가 있는데 이 값에 물리주소 pfn 값을 
+ * enconding 하여 사용한다.
  */
 		pgdat->node_mem_map = map + (pgdat->node_start_pfn - start);
 	}

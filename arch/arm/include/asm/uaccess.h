@@ -84,6 +84,24 @@ static inline void set_fs(mm_segment_t fs)
 	(flag == 0); })
 
 /* We use 33-bit arithmetic here... */
+
+/* IAMROOT-12:
+ * -------------
+ * 사용할 영역이 유저 영역인지 확인한다. (결과(flag)가 0이면 성공)
+ *
+ * adds roksum, addr, size;
+ * sbcccs roksum, roksum, addr_limit;
+ * movcc flag, #0;
+ *
+ * -------------------------------
+ *
+ * flag=addr_limit (동일 레지스터 사용)
+ * roksum = addr + size 
+ * if (roksum에 carry가 발생)한 경우 
+ *      roksum -= addr_limit
+ *      if (roksum에 carry가 없는 경우)
+ *          flag=0
+ */
 #define __range_ok(addr, size) ({ \
 	unsigned long flag, roksum; \
 	__chk_user_ptr(addr);	\

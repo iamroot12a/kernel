@@ -189,6 +189,11 @@ struct vm_area_struct;
  * -------------
  * __GFP_THISNODE:
  *      지정된 노드의 zonelist[1]번을 사용하여 다른 노드의 zone을 사용하지 않게 한다.
+ *
+ * __GFP_MEMALLOC:
+ *      비상용으로 reserve한 영역도 포함해서 사용하게 요청한다.
+ * __GFP_NOMEMALLOC:
+ *      비상용으로 reserve한 영역을 사용하지 못하게 요청한다.
  */
 
 #define __GFP_WAIT	((__force gfp_t)___GFP_WAIT)	/* Can wait and reschedule? */

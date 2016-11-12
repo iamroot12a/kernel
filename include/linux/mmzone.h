@@ -604,6 +604,14 @@ struct zone {
 	unsigned long percpu_drift_mark;
 
 #if defined CONFIG_COMPACTION || defined CONFIG_CMA
+/* IAMROOT-12:
+ * -------------
+ * compact_cached_free_pfn:
+ *      free 스캐너에 zone 끝 pfn으로 리셋 (아래로 증가)
+ * compact_cached_migrate_pfn[2]:
+ *      migrate 스캐너에 zone 시작 pfn으로 리셋 (위로 증가)
+ *      sync과 async 둘로 나뉘어 있다.
+ */
 	/* pfn where compaction free scanner should start */
 	unsigned long		compact_cached_free_pfn;
 	/* pfn where async and sync compaction migration scanner should start */
@@ -616,6 +624,15 @@ struct zone {
 	 * are skipped before trying again. The number attempted since
 	 * last failure is tracked with compact_considered.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * compaction 실패와 관련된 변수들
+ *
+ * compact_considered:      compaction 고려 횟수 (64개 이상인 경우 64개로 제한)
+ * compact_defer_shift:     compaction 유예 횟수 (6)
+ * compact_order_failed:    최근 compaction시 실패하였던 order 값을 보관
+ */
 	unsigned int		compact_considered;
 	unsigned int		compact_defer_shift;
 	int			compact_order_failed;

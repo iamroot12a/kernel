@@ -1986,6 +1986,11 @@ extern void thread_group_cputime_adjusted(struct task_struct *p, cputime_t *ut, 
 /*
  * Per process flags
  */
+
+/* IAMROOT-12:
+ * -------------
+ * PF_MEMALLOC: 응급상황에서 포기하지 않고 메모리를 회수해서라도 할당을 요청
+ */
 #define PF_EXITING	0x00000004	/* getting shut down */
 #define PF_EXITPIDONE	0x00000008	/* pi exit done on shut down */
 #define PF_VCPU		0x00000010	/* I'm a virtual CPU */

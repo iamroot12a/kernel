@@ -2898,10 +2898,19 @@ static void age_active_anon(struct zone *zone, struct scan_control *sc)
 static bool zone_balanced(struct zone *zone, int order,
 			  unsigned long balance_gap, int classzone_idx)
 {
+/* IAMROOT-12:
+ * -------------
+ * free 페이지를 사용해서 워터마크 기준을 넘어서는지 체크를 하게 되는데 
+ * zone 카운터를 더 엄밀하게 읽어와서 워터마크 기준과 비교하도록 한다.
+ */
 	if (!zone_watermark_ok_safe(zone, order, high_wmark_pages(zone) +
 				    balance_gap, classzone_idx, 0))
 		return false;
 
+/* IAMROOT-12:
+ * -------------
+ * compatction을 skip하는 경우 false
+ */
 	if (IS_ENABLED(CONFIG_COMPACTION) && order && compaction_suitable(zone,
 				order, 0, classzone_idx) == COMPACT_SKIPPED)
 		return false;
@@ -3461,12 +3470,27 @@ void wakeup_kswapd(struct zone *zone, int order, enum zone_type classzone_idx)
 		pgdat->kswapd_max_order = order;
 		pgdat->classzone_idx = min(pgdat->classzone_idx, classzone_idx);
 	}
+
+/* IAMROOT-12:
+ * -------------
+ * kswapd_wait에서 대기하는 태스크가 없으면 함수를 빠져나간다.
+ */
 	if (!waitqueue_active(&pgdat->kswapd_wait))
 		return;
+
+/* IAMROOT-12:
+ * -------------
+ * 워터마크 기준을 충족하고 compaction 가능한 상태인 경우 함수를 빠져나간다.
+ */
 	if (zone_balanced(zone, order, 0, 0))
 		return;
 
 	trace_mm_vmscan_wakeup_kswapd(pgdat->node_id, zone_idx(zone), order);
+
+/* IAMROOT-12:
+ * -------------
+ * kswapd를 깨운다.
+ */
 	wake_up_interruptible(&pgdat->kswapd_wait);
 }
 

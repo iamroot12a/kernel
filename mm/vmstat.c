@@ -660,6 +660,13 @@ static void fill_contig_page_info(struct zone *zone,
 	info->free_blocks_total = 0;
 	info->free_blocks_suitable = 0;
 
+/* IAMROOT-12:
+ * -------------
+ * contig_page_info 정보를 만들어온다.
+ *   - free_blocks_total:	모든 nr_free 수 
+ *   - free_pages:		모든 free 페이지 수
+ *   - free_blocks_suitable:	요청 suitable_order를 처리할 수 있는 수
+ */
 	for (order = 0; order < MAX_ORDER; order++) {
 		unsigned long blocks;
 
@@ -686,6 +693,13 @@ static void fill_contig_page_info(struct zone *zone,
  */
 static int __fragmentation_index(unsigned int order, struct contig_page_info *info)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 요청 order 상황에서의 파편화 계수를 0 ~ 1000까지 산출한다. 
+ * (0에 가까우면 compactin 실패확률 높고, 1000에 가까우면 성공확률 높아진다)
+ * 단 처리할 페이지가 이미 있는 경우 -1000을 반환한다.
+ */
 	unsigned long requested = 1UL << order;
 
 	if (!info->free_blocks_total)
@@ -709,7 +723,17 @@ int fragmentation_index(struct zone *zone, unsigned int order)
 {
 	struct contig_page_info info;
 
+/* IAMROOT-12:
+ * -------------
+ * 요청 suitable_order에 대해 처리할 수 있는 갯수 정보를 알아온다.
+ */
 	fill_contig_page_info(zone, order, &info);
+
+/* IAMROOT-12:
+ * -------------
+ * 요청 order 상황에서의 파편화 계수를 0 ~ 1000까지 산출한다. 
+ * 단 처리할 페이지가 이미 있는 경우 -1000을 반환한다.
+ */
 	return __fragmentation_index(order, &info);
 }
 #endif
