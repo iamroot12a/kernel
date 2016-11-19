@@ -1951,6 +1951,10 @@ void split_page(struct page *page, unsigned int order)
 	VM_BUG_ON_PAGE(PageCompound(page), page);
 	VM_BUG_ON_PAGE(!page_count(page), page);
 
+/* IAMROOT-12:
+ * -------------
+ * order 페이지를 order 0 페이지로 모두 분리한다.
+ */
 #ifdef CONFIG_KMEMCHECK
 	/*
 	 * Split shadow pages too, because free(page[0]) would
@@ -1959,6 +1963,12 @@ void split_page(struct page *page, unsigned int order)
 	if (kmemcheck_page_is_tracked(page))
 		split_page(virt_to_page(page[0].shadow), order);
 #endif
+
+
+/* IAMROOT-12:
+ * -------------
+ * 페이지의 참조카운터를 1로 설정하여 사용중으로 설정한다.
+ */
 
 	set_page_owner(page, 0, 0);
 	for (i = 1; i < (1 << order); i++) {
@@ -1970,6 +1980,11 @@ EXPORT_SYMBOL_GPL(split_page);
 
 int __isolate_free_page(struct page *page, unsigned int order)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 해당 페이지를 버디에서 분리하고 페이지 수를 반환한다.
+ */
 	unsigned long watermark;
 	struct zone *zone;
 	int mt;
@@ -1979,6 +1994,12 @@ int __isolate_free_page(struct page *page, unsigned int order)
 	zone = page_zone(page);
 	mt = get_pageblock_migratetype(page);
 
+/* IAMROOT-12:
+ * -------------
+ * 페이지 블럭이 isolate 타입이 아닌 경우 low 워터마크에 현재 페이지 수 만큼 
+ * 추가하여 워터마크 체크를 수행하여 여전히 메모리 부족인 경우 0으로 
+ * 함수를 빠져나간다.
+ */
 	if (!is_migrate_isolate(mt)) {
 		/* Obey watermarks as if the page was being allocated */
 		watermark = low_wmark_pages(zone) + (1 << order);
@@ -1989,11 +2010,22 @@ int __isolate_free_page(struct page *page, unsigned int order)
 	}
 
 	/* Remove page from free list */
+
+/* IAMROOT-12:
+ * -------------
+ * 관리하던 버디 리스트에서 제거한다.
+ */
 	list_del(&page->lru);
 	zone->free_area[order].nr_free--;
 	rmv_page_order(page);
 
 	/* Set the pageblock if the isolated page is at least a pageblock */
+
+/* IAMROOT-12:
+ * -------------
+ * 페이지블럭의 절반 이상의 order를 가진 페이지의 경우 속해있는 모든 페이지 
+ * 블럭의 migrate 타입을 모두 MIGRATE_MOVABLE로 변경한다.
+ */
 	if (order >= pageblock_order - 1) {
 		struct page *endpage = page + (1 << order) - 1;
 		for (; page < endpage; page += pageblock_nr_pages) {
@@ -2025,12 +2057,21 @@ int split_free_page(struct page *page)
 
 	order = page_order(page);
 
+/* IAMROOT-12:
+ * -------------
+ * 요청 페이지를 버디에서 분리하고 페이지 수를 알아온다.
+ */
 	nr_pages = __isolate_free_page(page, order);
 	if (!nr_pages)
 		return 0;
 
 	/* Split into individual pages */
 	set_page_refcounted(page);
+
+/* IAMROOT-12:
+ * -------------
+ * order 페이지를 order 0 페이지로 모두 분리한다.
+ */
 	split_page(page, order);
 	return nr_pages;
 }

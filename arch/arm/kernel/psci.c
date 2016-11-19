@@ -173,7 +173,7 @@ static int get_set_conduit_method(struct device_node *np)
  * 전역 invoke_psci_fn에 대입한다.
  *
  *	- __invoke_psci_fn_hvc()
- *	- __invoke_psci_fn_hvc()
+ *	- __invoke_psci_fn_smc()
  */
 	if (of_property_read_string(np, "method", &method)) {
 		pr_warn("missing \"method\" property\n");

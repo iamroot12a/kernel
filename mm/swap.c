@@ -40,6 +40,22 @@
 /* How many pages do we try to swap or page in/out together? */
 int page_cluster;
 
+
+/* IAMROOT-12:
+ * -------------
+ * pagevec: 페이지들을 lruvec에 직접 추가하는 경우 lock에 의한 
+ * 성능 저하가 발생하므로 per-cpu pagevec 캐시를 만들어 이 곳을 
+ * 이용해 페이지들을 추가할 수 있게 하였다.
+ *
+ * pagevec을 용도에 맞게 다음 3가지 타입으로 관리한다.
+ *
+ * lru_add_pvec: lruvec의 앞단에서 페이지들을 받는다. 
+ *               넘치는 경우 lruvec에 추가한다.
+ * lru_rotate_pvecs: lruvec에서 회전시키고자하는 페이지들을 받는다. 
+ *               넘치는 경우 lruvec의 앞단에 회전시켜 추가한다.
+ * lru_deactivate_pvecs: lruvec으로 부터 받은 페이지들을 꺼내서 
+ *		 락 없이 deactivate 시킬 때 
+ */
 static DEFINE_PER_CPU(struct pagevec, lru_add_pvec);
 static DEFINE_PER_CPU(struct pagevec, lru_rotate_pvecs);
 static DEFINE_PER_CPU(struct pagevec, lru_deactivate_pvecs);
@@ -416,10 +432,18 @@ static void pagevec_lru_move_fn(struct pagevec *pvec,
 	struct lruvec *lruvec;
 	unsigned long flags = 0;
 
+/* IAMROOT-12:
+ * -------------
+ * pvec 캐시 리스트에 있는 페이지 수 만큼(최대 14개) 
+ */
 	for (i = 0; i < pagevec_count(pvec); i++) {
 		struct page *page = pvec->pages[i];
 		struct zone *pagezone = page_zone(page);
 
+/* IAMROOT-12:
+ * -------------
+ * zone이 바뀔 때마다 기존에 zone에 걸려있던 lock을 풀었다가 다시 건다.
+ */
 		if (pagezone != zone) {
 			if (zone)
 				spin_unlock_irqrestore(&zone->lru_lock, flags);
@@ -427,12 +451,22 @@ static void pagevec_lru_move_fn(struct pagevec *pvec,
 			spin_lock_irqsave(&zone->lru_lock, flags);
 		}
 
+/* IAMROOT-12:
+ * -------------
+ * 돌려 보내고자 하는 lruvec(mz->lruvec or zone->lurvec)을 알아온 후 페이지를 
+ * move 시킨다.
+ */
 		lruvec = mem_cgroup_page_lruvec(page, zone);
 		(*move_fn)(page, lruvec, arg);
 	}
 	if (zone)
 		spin_unlock_irqrestore(&zone->lru_lock, flags);
 	release_pages(pvec->pages, pvec->nr, pvec->cold);
+
+/* IAMROOT-12:
+ * -------------
+ * pagevec이 비었음을 알리게 nr=0을 집어넣는다.
+ */
 	pagevec_reinit(pvec);
 }
 
@@ -620,11 +654,31 @@ EXPORT_SYMBOL(mark_page_accessed);
 
 static void __lru_cache_add(struct page *page)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * lru_add_pvec 캐시
+ */
 	struct pagevec *pvec = &get_cpu_var(lru_add_pvec);
 
+/* IAMROOT-12:
+ * -------------
+ * 요청 페이지를 lruvec을 잘 찾아 추가한다.
+ */
 	page_cache_get(page);
+
+/* IAMROOT-12:
+ * -------------
+ * pagevec 엔트리 공간이 부족한 경우 pagevec -> lruvec으로 모두 옮긴다.
+ */
 	if (!pagevec_space(pvec))
 		__pagevec_lru_add(pvec);
+
+/* IAMROOT-12:
+ * -------------
+ * 요청 페이지를 pvec에 추가한다. 
+ * (per-cpu 캐시이므로 lockless로 인해 속도가 빠르다)
+ */
 	pagevec_add(pvec, page);
 	put_cpu_var(lru_add_pvec);
 }
@@ -659,6 +713,10 @@ EXPORT_SYMBOL(lru_cache_add_file);
  */
 void lru_cache_add(struct page *page)
 {
+/* IAMROOT-12:
+ * -------------
+ * 페이지를 lru 캐시에 추가한다.
+ */
 	VM_BUG_ON_PAGE(PageActive(page) && PageUnevictable(page), page);
 	VM_BUG_ON_PAGE(PageLRU(page), page);
 	__lru_cache_add(page);
@@ -679,6 +737,12 @@ void add_page_to_unevictable_list(struct page *page)
 	struct zone *zone = page_zone(page);
 	struct lruvec *lruvec;
 
+/* IAMROOT-12:
+ * -------------
+ * 해당 페이지에 memcg 정보가 있는 경우 memcg의 lruvec[LRU_UNEVICTABLE]에 
+ * 요청 페이지를 추가한다. memcg 정보가 없는 경우 요청 페이지의 zone에 있는
+ * lruvec[LRU_UNEVICTABLE]에 추가한다.
+ */
 	spin_lock_irq(&zone->lru_lock);
 	lruvec = mem_cgroup_page_lruvec(page, zone);
 	ClearPageActive(page);
@@ -1025,12 +1089,31 @@ static void __pagevec_lru_add_fn(struct page *page, struct lruvec *lruvec,
 {
 	int file = page_is_file_cache(page);
 	int active = PageActive(page);
+
+/* IAMROOT-12:
+ * -------------
+ * 페이지를 검사하여 lru 타입을 알아온다.
+ */
 	enum lru_list lru = page_lru(page);
 
 	VM_BUG_ON_PAGE(PageLRU(page), page);
 
+/* IAMROOT-12:
+ * -------------
+ * LRU가 설정됨을 페이지에 기록한다. (회수 리스트에서 관리됨을 마크)
+ */
 	SetPageLRU(page);
+
+/* IAMROOT-12:
+ * -------------
+ * 인수로 받은 lruvec(mz->lruvec or zone->lruvec)에 추가한다.
+ */
 	add_page_to_lru_list(page, lruvec, lru);
+
+/* IAMROOT-12:
+ * -------------
+ * 다시 되돌린 상황이기 때문에 lruvec reclaim 관련 카운터를 재 조정한다.
+ */
 	update_page_reclaim_stat(lruvec, file, active);
 	trace_mm_lru_insertion(page, lru);
 }
@@ -1041,6 +1124,13 @@ static void __pagevec_lru_add_fn(struct page *page, struct lruvec *lruvec,
  */
 void __pagevec_lru_add(struct pagevec *pvec)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * pagevec 캐시의 페이지 엔트리들을 lruvec으로 옮긴다.
+ * 각 zone의 lruvec으로 옮길 때 각 페이지에 대해 zone이 
+ * 바뀔 때 마다 lock을 걸었다가 풀었다를 반복한다.
+ */
 	pagevec_lru_move_fn(pvec, __pagevec_lru_add_fn, NULL);
 }
 EXPORT_SYMBOL(__pagevec_lru_add);

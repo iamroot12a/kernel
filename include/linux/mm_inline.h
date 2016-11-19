@@ -50,6 +50,11 @@ static __always_inline void del_page_from_lru_list(struct page *page,
  */
 static inline enum lru_list page_lru_base_type(struct page *page)
 {
+/* IAMROOT-12:
+ * -------------
+ * 페이지가 file 타입인지 anon 타입인지 알아온다.
+ * active인지 inactive인지 여기서는 모르므로 기본 타입인 inactive로 반환한다.
+ */
 	if (page_is_file_cache(page))
 		return LRU_INACTIVE_FILE;
 	return LRU_INACTIVE_ANON;
@@ -86,6 +91,11 @@ static __always_inline enum lru_list page_off_lru(struct page *page)
  * Returns the LRU list a page should be on, as an index
  * into the array of LRU lists.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * 페이지에서 lru 타입을 알아온다. (0~4까지)
+ */
 static __always_inline enum lru_list page_lru(struct page *page)
 {
 	enum lru_list lru;
@@ -93,6 +103,12 @@ static __always_inline enum lru_list page_lru(struct page *page)
 	if (PageUnevictable(page))
 		lru = LRU_UNEVICTABLE;
 	else {
+
+/* IAMROOT-12:
+ * -------------
+ * 먼저 file(0) 타입과 anon(2) 타입의 기본형을 알아온 후 
+ * active(1)인지 아닌지 확인하여 추가하여 lru enum 값을 알아낸다.
+ */
 		lru = page_lru_base_type(page);
 		if (PageActive(page))
 			lru += LRU_ACTIVE;

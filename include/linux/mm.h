@@ -357,6 +357,11 @@ static inline int put_page_testzero(struct page *page)
  * This can be called when MMU is off so it must not access
  * any of the virtual mappings.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * 참조 카운터가 0이 아니면 1 증가 시킨다.
+ */
 static inline int get_page_unless_zero(struct page *page)
 {
 	return atomic_inc_not_zero(&page->_count);
@@ -553,6 +558,10 @@ extern bool __get_page_tail(struct page *page);
 
 static inline void get_page(struct page *page)
 {
+/* IAMROOT-12:
+ * -------------
+ * 페이지의 참조 카운터를 증가시킨다.
+ */
 	if (unlikely(PageTail(page)))
 		if (likely(__get_page_tail(page)))
 			return;

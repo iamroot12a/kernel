@@ -701,6 +701,11 @@ redo:
 		 * We know how to handle that.
 		 */
 		is_unevictable = false;
+
+/* IAMROOT-12:
+ * -------------
+ * evitable 페이지들을 lru 캐시를 통해 추가한다.
+ */
 		lru_cache_add(page);
 	} else {
 		/*
@@ -708,6 +713,11 @@ redo:
 		 * list.
 		 */
 		is_unevictable = true;
+
+/* IAMROOT-12:
+ * -------------
+ * unevictable 페이지들은 lru 캐시를 사용하지 않고 곧장 lruvec에 추가한다.
+ */
 		add_page_to_unevictable_list(page);
 		/*
 		 * When racing with an mlock or AS_UNEVICTABLE clearing
@@ -727,6 +737,12 @@ redo:
 	 * page is on unevictable list, it never be freed. To avoid that,
 	 * check after we added it to the list, again.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 중간에 상태가 바뀌어 영원히 페이지가 회수되지 않게 하는 case가 발생하는 
+ * 경우 다시 lruvec을 다시 선택하여 집어넣는다.
+ */
 	if (is_unevictable && page_evictable(page)) {
 		if (!isolate_lru_page(page)) {
 			put_page(page);
@@ -1231,10 +1247,21 @@ int __isolate_lru_page(struct page *page, isolate_mode_t mode)
 	int ret = -EINVAL;
 
 	/* Only take pages on the LRU. */
+
+/* IAMROOT-12:
+ * -------------
+ * 여기서도 LRU 페이지가 아닌 경우 빠져나간다.
+ */
 	if (!PageLRU(page))
 		return ret;
 
 	/* Compaction should not handle unevictable pages but CMA can do so */
+
+/* IAMROOT-12:
+ * -------------
+ * ISOLATE_UNEVICTABLE 모드가 아니면 unevictable 페이지는 isolation 하지 않고 
+ * 빠져나간다.
+ */
 	if (PageUnevictable(page) && !(mode & ISOLATE_UNEVICTABLE))
 		return ret;
 
@@ -1251,6 +1278,13 @@ int __isolate_lru_page(struct page *page, isolate_mode_t mode)
 	 * ISOLATE_ASYNC_MIGRATE is used to indicate that it only wants to pages
 	 * that it is possible to migrate without blocking
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * ISOLATE_CLEAN의 경우 writeback이나 dirty 설정된 페이지들은 isolation skip 한다.
+ * ISOLATE_ASYNC_MIGRATE의 경우 writeback이나 dirty 설정된 페이지들 중
+ * 매핑되었지만 a_op->migratepage가 연결된 핸들러가 없는 경우 isolation skip 한다.
+ */
 	if (mode & (ISOLATE_CLEAN|ISOLATE_ASYNC_MIGRATE)) {
 		/* All the caller can do on PageWriteback is block */
 		if (PageWriteback(page))
@@ -1274,9 +1308,19 @@ int __isolate_lru_page(struct page *page, isolate_mode_t mode)
 		}
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * ISOLATE_UNMAPPED 모드로 요청하였으면서 매핑되어 있는 페이지들은 isolation하지 
+ * 않고 skip 한다.
+ */
 	if ((mode & ISOLATE_UNMAPPED) && page_mapped(page))
 		return ret;
 
+/* IAMROOT-12:
+ * -------------
+ * 높은 확률로 참조 카운터가 1 이상인 경우 1 증가 시키고, LRU 플래그를 클리어하고
+ * success로 0을 반환한다.
+ */
 	if (likely(get_page_unless_zero(page))) {
 		/*
 		 * Be careful not to clear PageLRU until after we're

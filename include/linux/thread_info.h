@@ -102,6 +102,11 @@ static inline int test_ti_thread_flag(struct thread_info *ti, int flag)
 #define test_thread_flag(flag) \
 	test_ti_thread_flag(current_thread_info(), flag)
 
+
+/* IAMROOT-12:
+ * -------------
+ * current task에 TIF_NEED_RESCHED 플래그 요청이 있는 경우
+ */
 #define tif_need_resched() test_thread_flag(TIF_NEED_RESCHED)
 
 #if defined TIF_RESTORE_SIGMASK && !defined HAVE_SET_RESTORE_SIGMASK

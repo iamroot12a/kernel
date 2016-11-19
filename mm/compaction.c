@@ -79,6 +79,11 @@ static void map_pages(struct list_head *list)
 
 static inline bool migrate_async_suitable(int migratetype)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * cma 타입이나 movable 타입에 대해서만 async migration을 지원한다.
+ */
 	return is_migrate_cma(migratetype) || migratetype == MIGRATE_MOVABLE;
 }
 
@@ -98,6 +103,13 @@ static inline bool migrate_async_suitable(int migratetype)
  * interleaving within a single pageblock. It is therefore sufficient to check
  * the first and last page of a pageblock and avoid checking each individual
  * page in a pageblock.
+ */
+
+/* IAMROOT-12:
+ * -------------
+ * start_pfn ~ end_pfn이 같은 zone에 있는 경우 start_pfn을 반환한다.
+ * (보통 페이지블럭 단위로 start_pfn값과 end_pfn 값을 부여해서 해당 
+ * 페이지 블럭이 같은 zone에 있는 상태인지 확인할 목적이다)
  */
 static struct page *pageblock_pfn_to_page(unsigned long start_pfn,
 				unsigned long end_pfn, struct zone *zone)
@@ -230,8 +242,21 @@ bool compaction_restarting(struct zone *zone, int order)
 static inline bool isolation_suitable(struct compact_control *cc,
 					struct page *page)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * ignore_skip_hint가 설정된 경우 skip에 대한 hint를 사용하지 말고 무조건 
+ * isolation 하도록 true를 반환한다.
+ */
+
 	if (cc->ignore_skip_hint)
 		return true;
+
+/* IAMROOT-12:
+ * -------------
+ * 해당 페이지의 페이지블럭에 skip bit가 설정된 경우 isolation을 하지 않도록
+ * false를 반한한다.
+ */
 
 	return !get_pageblock_skip(page);
 }
@@ -420,6 +445,12 @@ static bool compact_unlock_should_abort(spinlock_t *lock,
 static inline bool compact_should_abort(struct compact_control *cc)
 {
 	/* async compaction aborts if contended */
+
+/* IAMROOT-12:
+ * -------------
+ * 리스케쥴 요청이 있으면서 스케쥴링 혼잡을 contended에 기록하고 abort 처리를
+ * 하도록 true를 반환한다.
+ */
 	if (need_resched()) {
 		if (cc->mode == MIGRATE_ASYNC) {
 			cc->contended = COMPACT_CONTENDED_SCHED;
@@ -524,8 +555,18 @@ static unsigned long isolate_freepages_block(struct compact_control *cc,
 		}
 
 		/* Found a free page, break it into order-0 pages */
+
+/* IAMROOT-12:
+ * -------------
+ * 요청 페이지를 버디에서 제거한 후 order 0 페이지로 분리하여 가져온다.
+ */
 		isolated = split_free_page(page);
 		total_isolated += isolated;
+
+/* IAMROOT-12:
+ * -------------
+ * 분리된 order-0 페이지들을 모두 freelist에 추가한다.
+ */
 		for (i = 0; i < isolated; i++) {
 			list_add(&page->lru, freelist);
 			page++;
@@ -663,6 +704,12 @@ static void acct_isolated(struct zone *zone, struct compact_control *cc)
 	if (list_empty(&cc->migratepages))
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * migratepages 리스트에 있는 모든 엔트리에서 파일 캐시 페이지인 경우 
+ * NR_ISOLATED_FILE 카운터를 증가시키고 그렇지 않은 경우 NR_ISOLATED_ANON
+ * 카운터를 증가시킨다. (페이지 수 만큼)
+ */
 	list_for_each_entry(page, &cc->migratepages, lru)
 		count[!!page_is_file_cache(page)]++;
 
@@ -703,6 +750,12 @@ static bool too_many_isolated(struct zone *zone)
  * and cc->nr_migratepages is updated accordingly. The cc->migrate_pfn field
  * is neither read nor updated.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * 한 개의 페이지블럭에서 옮길 수 있는 페이지 들을 찾아 cc->migratepages에 
+ * 추가한다.
+ */
 static unsigned long
 isolate_migratepages_block(struct compact_control *cc, unsigned long low_pfn,
 			unsigned long end_pfn, isolate_mode_t isolate_mode)
@@ -721,6 +774,11 @@ isolate_migratepages_block(struct compact_control *cc, unsigned long low_pfn,
 	 * list by either parallel reclaimers or compaction. If there are,
 	 * delay for some time until fewer pages are isolated
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 낮은 확률로 과도한 isolation이 발생한 경우에만 sync일 때 0.1초를 쉰다.
+ */
 	while (unlikely(too_many_isolated(zone))) {
 		/* async migration should just abort */
 		if (cc->mode == MIGRATE_ASYNC)
@@ -732,6 +790,12 @@ isolate_migratepages_block(struct compact_control *cc, unsigned long low_pfn,
 			return 0;
 	}
 
+
+/* IAMROOT-12:
+ * -------------
+ * 다시 한 번 async에서 리스케쥴 요청이 있는지 확인한다.
+ */
+
 	if (compact_should_abort(cc))
 		return 0;
 
@@ -742,6 +806,11 @@ isolate_migratepages_block(struct compact_control *cc, unsigned long low_pfn,
 		 * contention, to give chance to IRQs. Abort async compaction
 		 * if contended.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 대략 32번에 한 번씩 compaction을 중지해야 하는 경우가 발생하는지 확인한다
+ */
 		if (!(low_pfn % SWAP_CLUSTER_MAX)
 		    && compact_unlock_should_abort(&zone->lru_lock, flags,
 								&locked, cc))
@@ -762,6 +831,11 @@ isolate_migratepages_block(struct compact_control *cc, unsigned long low_pfn,
 		 * the worst thing that can happen is that we skip some
 		 * potential isolation targets.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 버디 페이지인 경우에는 skip 한다. (지금은 사용중인 페이지를 찾는 중이다)
+ */
 		if (PageBuddy(page)) {
 			unsigned long freepage_order = page_order_unsafe(page);
 
@@ -780,6 +854,12 @@ isolate_migratepages_block(struct compact_control *cc, unsigned long low_pfn,
 		 * It's possible to migrate LRU pages and balloon pages
 		 * Skip any other type of page
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * lru 페이지가 아닌 페이지들은 skip하는데, 예외적으로 ballon movable 페이지가 
+ * isolation 가능하면 isolation을 한다.
+ */
 		if (!PageLRU(page)) {
 			if (unlikely(balloon_page_movable(page))) {
 				if (balloon_page_isolate(page)) {
@@ -800,6 +880,11 @@ isolate_migratepages_block(struct compact_control *cc, unsigned long low_pfn,
 		 * compound_order() without preventing THP from splitting the
 		 * page underneath us may return surprising results.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * transparent huge page는 skip 한다.
+ */
 		if (PageTransHuge(page)) {
 			if (!locked)
 				low_pfn = ALIGN(low_pfn + 1,
@@ -815,6 +900,11 @@ isolate_migratepages_block(struct compact_control *cc, unsigned long low_pfn,
 		 * so avoid taking lru_lock and isolating it unnecessarily in an
 		 * admittedly racy check.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 매핑되지 않았으면서 페이지 참조 횟수가 매핑 카운터보다 큰 경우 skip 한다.
+ */
 		if (!page_mapping(page) &&
 		    page_count(page) > page_mapcount(page))
 			continue;
@@ -835,23 +925,47 @@ isolate_migratepages_block(struct compact_control *cc, unsigned long low_pfn,
 			}
 		}
 
+/* IAMROOT-12:
+ * -------------
+ * memcg가 설정된 경우 zone->lruvec이 아니라 memcg의 lruvec를 가져온다.
+ */
 		lruvec = mem_cgroup_page_lruvec(page, zone);
 
 		/* Try isolate the page */
+/* IAMROOT-12:
+ * -------------
+ * 요청 페이지가 isolation 되지 않은 경우 skip 한다.
+ */
 		if (__isolate_lru_page(page, isolate_mode) != 0)
 			continue;
 
 		VM_BUG_ON_PAGE(PageTransCompound(page), page);
 
 		/* Successfully isolated */
+
+/* IAMROOT-12:
+ * -------------
+ * 기존(zone->lruvec or mz->lruvec)에 있는 lruvec 리스트에서 해당 페이지를 
+ * 제거한다.
+ */
 		del_page_from_lru_list(page, lruvec, page_lru(page));
 
 isolate_success:
+
+/* IAMROOT-12:
+ * -------------
+ * 해당 페이지를 일단 migratelist에 추가한다.
+ */
 		list_add(&page->lru, migratelist);
 		cc->nr_migratepages++;
 		nr_isolated++;
 
 		/* Avoid isolating too much */
+
+/* IAMROOT-12:
+ * -------------
+ * 32개 페이지가 isolate된 경우 중간에 루프를 탈출한다.
+ */
 		if (cc->nr_migratepages == COMPACT_CLUSTER_MAX) {
 			++low_pfn;
 			break;
@@ -872,6 +986,14 @@ isolate_success:
 	 * Update the pageblock-skip information and cached scanner pfn,
 	 * if the whole pageblock was scanned without isolating any page.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 마지막까지 처리된 페이지블럭, 즉 현재 시점에서 더 이상 isolate할 페이지가 
+ * 없는 경우 이 페이지블럭의 skip 플래그를 1로 설정한다.
+ *
+ * 다음에 스캔할때에는 이 페이지를 skip 처리한다.
+ */
 	if (low_pfn == end_pfn)
 		update_pageblock_skip(cc, valid_page, nr_isolated, true);
 
@@ -962,6 +1084,11 @@ static void isolate_freepages(struct compact_control *cc)
 	 * The low boundary is the end of the pageblock the migration scanner
 	 * is using.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * free 스캐너가 동작하는 페이지 블럭의 시작 pfn 부터 끝 pfn을 구한다.
+ */
 	isolate_start_pfn = cc->free_pfn;
 	block_start_pfn = cc->free_pfn & ~(pageblock_nr_pages-1);
 	block_end_pfn = min(block_start_pfn + pageblock_nr_pages,
@@ -973,6 +1100,11 @@ static void isolate_freepages(struct compact_control *cc)
 	 * pages on cc->migratepages. We stop searching if the migrate
 	 * and free page scanners meet or enough free pages are isolated.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 현재 페이지 블럭이 migrate 스캐너보다 높은 위치에서 움직일 때
+ */
 	for (; block_start_pfn >= low_pfn &&
 			cc->nr_migratepages > cc->nr_freepages;
 				block_end_pfn = block_start_pfn,
@@ -984,10 +1116,19 @@ static void isolate_freepages(struct compact_control *cc)
 		 * suitable migration targets, so periodically check if we need
 		 * to schedule, or even abort async compaction.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 약 32번에 한 번씩 compact abort 케이스가 있는 경우 break
+ */
 		if (!(block_start_pfn % (SWAP_CLUSTER_MAX * pageblock_nr_pages))
 						&& compact_should_abort(cc))
 			break;
 
+/* IAMROOT-12:
+ * -------------
+ * 처리할 페이지블럭 하나가 같은 zone에 있는지 확인한다.
+ */
 		page = pageblock_pfn_to_page(block_start_pfn, block_end_pfn,
 									zone);
 		if (!page)
@@ -1002,6 +1143,12 @@ static void isolate_freepages(struct compact_control *cc)
 			continue;
 
 		/* Found a block suitable for isolating free pages from. */
+
+/* IAMROOT-12:
+ * -------------
+ * free 스캐너로부터 스캔한 free 페이지들을 order-0 페이지로 spilit하여 
+ * freelist에 담아온다.
+ */
 		isolate_freepages_block(cc, &isolate_start_pfn,
 					block_end_pfn, freelist, false);
 
@@ -1014,6 +1161,11 @@ static void isolate_freepages(struct compact_control *cc)
 		 * In that case we will however want to restart at the start
 		 * of the previous pageblock.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 다음 free 스캔 위치를 저장한다.
+ */
 		cc->free_pfn = (isolate_start_pfn < block_end_pfn) ?
 				isolate_start_pfn :
 				block_start_pfn - pageblock_nr_pages;
@@ -1052,6 +1204,12 @@ static struct page *compaction_alloc(struct page *migratepage,
 	 * Isolate free pages if necessary, and if we are not aborting due to
 	 * contention.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * cc->freepages에 free 스캔된 페이지가 등록되는데 이 곳이 비어 있는 경우 
+ * free 스캐너를 통해서 free 페이지를 받아온다.
+ */
 	if (list_empty(&cc->freepages)) {
 		if (!cc->contended)
 			isolate_freepages(cc);
@@ -1060,6 +1218,10 @@ static struct page *compaction_alloc(struct page *migratepage,
 			return NULL;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * free 페이지(order-0 페이지)를 하나 분리하고 반환한다.
+ */
 	freepage = list_entry(cc->freepages.next, struct page, lru);
 	list_del(&freepage->lru);
 	cc->nr_freepages--;
@@ -1104,6 +1266,13 @@ static isolate_migrate_t isolate_migratepages(struct zone *zone,
 	 * Start at where we last stopped, or beginning of the zone as
 	 * initialized by compact_zone()
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 1개의 페이지블럭에 대해서 low_pfn ~ end_pfn 까지 옮길 수 있는 페이지를 
+ * cc->migratepages 리스트에 추가한다. 1개 이상의 페이지가 담기는 경우 
+ * success를 반환한다. (이 페이지 블럭을 다 스캔한 경우 skip flag를 설정한다)
+ */
 	low_pfn = cc->migrate_pfn;
 
 	/* Only scan within a pageblock boundary */
@@ -1121,15 +1290,30 @@ static isolate_migrate_t isolate_migratepages(struct zone *zone,
 		 * many pageblocks unsuitable, so periodically check if we
 		 * need to schedule, or even abort async compaction.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 대략 32개 페이지 블럭 처리 마다 async 모드에서 리스케쥴 요청이 있는지 
+ * 확인하여 루프를 탈출한다.
+ */
 		if (!(low_pfn % (SWAP_CLUSTER_MAX * pageblock_nr_pages))
 						&& compact_should_abort(cc))
 			break;
 
+/* IAMROOT-12:
+ * -------------
+ * 페이지블럭이 zone 경계에 물려있는 경우 skip 한다.
+ */
 		page = pageblock_pfn_to_page(low_pfn, end_pfn, zone);
 		if (!page)
 			continue;
 
 		/* If isolation recently failed, do not retry */
+/* IAMROOT-12:
+ * -------------
+ * 해당 페이지의 페이지블럭에 skip bit가 설정된 경우 isolation을 하지 않도록
+ * 한다. 단 cc->ignore_skip_hint가 설정된 경우 무조건 isolation을 하도록 한다.
+ */
 		if (!isolation_suitable(cc, page))
 			continue;
 
@@ -1138,14 +1322,26 @@ static isolate_migrate_t isolate_migratepages(struct zone *zone,
 		 * Async compaction is optimistic to see if the minimum amount
 		 * of work satisfies the allocation.
 		 */
+/* IAMROOT-12:
+ * -------------
+ * cma 타입이나 movable 타입에 대해서만 async migration을 지원한다.
+ */
 		if (cc->mode == MIGRATE_ASYNC &&
 		    !migrate_async_suitable(get_pageblock_migratetype(page)))
 			continue;
 
 		/* Perform the isolation */
+/* IAMROOT-12:
+ * -------------
+ * 한 개의 페이지블럭에서 옮길 수 있는 페이지 들을 찾아 cc->migratepages에 
+ * 추가한다.
+ */
 		low_pfn = isolate_migratepages_block(cc, low_pfn, end_pfn,
 								isolate_mode);
-
+/* IAMROOT-12:
+ * -------------
+ * 혼잡하거나 abort된 경우 ISOLATE_ABORT를 반환한다.
+ */
 		if (!low_pfn || cc->contended) {
 			acct_isolated(zone, cc);
 			return ISOLATE_ABORT;
@@ -1165,8 +1361,21 @@ static isolate_migrate_t isolate_migratepages(struct zone *zone,
 	 * the same pageblock as the free scanner, make the scanners fully
 	 * meet so that compact_finished() terminates compaction.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 현재 처리한 페이지블럭이 free 스캐너보다 아래에 있는 경우 migrate 스캐너의 
+ * 시작 pfn에 low_pfn을 대입시켜 중단된 위치부터 계속 스캔할 수 있도록 한다.
+ * 그렇지 않은 경우 cc->migrate_pfn에 cc->free_pfn을 대입하여 종료됨을 
+ * 알 수 있다.
+ */
 	cc->migrate_pfn = (end_pfn <= cc->free_pfn) ? low_pfn : cc->free_pfn;
 
+
+/* IAMROOT-12:
+ * -------------
+ * migrate 페이지가 1개 이상인 경우 SUCCESS를 반환한다.
+ */
 	return cc->nr_migratepages ? ISOLATE_SUCCESS : ISOLATE_NONE;
 }
 
@@ -1180,6 +1389,12 @@ static int __compact_finished(struct zone *zone, struct compact_control *cc,
 		return COMPACT_PARTIAL;
 
 	/* Compaction run completes if the migrate and free scanner meet */
+
+/* IAMROOT-12:
+ * -------------
+ * migrate 스캐너와 free 스캐너가 중간에서 만났을 때 다시 시작 위치를 zone의
+ * 시작과 끝으로 재설정하고 COMPACT_COMPLETE를 반환한다.
+ */
 	if (cc->free_pfn <= cc->migrate_pfn) {
 		/* Let the next compaction start anew. */
 		zone->compact_cached_migrate_pfn[0] = zone->zone_start_pfn;
@@ -1192,6 +1407,13 @@ static int __compact_finished(struct zone *zone, struct compact_control *cc,
 		 * flag itself as the decision to be clear should be directly
 		 * based on an allocation request.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * kswapd가 페이지 할당을 요청한 경우가 아닌 다른 곳에서 메모리 할당 요청인 경우
+ * 에는 kswapd가 sleep할 때 각 페이지블럭의 skip bit를 클리어하는데 이를 하지
+ * 않도록 요청한다.
+ */
 		if (!current_is_kswapd())
 			zone->compact_blockskip_flush = true;
 
@@ -1202,6 +1424,11 @@ static int __compact_finished(struct zone *zone, struct compact_control *cc,
 	 * order == -1 is expected when compacting via
 	 * /proc/sys/vm/compact_memory
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 수동 compaction 요청인 경우
+ */
 	if (cc->order == -1)
 		return COMPACT_CONTINUE;
 
@@ -1212,6 +1439,13 @@ static int __compact_finished(struct zone *zone, struct compact_control *cc,
 							cc->alloc_flags))
 		return COMPACT_CONTINUE;
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 이 시점에서 확보한 free 페이지가 low 워터마크 이상인 경우 
+ * 요청한 order 페이지가 있는 경우 compaction이 다 완료되지 않았지만
+ * compaction을 통해 요청한 만큼의 페이지를 확보했다는 의미로 
+ * COMPACT_PARTIAL을 반환한다.
+ */
 	/* Direct compactor: Is a suitable page free? */
 	for (order = cc->order; order < MAX_ORDER; order++) {
 		struct free_area *area = &zone->free_area[order];
@@ -1233,6 +1467,11 @@ static int compact_finished(struct zone *zone, struct compact_control *cc,
 {
 	int ret;
 
+/* IAMROOT-12:
+ * -------------
+ * compaction을 끝내도 되는지 확인한다. 
+ * (COMPACT_PARTIAL인 경우 페이지를 확보한 케이스이다)
+ */
 	ret = __compact_finished(zone, cc, migratetype);
 	trace_mm_compaction_finished(zone, cc->order, ret);
 	if (ret == COMPACT_NO_SUITABLE_PAGE)
@@ -1387,12 +1626,29 @@ static int compact_zone(struct zone *zone, struct compact_control *cc)
 	 * information on where the scanners should start but check that it
 	 * is initialised by ensuring the values are within zone boundaries.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 이 루틴에 들어올 때 마다 zone에 저장된 migrate/free 스캐너의 위치를 알아온다.
+ */
 	cc->migrate_pfn = zone->compact_cached_migrate_pfn[sync];
 	cc->free_pfn = zone->compact_cached_free_pfn;
+
+/* IAMROOT-12:
+ * -------------
+ * free 스캐너가 zone 범위를 벗어나는 경우 페이지 블럭단위로 정렬한 end pfn
+ * 값으로 설정한다.
+ */
 	if (cc->free_pfn < start_pfn || cc->free_pfn > end_pfn) {
 		cc->free_pfn = end_pfn & ~(pageblock_nr_pages-1);
 		zone->compact_cached_free_pfn = cc->free_pfn;
 	}
+
+/* IAMROOT-12:
+ * -------------
+ * migrate 스캐너가 zone 범위를 벗어나는 경우 페이지 블럭단위로 정렬한 end pfn
+ * 값으로 설정한다.
+ */
 	if (cc->migrate_pfn < start_pfn || cc->migrate_pfn > end_pfn) {
 		cc->migrate_pfn = start_pfn;
 		zone->compact_cached_migrate_pfn[0] = cc->migrate_pfn;
@@ -1402,6 +1658,10 @@ static int compact_zone(struct zone *zone, struct compact_control *cc)
 	trace_mm_compaction_begin(start_pfn, cc->migrate_pfn,
 				cc->free_pfn, end_pfn, sync);
 
+/* IAMROOT-12:
+ * -------------
+ * per-cpu로 관리되는 pagevec 페이지를 회수하여 lruvec로 옮긴다.
+ */
 	migrate_prep_local();
 
 	while ((ret = compact_finished(zone, cc, migratetype)) ==
@@ -1409,9 +1669,18 @@ static int compact_zone(struct zone *zone, struct compact_control *cc)
 		int err;
 		unsigned long isolate_start_pfn = cc->migrate_pfn;
 
+/* IAMROOT-12:
+ * -------------
+ * isolation 시작
+ */
 		switch (isolate_migratepages(zone, cc)) {
 		case ISOLATE_ABORT:
 			ret = COMPACT_PARTIAL;
+
+/* IAMROOT-12:
+ * -------------
+ * cc->migratepages로 옮긴 모든 페이지들을 원래 lru로 원위치 시킨다.
+ */
 			putback_movable_pages(&cc->migratepages);
 			cc->nr_migratepages = 0;
 			goto out;

@@ -14,6 +14,10 @@
 struct page;
 struct address_space;
 
+/* IAMROOT-12:
+ * -------------
+ * 최대 14개의 페이지를 보관 pagevec 캐시
+ */
 struct pagevec {
 	unsigned long nr;
 	unsigned long cold;
@@ -49,6 +53,10 @@ static inline unsigned pagevec_count(struct pagevec *pvec)
 	return pvec->nr;
 }
 
+/* IAMROOT-12:
+ * -------------
+ * pagevec의 남은 페이지 수를 반환한다. (최대 14개의 엔트리 공간)
+ */
 static inline unsigned pagevec_space(struct pagevec *pvec)
 {
 	return PAGEVEC_SIZE - pvec->nr;

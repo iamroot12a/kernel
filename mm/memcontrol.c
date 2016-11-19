@@ -1217,10 +1217,21 @@ struct lruvec *mem_cgroup_page_lruvec(struct page *page, struct zone *zone)
 	struct mem_cgroup *memcg;
 	struct lruvec *lruvec;
 
+
+/* IAMROOT-12:
+ * -------------
+ * memcg가 설정되지 않은 경우 기존 zone에 있는 lruvec을 사용한다.
+ */
 	if (mem_cgroup_disabled()) {
 		lruvec = &zone->lruvec;
 		goto out;
 	}
+
+
+/* IAMROOT-12:
+ * -------------
+ * 페이지에서 memcg를 가져오고 없으면 root_mem_cgroup을 사용한다.
+ */
 
 	memcg = page->mem_cgroup;
 	/*
@@ -1230,6 +1241,10 @@ struct lruvec *mem_cgroup_page_lruvec(struct page *page, struct zone *zone)
 	if (!memcg)
 		memcg = root_mem_cgroup;
 
+/* IAMROOT-12:
+ * -------------
+ * 해당 페이지의 memcg에서 lruvec을 가져와서 반환한다.
+ */
 	mz = mem_cgroup_page_zoneinfo(memcg, page);
 	lruvec = &mz->lruvec;
 out:

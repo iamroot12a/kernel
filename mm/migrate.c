@@ -84,6 +84,10 @@ void putback_movable_pages(struct list_head *l)
 	struct page *page;
 	struct page *page2;
 
+/* IAMROOT-12:
+ * -------------
+ * l 리스트로 isolate된 페이지들을 적절한 원래 위치로 되돌린다.
+ */
 	list_for_each_entry_safe(page, page2, l, lru) {
 		if (unlikely(PageHuge(page))) {
 			putback_active_hugepage(page);
@@ -95,6 +99,11 @@ void putback_movable_pages(struct list_head *l)
 		if (unlikely(isolated_balloon_page(page)))
 			balloon_page_putback(page);
 		else
+
+/* IAMROOT-12:
+ * -------------
+ * 페이지를 lru 캐시 또는 lruvec에 추가한다.
+ */
 			putback_lru_page(page);
 	}
 }
@@ -910,6 +919,11 @@ static int unmap_and_move(new_page_t get_new_page, free_page_t put_new_page,
 {
 	int rc = 0;
 	int *result = NULL;
+
+/* IAMROOT-12:
+ * -------------
+ * compaction_alloc()를 통해 order-0 페이지를 가져온다. (private: cc)
+ */
 	struct page *newpage = get_new_page(page, private, &result);
 
 	if (!newpage)
@@ -945,6 +959,11 @@ out:
 	 * it.  Otherwise, putback_lru_page() will drop the reference grabbed
 	 * during isolation.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * compaction_free()
+ */
 	if (rc != MIGRATEPAGE_SUCCESS && put_new_page) {
 		ClearPageSwapBacked(newpage);
 		put_new_page(newpage, private);
@@ -1098,6 +1117,10 @@ int migrate_pages(struct list_head *from, new_page_t get_new_page,
 	if (!swapwrite)
 		current->flags |= PF_SWAPWRITE;
 
+/* IAMROOT-12:
+ * -------------
+ * retry는 unmap 결과가 -EAGAIN으로 요청될 때에 한하여 최대 10회로 제한된다.
+ */
 	for(pass = 0; pass < 10 && retry; pass++) {
 		retry = 0;
 
