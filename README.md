@@ -365,3 +365,6 @@ page_address_init()
 - 2016.11.12, 토즈 선릉점 (9명, 권경환, 김종철, 문영일, 양유석, 유계성, 윤창호, 임채훈, 조현철, 최영민)
  - zonned allocator (Direct-Compaction) ~  
  
+### 83주차
+- 2016.11.19, Kosslab (11명, 권경환, 김민호, 김종철, 문영일, 양유석, 유계성, 윤창호, 임채훈, 조현철, 최영민, 한상종)
+ - zonned allocator (Direct-Compaction) ~  
