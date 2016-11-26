@@ -60,6 +60,11 @@ void *kmap_atomic(struct page *page)
 	int type;
 
 	pagefault_disable();
+
+/* IAMROOT-12:
+ * -------------
+ * lowmem 페이지에 대한 가상 주소를 알아온다.
+ */
 	if (!PageHighMem(page))
 		return page_address(page);
 
@@ -76,9 +81,18 @@ void *kmap_atomic(struct page *page)
 	if (kmap)
 		return kmap;
 
+/* IAMROOT-12:
+ * -------------
+ * push하기 위해 fixmap에 대한 인덱스 값을 알아온다.
+ */
 	type = kmap_atomic_idx_push();
 
 	idx = type + KM_TYPE_NR * smp_processor_id();
+
+/* IAMROOT-12:
+ * -------------
+ * 예) core 4개인 경우 idx=0~63
+ */
 	vaddr = __fix_to_virt(idx);
 #ifdef CONFIG_DEBUG_HIGHMEM
 	/*
@@ -111,6 +125,11 @@ void __kunmap_atomic(void *kvaddr)
 			__cpuc_flush_dcache_area((void *)vaddr, PAGE_SIZE);
 #ifdef CONFIG_DEBUG_HIGHMEM
 		BUG_ON(vaddr != __fix_to_virt(idx));
+
+/* IAMROOT-12:
+ * -------------
+ * 디버그 옵션이 있는 경우 확실하게 클리어 매핑한다.
+ */
 		set_fixmap_pte(idx, __pte(0));
 #else
 		(void) idx;  /* to kill a warning */

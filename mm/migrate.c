@@ -86,7 +86,7 @@ void putback_movable_pages(struct list_head *l)
 
 /* IAMROOT-12:
  * -------------
- * l 리스트로 isolate된 페이지들을 적절한 원래 위치로 되돌린다.
+ * l 리스트에 isolate된 페이지들을 적절한 원래 위치로 되돌린다.
  */
 	list_for_each_entry_safe(page, page2, l, lru) {
 		if (unlikely(PageHuge(page))) {
@@ -497,6 +497,11 @@ void migrate_page_copy(struct page *newpage, struct page *page)
 {
 	int cpupid;
 
+/* IAMROOT-12:
+ * -------------
+ * page에 해당하는 페이지 프레임을 newpage에 해당하는
+ * 페이지 프레임에 복사한다.
+ */
 	if (PageHuge(page) || PageTransHuge(page))
 		copy_huge_page(newpage, page);
 	else
@@ -508,6 +513,12 @@ void migrate_page_copy(struct page *newpage, struct page *page)
 		SetPageReferenced(newpage);
 	if (PageUptodate(page))
 		SetPageUptodate(newpage);
+
+/* IAMROOT-12:
+ * -------------
+ * inactive -> active, evicatable
+ * active & evictable -> inactive, unevictable 
+ */
 	if (TestClearPageActive(page)) {
 		VM_BUG_ON_PAGE(PageUnevictable(page), page);
 		SetPageActive(newpage);
@@ -537,6 +548,11 @@ void migrate_page_copy(struct page *newpage, struct page *page)
 	 * Copy NUMA information to the new page, to prevent over-eager
 	 * future migrations of this same page.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 기존 페이지의 last_cpupid 값을 -1로 교체하고, 가져온 값은 new 페이지에 기록
+ */
 	cpupid = page_cpupid_xchg_last(page, -1);
 	page_cpupid_xchg_last(newpage, cpupid);
 
@@ -581,6 +597,10 @@ int migrate_page(struct address_space *mapping,
 	if (rc != MIGRATEPAGE_SUCCESS)
 		return rc;
 
+/* IAMROOT-12:
+ * -------------
+ * page -> newpage에 복사하고 page 디스크립터 내용도 migrate한다.
+ */
 	migrate_page_copy(newpage, page);
 	return MIGRATEPAGE_SUCCESS;
 }
@@ -743,8 +763,19 @@ static int move_to_new_page(struct page *newpage, struct page *page,
 		SetPageSwapBacked(newpage);
 
 	mapping = page_mapping(page);
+
+/* IAMROOT-12:
+ * -------------
+ * 매핑되지 않은 페이지는 기본 migrate_page() 함수를 사용하여 
+ * 페이지를 migration 한다.
+ */
 	if (!mapping)
 		rc = migrate_page(mapping, newpage, page, mode);
+
+/* IAMROOT-12:
+ * -------------
+ * 파일 시스템이 제공하는 migrate 함수가 제공되면 그것을 이용한다.
+ */
 	else if (mapping->a_ops->migratepage)
 		/*
 		 * Most pages have a mapping and most filesystems provide a
@@ -754,12 +785,23 @@ static int move_to_new_page(struct page *newpage, struct page *page,
 		 */
 		rc = mapping->a_ops->migratepage(mapping,
 						newpage, page, mode);
+/* IAMROOT-12:
+ * -------------
+ * 파일 시스템이 migrate 함수를 제공하지 않으면 아래 함수를 사용한다.
+ */
+
 	else
 		rc = fallback_migrate_page(mapping, newpage, page, mode);
 
 	if (rc != MIGRATEPAGE_SUCCESS) {
 		newpage->mapping = NULL;
 	} else {
+
+/* IAMROOT-12:
+ * -------------
+ * 페이지가 memcg 통제를 받는 경우 기존 페이지의 memcg를 지우고,
+ * 기존 페이지의 memcg를 새 페이지의 memcg에 대입한다.
+ */
 		mem_cgroup_migrate(page, newpage, false);
 		if (page_was_mapped)
 			remove_migration_ptes(page, newpage);
@@ -824,6 +866,11 @@ static int __unmap_and_move(struct page *page, struct page *newpage,
 	 * File Caches may use write_page() or lock_page() in migration, then,
 	 * just care Anon page here.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * KSM(Kernel Same page Merging) 페이지가 아닌 Anon 페이지인 경우
+ */
 	if (PageAnon(page) && !PageKsm(page)) {
 		/*
 		 * Only page_lock_anon_vma_read() understands the subtleties of
@@ -852,6 +899,10 @@ static int __unmap_and_move(struct page *page, struct page *newpage,
 		}
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * balloon페이지는 별도의 migrate 함수를 통해 migration을 수행한다.
+ */
 	if (unlikely(isolated_balloon_page(page))) {
 		/*
 		 * A ballooned page does not need any special attention from
@@ -876,6 +927,11 @@ static int __unmap_and_move(struct page *page, struct page *newpage,
 	 * invisible to the vm, so the page can not be migrated.  So try to
 	 * free the metadata, so the page can be freed.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 매핑되지 않은 페이지는 언매핑을 skip 한다.
+ */
 	if (!page->mapping) {
 		VM_BUG_ON_PAGE(PageAnon(page), page);
 		if (page_has_private(page)) {
@@ -886,6 +942,11 @@ static int __unmap_and_move(struct page *page, struct page *newpage,
 	}
 
 	/* Establish migration ptes or remove ptes */
+
+/* IAMROOT-12:
+ * -------------
+ * 매핑된 페이지를 언맵한다.
+ */
 	if (page_mapped(page)) {
 		try_to_unmap(page,
 			TTU_MIGRATION|TTU_IGNORE_MLOCK|TTU_IGNORE_ACCESS);
@@ -948,6 +1009,12 @@ out:
 		 * migrated will have kepts its references and be
 		 * restored.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * cc->migratepages 에서 제거하고 다시 lruvec로 보내기 위해 
+ * add용 lru 캐시에 추가한다.
+ */
 		list_del(&page->lru);
 		dec_zone_page_state(page, NR_ISOLATED_ANON +
 				page_is_file_cache(page));
@@ -962,7 +1029,9 @@ out:
 
 /* IAMROOT-12:
  * -------------
- * compaction_free()
+ * put_new_page=compaction_free(), private=cc(compact_control)
+ *
+ * 실패한 경우 newpage를 다시 cc->freepages에 다시 넣어서 재활용한다.
  */
 	if (rc != MIGRATEPAGE_SUCCESS && put_new_page) {
 		ClearPageSwapBacked(newpage);
@@ -1120,6 +1189,7 @@ int migrate_pages(struct list_head *from, new_page_t get_new_page,
 /* IAMROOT-12:
  * -------------
  * retry는 unmap 결과가 -EAGAIN으로 요청될 때에 한하여 최대 10회로 제한된다.
+ * pass가 3부터 force=true가 page의 lock을 획득할 때 까지 대기한다.
  */
 	for(pass = 0; pass < 10 && retry; pass++) {
 		retry = 0;

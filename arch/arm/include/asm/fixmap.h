@@ -3,6 +3,11 @@
 
 #define FIXADDR_START		0xffc00000UL
 #define FIXADDR_END		0xfff00000UL
+
+/* IAMROOT-12:
+ * -------------
+ * arm) FIXADDR_TOP=0xffef_f000
+ */
 #define FIXADDR_TOP		(FIXADDR_END - PAGE_SIZE)
 
 #include <asm/kmap_types.h>

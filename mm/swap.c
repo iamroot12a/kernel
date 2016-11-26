@@ -858,13 +858,26 @@ static void lru_deactivate_fn(struct page *page, struct lruvec *lruvec,
  * Either "cpu" is the current CPU, and preemption has already been
  * disabled; or "cpu" is being hot-unplugged, and is already dead.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * 모든 lru per-cpu 캐시의 페이지들을 lruvec에 옮긴다(drain).
+ */
+
 void lru_add_drain_cpu(int cpu)
 {
+/* IAMROOT-12:
+ * -------------
+ * lru_add_pvec 캐시에 있는 페이지들을 lruvec에 모두 옮긴다.
+ */
 	struct pagevec *pvec = &per_cpu(lru_add_pvec, cpu);
-
 	if (pagevec_count(pvec))
 		__pagevec_lru_add(pvec);
 
+/* IAMROOT-12:
+ * -------------
+ * lru_rotate_pvecs 캐시에 있는 페이지들을 lruvec에 모두 옮긴다.
+ */
 	pvec = &per_cpu(lru_rotate_pvecs, cpu);
 	if (pagevec_count(pvec)) {
 		unsigned long flags;
@@ -875,10 +888,18 @@ void lru_add_drain_cpu(int cpu)
 		local_irq_restore(flags);
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * lru_deactivate_pvecs 캐시에 있는 페이지들을 lruvec에 모두 옮긴다.
+ */
 	pvec = &per_cpu(lru_deactivate_pvecs, cpu);
 	if (pagevec_count(pvec))
 		pagevec_lru_move_fn(pvec, lru_deactivate_fn, NULL);
 
+/* IAMROOT-12:
+ * -------------
+ * activate_page_pvecs 캐시에 있는 페이지들을 lruvec에 모두 옮긴다.
+ */
 	activate_page_drain(cpu);
 }
 

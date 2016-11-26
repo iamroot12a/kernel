@@ -17,6 +17,10 @@
 
 #include <linux/bug.h>
 
+/* IAMROOT-12:
+ * -------------
+ * 0번 인덱스(x)는 fixmap에서 가장 위를 가리킨다.
+ */
 #define __fix_to_virt(x)	(FIXADDR_TOP - ((x) << PAGE_SHIFT))
 #define __virt_to_fix(x)	((FIXADDR_TOP - ((x)&PAGE_MASK)) >> PAGE_SHIFT)
 

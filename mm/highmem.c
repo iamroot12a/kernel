@@ -398,6 +398,11 @@ static struct page_address_map page_address_maps[LAST_PKMAP];
 /*
  * Hash table bucket
  */
+
+/* IAMROOT-12:
+ * -------------
+ * kmap 매핑용 해쉬 테이블
+ */
 static struct page_address_slot {
 	struct list_head lh;			/* List of page_address_maps */
 	spinlock_t lock;			/* Protect this bucket's list */
@@ -414,15 +419,24 @@ static struct page_address_slot *page_slot(const struct page *page)
  *
  * Returns the page's virtual address.
  */
+
 void *page_address(const struct page *page)
 {
 	unsigned long flags;
 	void *ret;
 	struct page_address_slot *pas;
 
+/* IAMROOT-12:
+ * -------------
+ * lowmem의 경우 page -> virtual 주소 변환이 간단히 된다.
+ */
 	if (!PageHighMem(page))
 		return lowmem_page_address(page);
 
+/* IAMROOT-12:
+ * -------------
+ * kmap용 해쉬테이블을 검색해서 page에 해당하는 virtual 주소를 반환한다.
+ */
 	pas = page_slot(page);
 	ret = NULL;
 	spin_lock_irqsave(&pas->lock, flags);

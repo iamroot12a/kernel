@@ -480,6 +480,11 @@ static inline struct zonelist *node_zonelist(int nid, gfp_t flags)
 static inline void arch_free_page(struct page *page, int order) { }
 #endif
 #ifndef HAVE_ARCH_ALLOC_PAGE
+
+/* IAMROOT-12:
+ * -------------
+ * 페이지 할당 시 arm 아키텍처는 아무것도 하지않는다.
+ */
 static inline void arch_alloc_page(struct page *page, int order) { }
 #endif
 

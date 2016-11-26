@@ -108,6 +108,11 @@ void lruvec_init(struct lruvec *lruvec)
 }
 
 #if defined(CONFIG_NUMA_BALANCING) && !defined(LAST_CPUPID_NOT_IN_PAGE_FLAGS)
+
+/* IAMROOT-12:
+ * -------------
+ * 인수로 받은 cpupid를 해당 페이지에 기록하되 기존 last_cpupid 값을 반환한다.
+ */
 int page_cpupid_xchg_last(struct page *page, int cpupid)
 {
 	unsigned long old_flags, flags;

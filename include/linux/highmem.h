@@ -85,8 +85,18 @@ static inline void __kunmap_atomic(void *addr)
 
 #if defined(CONFIG_HIGHMEM) || defined(CONFIG_X86_32)
 
+/* IAMROOT-12:
+ * -------------
+ * cpu별 fixmap(kmap_atomic) 공간에 대한 인덱스
+ */
 DECLARE_PER_CPU(int, __kmap_atomic_idx);
 
+
+/* IAMROOT-12:
+ * -------------
+ * push를 위해 현재 cpu에 대한 fixmap 인덱스 값을 증가시키고 알아온다.
+ * (첫 push 할 때 인덱스 값은 0부터 시작하고, 15까지 가능하다)
+ */
 static inline int kmap_atomic_idx_push(void)
 {
 	int idx = __this_cpu_inc_return(__kmap_atomic_idx) - 1;
@@ -239,6 +249,11 @@ static inline void copy_highpage(struct page *to, struct page *from)
 {
 	char *vfrom, *vto;
 
+/* IAMROOT-12:
+ * -------------
+ * from 과 to 페이지를 잠시 atomic 매핑하고 from 페이지를 to 페이지에 복사한다.
+ * 그런 후 언매핑한다.
+ */
 	vfrom = kmap_atomic(from);
 	vto = kmap_atomic(to);
 	copy_page(vto, vfrom);

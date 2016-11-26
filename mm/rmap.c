@@ -462,6 +462,12 @@ struct anon_vma *page_get_anon_vma(struct page *page)
 	if (!page_mapped(page))
 		goto out;
 
+/* IAMROOT-12:
+ * -------------
+ * page->mapping에 여러 구조체가 들어갈 수 있는데 그 중 anon_vma 구조체 포인터를 
+ * 가리키는 경우 PAGE_MAPPING_ANON(1)을 더해서 사용했으므로 아래에서는 실제 포인터 
+ * 주소로 변환하기 위해 1을 뺀다.
+ */
 	anon_vma = (struct anon_vma *) (anon_mapping - PAGE_MAPPING_ANON);
 	if (!atomic_inc_not_zero(&anon_vma->refcount)) {
 		anon_vma = NULL;
@@ -1422,6 +1428,11 @@ void __put_anon_vma(struct anon_vma *anon_vma)
 	struct anon_vma *root = anon_vma->root;
 
 	anon_vma_free(anon_vma);
+
+/* IAMROOT-12:
+ * -------------
+ * anon_vma 객체를 free 시키는데 root->refcount가 0이되면 루트도 삭제
+ */
 	if (root != anon_vma && atomic_dec_and_test(&root->refcount))
 		anon_vma_free(root);
 }

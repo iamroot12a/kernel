@@ -71,7 +71,12 @@ static void map_pages(struct list_head *list)
 	struct page *page;
 
 	list_for_each_entry(page, list, lru) {
+
 		arch_alloc_page(page, 0);
+/* IAMROOT-12:
+ * -------------
+ * 아래 2개 함수는 메모리 디버그 관련 함수
+ */
 		kernel_map_pages(page, 1, 1);
 		kasan_alloc_pages(page, 0);
 	}
@@ -514,6 +519,11 @@ static unsigned long isolate_freepages_block(struct compact_control *cc,
 		 * contention, to give chance to IRQs. Abort if fatal signal
 		 * pending or async compaction detects need_resched()
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 약 32개 단위로 abort 조건을 확인한다.
+ */
 		if (!(blockpfn % SWAP_CLUSTER_MAX)
 		    && compact_unlock_should_abort(&cc->zone->lock, flags,
 								&locked, cc))
@@ -525,6 +535,12 @@ static unsigned long isolate_freepages_block(struct compact_control *cc,
 
 		if (!valid_page)
 			valid_page = page;
+
+/* IAMROOT-12:
+ * -------------
+ * 버디 시스템에서 free 페이지를 찾아와야하기 때문에 Buddy 플래그가 설정되어 
+ * 있어야 한다.
+ */
 		if (!PageBuddy(page))
 			goto isolate_fail;
 
@@ -1185,6 +1201,11 @@ static void isolate_freepages(struct compact_control *cc)
 	 * If we crossed the migrate scanner, we want to keep it that way
 	 * so that compact_finished() may detect this
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * migrate 스캐너와 free 스캐너가 cross되어 만났음을 뜻하며 여기서 종료 처리한다.
+ */
 	if (block_start_pfn < low_pfn)
 		cc->free_pfn = cc->migrate_pfn;
 }
@@ -1325,6 +1346,7 @@ static isolate_migrate_t isolate_migratepages(struct zone *zone,
 /* IAMROOT-12:
  * -------------
  * cma 타입이나 movable 타입에 대해서만 async migration을 지원한다.
+ * sync migration의 경우는 migrate 타입에 상관없이 migration을 수행한다.
  */
 		if (cc->mode == MIGRATE_ASYNC &&
 		    !migrate_async_suitable(get_pageblock_migratetype(page)))
@@ -1660,7 +1682,12 @@ static int compact_zone(struct zone *zone, struct compact_control *cc)
 
 /* IAMROOT-12:
  * -------------
- * per-cpu로 관리되는 pagevec 페이지를 회수하여 lruvec로 옮긴다.
+ * per-cpu로 관리되는 아래 4개의 pagevec 리스트에서 관리되는 페이지를 회수하여 
+ * lruvec로 옮긴다.
+ *	- lru_add_pvec
+ *	- lru_rotate_pvecs
+ *	- lru_deactivate_pvecs
+ *	- activate_page_pvecs
  */
 	migrate_prep_local();
 
@@ -1695,6 +1722,10 @@ static int compact_zone(struct zone *zone, struct compact_control *cc)
 			;
 		}
 
+/* IAMROOT-12:
+ * -------------
+ * migration을 수행한다. (cc->migratepages -> cc->freepages)
+ */
 		err = migrate_pages(&cc->migratepages, compaction_alloc,
 				compaction_free, (unsigned long)cc, cc->mode,
 				MR_COMPACTION);
@@ -1703,6 +1734,11 @@ static int compact_zone(struct zone *zone, struct compact_control *cc)
 							&cc->migratepages);
 
 		/* All pages were either migrated or will be released */
+
+/* IAMROOT-12:
+ * -------------
+ * 처리가 되지 않고 남아 있는 migratepages들을 lru 캐시를 통해 lruvec으로 되돌려놓는다.
+ */
 		cc->nr_migratepages = 0;
 		if (err) {
 			putback_movable_pages(&cc->migratepages);
@@ -1736,11 +1772,26 @@ check_drain:
 		 */
 		if (cc->order > 0 && last_migrated_pfn) {
 			int cpu;
+
+/* IAMROOT-12:
+ * -------------
+ * cc->migrate_pfn을 cc->order 단위로 절삭 정렬
+ */
 			unsigned long current_block_start =
 				cc->migrate_pfn & ~((1UL << cc->order) - 1);
 
 			if (last_migrated_pfn < current_block_start) {
 				cpu = get_cpu();
+/* IAMROOT-12:
+ * -------------
+ * zone에 있는 order-0 버디 시스템으로 pcp에 있는 order-0 페이지들을 
+ * 보내줘야 free 페이지들이 짝을 이루어 상향 combine 되면서 order가 
+ * 상향된다. 이렇게 해줘야 요청한 order 페이지에 대한 성공률이 
+ * 높아진다.
+ *
+ * lru per-cpu 캐시에 있는 페이지들을 lruvec에 모두 옮긴다.
+ * pcp per-cpu 캐시에 있는 페이지들을 버디시스템에 모두 옮긴다. 
+ */
 				lru_add_drain_cpu(cpu);
 				drain_local_pages(zone);
 				put_cpu();
