@@ -368,3 +368,7 @@ page_address_init()
 ### 83주차
 - 2016.11.19, Kosslab (11명, 권경환, 김민호, 김종철, 문영일, 양유석, 유계성, 윤창호, 임채훈, 조현철, 최영민, 한상종)
  - zonned allocator (Direct-Compaction) ~  
+
+### 84주차
+- 2016.11.26, 토즈 선릉점 (9명, 김영준, 김종철, 문영일, 유계성, 윤창호, 임채훈, 조현철, 최영민, 한상종)
+ - zonned allocator (Direct-Compaction) ~  
