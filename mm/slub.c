@@ -1198,6 +1198,15 @@ unsigned long kmem_cache_flags(unsigned long object_size,
 	/*
 	 * Enable debugging if selected on the kernel commandline.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * CONFIG_SLUB_DEBUG_ON 커널 옵션을 사용하는 경우 default로 
+ * SLAB_DEBUG_FREE | SLAB_RED_ZONE | SLAB_POISON | SLAB_STORE_USER 옵션이 주어진다.
+ *
+ * "slub_debug=" 커널 파라메터로 다른 옵션을 추가할 수 있다.
+ */
+
 	if (slub_debug && (!slub_debug_slabs || (name &&
 		!strncmp(slub_debug_slabs, name, strlen(slub_debug_slabs)))))
 		flags |= slub_debug;
@@ -3120,6 +3129,10 @@ static int calculate_sizes(struct kmem_cache *s, int forced_order)
 
 static int kmem_cache_open(struct kmem_cache *s, unsigned long flags)
 {
+/* IAMROOT-12:
+ * -------------
+ * slub 디버거가 동작하는 경우 flag에 사용하는 디버그 플래그 옵션을 추가한다.
+ */
 	s->flags = kmem_cache_flags(s->size, flags, s->name, s->ctor);
 	s->reserved = 0;
 
@@ -3754,6 +3767,10 @@ int __kmem_cache_create(struct kmem_cache *s, unsigned long flags)
 {
 	int err;
 
+/* IAMROOT-12:
+ * -------------
+ * 
+ */
 	err = kmem_cache_open(s, flags);
 	if (err)
 		return err;

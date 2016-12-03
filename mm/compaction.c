@@ -55,6 +55,10 @@ static unsigned long release_freepages(struct list_head *freelist)
 	struct page *page, *next;
 	unsigned long high_pfn = 0;
 
+/* IAMROOT-12:
+ * -------------
+ * freelist(isolation된)에 있는 order 0 페이지들 모두를 다시 버디시스템으로 돌려보낸다.
+ */
 	list_for_each_entry_safe(page, next, freelist, lru) {
 		unsigned long pfn = page_to_pfn(page);
 		list_del(&page->lru);
@@ -63,6 +67,10 @@ static unsigned long release_freepages(struct list_head *freelist)
 			high_pfn = pfn;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 반환한 페이지 중 가장 상위 pfn을 반환한다.
+ */
 	return high_pfn;
 }
 
@@ -163,9 +171,18 @@ void defer_compaction(struct zone *zone, int order)
 	zone->compact_considered = 0;
 	zone->compact_defer_shift++;
 
+/* IAMROOT-12:
+ * -------------
+ * 기존 실패했던 order보다 작은 order로 요청했는데도 불구하고 실패한 케이스이므로
+ * 실패 order를 update한다.
+ */
 	if (order < zone->compact_order_failed)
 		zone->compact_order_failed = order;
 
+/* IAMROOT-12:
+ * -------------
+ * compact_defer_shift는 6을 초과하지 못하게 제한한다.
+ */
 	if (zone->compact_defer_shift > COMPACT_MAX_DEFER_SHIFT)
 		zone->compact_defer_shift = COMPACT_MAX_DEFER_SHIFT;
 
@@ -173,8 +190,33 @@ void defer_compaction(struct zone *zone, int order)
 }
 
 /* Returns true if compaction should be skipped this time */
+
+/* IAMROOT-12:
+ * -------------
+ * compaction 유예가 필요한 경우 true를 반환한다.
+ *
+ * 최종 실패한 order 보다 작은 order로 시도하는 경우 compaction 유예와 관련없이
+ * 항상 false를 반환하여 compaction을 진행하게 한다.
+ *
+ * 최종 실패한 order와 같거나 큰 order로 요청한 경우는 compaction 유예를 할 수 
+ * 있는데 compaction complete가 발생할 때 마다 유예해야하는 횟수가 늘어난다.
+ * 처음 compaction complete가 발생하기 전에는 유예하지 않고, 
+ * 다은 compaction complete가 발생할 때마다 유예 횟수가 2의 차수 단위로 
+ * 증가하는데 최대 64까지 증가한다.)
+ */
 bool compaction_deferred(struct zone *zone, int order)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * defer_limit는 1, 2, 4, 8, 16, 32, 64까지 가능(compact_defer_shift가 max가 6)
+ *
+ * compaction을 시도하는데 compact_defer_shift가 1일 때에는 유예하지 않고,
+ * 증가함에 따라 유예횟수가 증가된다. 최종 6이 되는 경우 compaction을 시도할 때
+ * 63번 유예한 후 64번째에 compaction을 시도하게 된다.
+ *
+ * (너무 빈번한 compaction을 막기 위한 조치)
+ */
 	unsigned long defer_limit = 1UL << zone->compact_defer_shift;
 
 /* IAMROOT-12:
@@ -214,6 +256,14 @@ bool compaction_deferred(struct zone *zone, int order)
 void compaction_defer_reset(struct zone *zone, int order,
 		bool alloc_success)
 {
+/* IAMROOT-12:
+ * -------------
+ * alloc_success가 true인 경우 요청한 zone에 대해 defer 상태를 클리어한다.
+ *                 false인 경우 클리어하지 않는다.
+ *
+ * alloc_success 여부와 상관없이 요청 order가 실패 order보다 같거나 큰 경우
+ * 요청 order+1로 실패 order를 갱신한다.
+ */
 	if (alloc_success) {
 		zone->compact_considered = 0;
 		zone->compact_defer_shift = 0;
@@ -1356,7 +1406,7 @@ static isolate_migrate_t isolate_migratepages(struct zone *zone,
 /* IAMROOT-12:
  * -------------
  * 한 개의 페이지블럭에서 옮길 수 있는 페이지 들을 찾아 cc->migratepages에 
- * 추가한다.
+ * 추가한다. (최대 한 번에 32개 페이지)
  */
 		low_pfn = isolate_migratepages_block(cc, low_pfn, end_pfn,
 								isolate_mode);
@@ -1808,6 +1858,12 @@ out:
 	 * so we don't leave any returned pages behind in the next attempt.
 	 */
 	if (cc->nr_freepages > 0) {
+
+/* IAMROOT-12:
+ * -------------
+ * free 스캐너가 isolation한 페이지들을 다시 버디시스템으로 돌려보낸다.
+ * (free_pfn: free 시킨 페이지 중 가장 상위 pfn)
+ */
 		unsigned long free_pfn = release_freepages(&cc->freepages);
 
 		cc->nr_freepages = 0;
@@ -1818,6 +1874,11 @@ out:
 		 * Only go back, not forward. The cached pfn might have been
 		 * already reset to zone end in compact_finished()
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 다음 scan시 시작할 free 스캐너 위치를 기억한다.
+ */
 		if (free_pfn > zone->compact_cached_free_pfn)
 			zone->compact_cached_free_pfn = free_pfn;
 	}
@@ -1918,6 +1979,11 @@ unsigned long try_to_compact_pages(gfp_t gfp_mask, unsigned int order,
 		 * It takes at least one zone that wasn't lock contended
 		 * to clear all_zones_contended.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * zonelist를 돌면서 모든 후보 zone에서 하나라도 contended 상황이 없으면 클리어된다.
+ */
 		all_zones_contended &= zone_contended;
 
 		/* If a normal allocation would succeed, stop compacting */
@@ -1929,6 +1995,12 @@ unsigned long try_to_compact_pages(gfp_t gfp_mask, unsigned int order,
 			 * will repeat this with true if allocation indeed
 			 * succeeds in this zone.
 			 */
+
+/* IAMROOT-12:
+ * -------------
+ * low 워터마크 기준을 충족하는 경우 요청 order가 compaction 실패 order 값보다 
+ * 같거나 큰 경우 요청 order +1을 설정한다.
+ */
 			compaction_defer_reset(zone, order, false);
 			/*
 			 * It is possible that async compaction aborted due to
@@ -1950,6 +2022,13 @@ unsigned long try_to_compact_pages(gfp_t gfp_mask, unsigned int order,
 			 * so we defer compaction there. If it ends up
 			 * succeeding after all, it will be reset.
 			 */
+
+/* IAMROOT-12:
+ * -------------
+ * async 모드가 아니면서 compact 완료시 defer를 최대 6까지 증가시킨다.
+ * ("echo 1 > /proc/sys/vm/compact_memory"로 manual compaction을 시도할 때
+ * MIGRATE_SYNC 모드로 compaction을 진행하는데 이 때 유예 시스템을 가동한다)
+ */
 			defer_compaction(zone, order);
 		}
 

@@ -64,6 +64,11 @@ struct pcpu_group_info {
 						 * entries contain NR_CPUS */
 };
 
+
+/* IAMROOT-12:
+ * -------------
+ * per-cpu first chunk를 구성하기 위한 정보
+ */
 struct pcpu_alloc_info {
 	size_t			static_size;
 	size_t			reserved_size;

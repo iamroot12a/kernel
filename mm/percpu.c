@@ -2108,7 +2108,10 @@ int __init pcpu_setup_first_chunk(const struct pcpu_alloc_info *ai,
 
 /* IAMROOT-12AB:
  * -------------
- * 각 unit 페이지들을 활성화된 상태로 비트맵을 초기화
+ * 각 unit 페이지들을 활성화된 상태로 비트맵을 초기화한다 
+ * (first chunk를 만들 때에는 이미 매핑된 lowmem 메모리를 사용했으므로 
+ * 항상 populated 되어 있는 것으로 설정한다. 추가 chunk를 만드는 경우에는 
+ * populate되어 있지 않게 초기화한다.)
  */
 	bitmap_fill(schunk->populated, pcpu_unit_pages);
 	schunk->nr_populated = pcpu_unit_pages;

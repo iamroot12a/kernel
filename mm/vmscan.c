@@ -705,6 +705,7 @@ redo:
 /* IAMROOT-12:
  * -------------
  * evitable 페이지들을 lru 캐시를 통해 추가한다.
+ * (내부에서 참조카운터 증가)
  */
 		lru_cache_add(page);
 	} else {
@@ -759,6 +760,12 @@ redo:
 	else if (!was_unevictable && is_unevictable)
 		count_vm_event(UNEVICTABLE_PGCULLED);
 
+/* IAMROOT-12:
+ * -------------
+ * 참조카운터를 감소시켜 0이되는 페이지는 버디시스템으로 돌려보낸다.
+ * (lru로 돌아가는 페이지의 경우 내부에서 참조카운터를 1 증가 시키므로 
+ * 아래 함수에서는 참조카운터만 1감소시키고 실제 버디시스템으로 돌려보내지 않는다.)
+ */
 	put_page(page);		/* drop ref from isolate */
 }
 

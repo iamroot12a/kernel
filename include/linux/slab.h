@@ -149,6 +149,14 @@ size_t ksize(const void *);
  * alignment larger than the alignment of a 64-bit integer.
  * Setting ARCH_KMALLOC_MINALIGN in arch headers allows that.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * rpi2: 
+ *  - ARCH_DMA_MINALIGN:    64 
+ *  - KMALLOC_MIN_SIZE:     64
+ *  - KMALLOC_SHIFT_LOW:    6
+ */
 #if defined(ARCH_DMA_MINALIGN) && ARCH_DMA_MINALIGN > 8
 #define ARCH_KMALLOC_MINALIGN ARCH_DMA_MINALIGN
 #define KMALLOC_MIN_SIZE ARCH_DMA_MINALIGN

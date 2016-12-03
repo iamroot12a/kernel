@@ -2,6 +2,16 @@
 #define _LINUX_COMPACTION_H
 
 /* Return values for compact_zone() and try_to_compact_pages() */
+
+/* IAMROOT-12:
+ * -------------
+ * COMPACT_DEFERRED:    지난 compaction 실패들 때문에 compaction이 연기되어 시작되지 않음
+ * COMPACT_SKIPPED:     
+ * COMAPCT_CONTINUE:    계속 진행 중
+ * COMPACT_PARTIAL:     페이지가 일부 회수되어 중간에 멈춘 상태
+ * COMPACT_COMPLETE:    전체 zone의 compaction이 끝난 상태
+ */
+
 /* compaction didn't start as it was deferred due to past failures */
 #define COMPACT_DEFERRED	0
 /* compaction didn't start as it was not possible or direct reclaim was more suitable */
