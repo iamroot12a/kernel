@@ -575,6 +575,12 @@ static int __init maxcpus(char *str)
 early_param("maxcpus", maxcpus);
 
 /* Setup number of possible processor ids */
+
+/* IAMROOT-12:
+ * -------------
+ * possible cpu 수는 빌드 타임에 NR_CPUS로 설정되지만
+ * 부트업 타임에 DTB 등 cpus 노드 정보를 읽어서 바뀐다.
+ */
 int nr_cpu_ids __read_mostly = NR_CPUS;
 EXPORT_SYMBOL(nr_cpu_ids);
 

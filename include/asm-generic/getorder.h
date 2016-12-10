@@ -9,6 +9,12 @@
 /*
  * Runtime evaluation of get_order()
  */
+
+/* IAMROOT-12:
+ * -------------
+ * 0 ~ 0x1000      -> order 0
+ * 0x1001 ~ 0x2000 -> order 1
+ */
 static inline __attribute_const__
 int __get_order(unsigned long size)
 {
@@ -45,6 +51,12 @@ int __get_order(unsigned long size)
  *
  * This function may be used to initialise variables with compile time
  * evaluations of constants.
+ */
+
+/* IAMROOT-12:
+ * -------------
+ * 0      ~ 0x1000  -> order 0
+ * 0x1001 ~ 0x2000  -> order 1
  */
 #define get_order(n)						\
 (								\
