@@ -377,3 +377,8 @@ page_address_init()
 - 2016.12.03, Kosslab (10명, 권경환, 김영준, 김종철, 문영일, 양유석, 유계성, 윤창호, 임채훈, 조현철, 최영민)
  - zonned allocator (Direct-Compaction)
  - kmem_cache_init() ~
+
+### 86주차
+- 2016.12.10, 토즈 선릉점 (10명, 권경환, 김영준, 문영일, 박진영, 양유석, 윤창호, 임채훈, 조현철, 최영민, 한상종)
+ - zonned allocator (Direct-Compaction)
+ - kmem_cache_init() ~
