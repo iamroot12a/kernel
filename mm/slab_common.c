@@ -692,7 +692,7 @@ int slab_is_available(void)
 
 #ifndef CONFIG_SLOB
 /* Create a cache during boot when no slab services are available yet */
-void __init create_boot_cache(struct kmem_cache *s, const char *name, size_t size,
+void __init creatE_boot_cache(struct kmem_cache *s, const char *name, size_t size,
 		unsigned long flags)
 {
 	int err;
@@ -726,11 +726,20 @@ struct kmem_cache *__init create_kmalloc_cache(const char *name, size_t size,
 		panic("Out of memory when creating slab %s\n", name);
 
 	create_boot_cache(s, name, size, flags);
+
+/* IAMROOT-12:
+ * -------------
+ * 만들어진 slub 캐시를 전역 slab_caches 리스트에 추가한다.
+ */
 	list_add(&s->list, &slab_caches);
 	s->refcount = 1;
 	return s;
 }
 
+/* IAMROOT-12:
+ * -------------
+ * slub을 사용하는 경우 KMALLOC_SHIFT_HIGH(13)+1 이다.
+ */
 struct kmem_cache *kmalloc_caches[KMALLOC_SHIFT_HIGH + 1];
 EXPORT_SYMBOL(kmalloc_caches);
 
@@ -744,6 +753,15 @@ EXPORT_SYMBOL(kmalloc_dma_caches);
  * kmalloc array. This is necessary for slabs < 192 since we have non power
  * of two cache sizes there. The size of larger slabs can be determined using
  * fls.
+ */
+
+/* IAMROOT-12:
+ * -------------
+ * kmalloc에서 small slub object를 사용하는 경우 사용할 kmalloc 엔트리를 
+ * 선택하기 위한 인덱스 값을 찾는 테이블이다. (kmalloc_caches[])
+ *
+ * 3번부터는 2의 차수 단위 사이즈를 관리하는 kmalloc을 사용하게 하는데,
+ * 1번과 2번은 각각 96, 192 사이즈를 담당하도록 별도로 구성하였다.
  */
 static s8 size_index[24] = {
 	3,	/* 8 */
@@ -829,7 +847,15 @@ void __init create_kmalloc_caches(unsigned long flags)
 	BUILD_BUG_ON(KMALLOC_MIN_SIZE > 256 ||
 		(KMALLOC_MIN_SIZE & (KMALLOC_MIN_SIZE - 1)));
 
+/* IAMROOT-12:
+ * -------------
+ * 캐시라인 미만의 바이트들은 해당 캐시라인과 동일한 사이즈로 유도한다.
+ *
+ * size_index[]의 하위 인덱스까지 KMALLOC_SHIFT_LOW(rpi2=6(D1-캐시라인=64)).
+ * rpi2) size_index[0~7] = KMALLOC_SHIFT_LOW(6) 
+ */
 	for (i = 8; i < KMALLOC_MIN_SIZE; i += 8) {
+
 		int elem = size_index_elem(i);
 
 		if (elem >= ARRAY_SIZE(size_index))
@@ -837,6 +863,14 @@ void __init create_kmalloc_caches(unsigned long flags)
 		size_index[elem] = KMALLOC_SHIFT_LOW;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 캐시 정렬을 위해 64바이트 이상의 캐시라인을 사용하는 경우 72 ~ 96까지는 
+ * 캐시 정렬이 힘드므로 128로 유도한다.
+ *
+ * KMALLOC_MIN_SIZE(D1-캐시라인)가 64 이상인 경우 
+ * rpi2) size_index[8~11] = 7
+ */
 	if (KMALLOC_MIN_SIZE >= 64) {
 		/*
 		 * The 96 byte size cache is not used if the alignment
@@ -847,6 +881,11 @@ void __init create_kmalloc_caches(unsigned long flags)
 
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 캐시 정렬을 위해 128바이트 이상의 캐시라인을 사용하는 경우 136 ~ 192까지는 
+ * 캐시 정렬이 힘드므로 256으로 유도한다.
+ */
 	if (KMALLOC_MIN_SIZE >= 128) {
 		/*
 		 * The 192 byte sized cache is not used if the alignment
@@ -856,6 +895,12 @@ void __init create_kmalloc_caches(unsigned long flags)
 		for (i = 128 + 8; i <= 192; i += 8)
 			size_index[size_index_elem(i)] = 8;
 	}
+
+/* IAMROOT-12:
+ * -------------
+ * kmalloc-# 을 준비한다. (rpi2: i=6 ~ 13)
+ * rpi2: kmalloc-64, 192, 256, 512, 1024, 2048, 4096, 8192
+ */
 	for (i = KMALLOC_SHIFT_LOW; i <= KMALLOC_SHIFT_HIGH; i++) {
 		if (!kmalloc_caches[i]) {
 			kmalloc_caches[i] = create_kmalloc_cache(NULL,
@@ -867,16 +912,34 @@ void __init create_kmalloc_caches(unsigned long flags)
 		 * These have to be created immediately after the
 		 * earlier power of two caches
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * D-캐시라인이 32이하인 경우 kmalloc-96을 만들 수 있다.
+ */
 		if (KMALLOC_MIN_SIZE <= 32 && !kmalloc_caches[1] && i == 6)
 			kmalloc_caches[1] = create_kmalloc_cache(NULL, 96, flags);
 
+/* IAMROOT-12:
+ * -------------
+ * D-캐시라인이 64이하인 경우 kmalloc-192를 만들 수 있다.
+ */
 		if (KMALLOC_MIN_SIZE <= 64 && !kmalloc_caches[2] && i == 7)
 			kmalloc_caches[2] = create_kmalloc_cache(NULL, 192, flags);
 	}
 
 	/* Kmalloc array is now usable */
+
+/* IAMROOT-12:
+ * -------------
+ * kmalloc까지 준비가 된 상태이므로 slab(slub) 상태를 UP으로 바꾼다.
+ */
 	slab_state = UP;
 
+/* IAMROOT-12:
+ * -------------
+ * kmalloc-# 이름을 지정해준다.
+ */
 	for (i = 0; i <= KMALLOC_SHIFT_HIGH; i++) {
 		struct kmem_cache *s = kmalloc_caches[i];
 		char *n;
@@ -889,6 +952,10 @@ void __init create_kmalloc_caches(unsigned long flags)
 		}
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * dma-kmalloc-# 이름을 지정해준다.
+ */
 #ifdef CONFIG_ZONE_DMA
 	for (i = 0; i <= KMALLOC_SHIFT_HIGH; i++) {
 		struct kmem_cache *s = kmalloc_caches[i];

@@ -61,6 +61,11 @@ extern enum slab_state slab_state;
 extern struct mutex slab_mutex;
 
 /* The list of all slab caches on the system */
+
+/* IAMROOT-12:
+ * -------------
+ * 만들어진 모든 slub 캐시를 추가하는 리스트
+ */
 extern struct list_head slab_caches;
 
 /* The slab cache that manages slab cache information */

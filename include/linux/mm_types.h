@@ -121,6 +121,11 @@ struct page {
  */
 					atomic_t _mapcount;
 
+/* IAMROOT-12:
+ * -------------
+ * objects: slub 페이지에서 전체 object 수
+ * inuse:   slub 페이지에서 사용 가능한 object 수 
+ */
 					struct { /* SLUB */
 						unsigned inuse:16;
 						unsigned objects:15;

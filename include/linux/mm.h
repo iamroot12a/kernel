@@ -687,6 +687,8 @@ static inline int compound_order(struct page *page)
  * -------------
  * page.flags: PG_Head가 설정된 경우 compound 페이지의 시작 페이지를 의미한다.
  * page[1].compound_order: order값은 두 번째 페이지에 기록된다.
+ *         page->compound_order와 page->lru와 union으로 사용되며
+ *         page[0]에는 lru로 사용되고, page[1]에는 compound_order로 사용된다. 
  * compound page: order 단위의 복수(order) 페이지로 구성된다.
  */
 

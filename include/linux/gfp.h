@@ -281,6 +281,11 @@ struct vm_area_struct;
 #define GFP_CONSTRAINT_MASK (__GFP_HARDWALL|__GFP_THISNODE)
 
 /* Do not use these with a slab allocator */
+
+/* IAMROOT-12:
+ * -------------
+ * DMA32와 HIGHMEM에서 slub 페이지 할당을 하면 안된다.
+ */
 #define GFP_SLAB_BUG_MASK (__GFP_DMA32|__GFP_HIGHMEM|~__GFP_BITS_MASK)
 
 /* Flag - indicates that the buffer will be suitable for DMA.  Ignored on some
