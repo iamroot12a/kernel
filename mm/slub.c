@@ -1317,6 +1317,11 @@ static inline struct kmem_cache *slab_pre_alloc_hook(struct kmem_cache *s,
 	lockdep_trace_alloc(flags);
 	might_sleep_if(flags & __GFP_WAIT);
 
+/* IAMROOT-12:
+ * -------------
+ * fault injection 기능으로 설정된 조건을 만족하는 경우 강제로 true가 반환되는데 
+ * 이럴 때 null을 리턴하여 할당을 실패하게 한다.
+ */
 	if (should_failslab(s->object_size, flags, s->flags))
 		return NULL;
 
@@ -1607,8 +1612,9 @@ static struct page *new_slab(struct kmem_cache *s, gfp_t flags, int node)
 /* IAMROOT-12:
  * -------------
  * 처음 할당되지 마자 page->inuse에는 object 수가 담긴다.
- * --- 새로 할당 받은 slub 페이지에 왜 inuse에 왜 0이 아닌 object 수를???
- * --- frozen의 역활???
+ * --- 새로 할당 받은 slub 페이지에 왜 inuse에 왜 0이 아닌 object 수를?? 모든 object가 cpu_slab->freelist로 이양되기 때문에 모두 사용된 것으로 처리한다.
+ * --- frozen의 역활: cpu_slab->freelist로 free object list의 관리를 넘긴다..
+ *                    (lock없이 atomic operation으로 처리 성능을 높이기 위함)
  */
 	page->inuse = page->objects;
 	page->frozen = 1;
@@ -2432,6 +2438,18 @@ static inline void *get_freelist(struct kmem_cache *s, struct page *page)
 	unsigned long counters;
 	void *freelist;
 
+/* IAMROOT-12:
+ * -------------
+ * page->freelist와 counter를 old 값과 비교하여 동일한 경우 new 값으로 바꾼다
+ * __cmpxchg_double_slab(s, page, old1, old2, new1, new2)
+ *	page->freelist == old1(page->freelist)  
+ *	page->counters == old2(counters)
+ *				page->freelist <- new1(null)
+ *				page->counters <- new2(new.counters)
+ *
+ * 아래 do while 사이를 진행하는 도중  다른 cpu에서 free되어 page->freelist에 object가
+ * 인입되는 경우가 있다.
+ */
 	do {
 		freelist = page->freelist;
 		counters = page->counters;
@@ -2439,6 +2457,10 @@ static inline void *get_freelist(struct kmem_cache *s, struct page *page)
 		new.counters = counters;
 		VM_BUG_ON(!new.frozen);
 
+/* IAMROOT-12:
+ * -------------
+ * 
+ */
 		new.inuse = page->objects;
 		new.frozen = freelist != NULL;
 
@@ -2480,6 +2502,11 @@ static void *__slab_alloc(struct kmem_cache *s, gfp_t gfpflags, int node,
 	 * cpu before disabling interrupts. Need to reload cpu area
 	 * pointer.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * preempt 커널인 경우만 irq를 disable한 후 현재 cpu의 캐시를 다시 알아온다.
+ */
 	c = this_cpu_ptr(s->cpu_slab);
 #endif
 
@@ -2488,12 +2515,28 @@ static void *__slab_alloc(struct kmem_cache *s, gfp_t gfpflags, int node,
 		goto new_slab;
 redo:
 
+/* IAMROOT-12:
+ * -------------
+ * c->page가 지정되어 있는 경우 이 루틴으로 진입한다.
+ *
+ * 아래는 낮은 확률로 c->page가 같은 노드에 없는 경우
+ */
 	if (unlikely(!node_match(page, node))) {
 		int searchnode = node;
 
+/* IAMROOT-12:
+ * -------------
+ * 노드가 지정되었지만 그 노드에는 메모리가 없는 경우(memoryless node)
+ */
 		if (node != NUMA_NO_NODE && !node_present_pages(node))
 			searchnode = node_to_mem_node(node);
 
+/* IAMROOT-12:
+ * -------------
+ * 메모리리스에서 변환한 메모리 노드에서도 매치가 안되는 경우
+ * 현재 cpu 캐시에 있는 미스매치 페이지들을 deactivate 시키고,
+ * c->page와 c->freelist를 null로 초기화
+ */
 		if (unlikely(!node_match(page, searchnode))) {
 			stat(s, ALLOC_NODE_MISMATCH);
 			deactivate_slab(s, page, c->freelist);
@@ -2508,6 +2551,15 @@ redo:
 	 * PFMEMALLOC but right now, we are losing the pfmemalloc
 	 * information when the page leaves the per-cpu allocator
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * pfmemealloc 속성이 서로 다른 페이지인 경우 deactivate...
+ *
+ * slub에서 pfmemalloc을 사용하는 경우는 메모리 부족 시 네트워크 swap을 위해
+ * tcp에 사용되는 메모리를 할당 할 수 있게 하기 위해 준비하였다. (특수 케이스)
+ */
+
 	if (unlikely(!pfmemalloc_match(page, gfpflags))) {
 		deactivate_slab(s, page, c->freelist);
 		c->page = NULL;
@@ -2516,17 +2568,40 @@ redo:
 	}
 
 	/* must check again c->freelist in case of cpu migration or IRQ */
+
+/* IAMROOT-12:
+ * -------------
+ * 인터럽트 disable 전에 preemption되어 cpu 캐시가 다른 페이지로 내용이 바뀔 수 
+ * 있어서 해당 캐시의 freelist를 할당해 줄 수 있는 상태가 될 확률이 있다.
+ */
 	freelist = c->freelist;
 	if (freelist)
 		goto load_freelist;
 
+/* IAMROOT-12:
+ * -------------
+ * c->freelist에 없어서 c->page의 freelist에서 가져온다.
+ */
 	freelist = get_freelist(s, page);
 
+/* IAMROOT-12:
+ * -------------
+ * c->page에서 가져온 freelist가 비어 있는 경우 더 이상 할당할 object가 
+ * 없기 때문에 앞으로 c->partial에서 slub page를 가져와야 한다.
+ * 기존 할당이 다 완료된 페이지는 현재 cpu가 더 이상 관리할 필요가 
+ * 없으므로 frozen이 풀린채로 cpu 캐시의 관리대상에서 벗어난다.(c->page=null)
+ */
 	if (!freelist) {
 		c->page = NULL;
 		stat(s, DEACTIVATE_BYPASS);
 		goto new_slab;
 	}
+
+
+/* IAMROOT-12:
+ * -------------
+ * c->page에 object가 있는 경우 다시 c->freelist에 refill 된다.
+ */
 
 	stat(s, ALLOC_REFILL);
 
@@ -2594,6 +2669,11 @@ static __always_inline void *slab_alloc_node(struct kmem_cache *s,
 	struct page *page;
 	unsigned long tid;
 
+/* IAMROOT-12:
+ * -------------
+ * fault injection 조건으로 인해 null이 반환되면 할당을 포기한다.
+ * memcg용 kmem_cache를 찾아 가져온다. 없으면 원래 캐시를 사용한다.
+ */
 	s = slab_pre_alloc_hook(s, gfpflags);
 	if (!s)
 		return NULL;
@@ -2608,6 +2688,17 @@ redo:
 	 * the same cpu. It could be different if CONFIG_PREEMPT so we need
 	 * to check if it is matched or not.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * Fastpath alloc slub object
+ *
+ * while 문장이 종료되는 시점까지는 현재 cpu의 캐시 값과 tid 값을 가져온 것을
+ * 보장한다.
+ *
+ * do while 문장은 2줄 사이에서 preemption되지 않음을 보장하나 극히 희박하나
+ * 안정화 목적으로 운용된다.
+ */
 	do {
 		tid = this_cpu_read(s->cpu_slab->tid);
 		c = raw_cpu_ptr(s->cpu_slab);
@@ -2622,6 +2713,11 @@ redo:
 	 * page could be one associated with next tid and our alloc/free
 	 * request will be failed. In this case, we will retry. So, no problem.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * local tid를 보호하기 위해 gcc의 optimization을 하지 않게 한다.
+ */
 	barrier();
 
 	/*
@@ -2633,6 +2729,12 @@ redo:
 
 	object = c->freelist;
 	page = c->page;
+
+/* IAMROOT-12:
+ * -------------
+ * 할당해줄 object가 없거나 현재 가져온 페이지의 노드와 이 cpu 노드가 서로
+ * 다른 경우 slowpath로 할당을 전환한다.
+ */
 	if (unlikely(!object || !node_match(page, node))) {
 		object = __slab_alloc(s, gfpflags, node, addr, c);
 		stat(s, ALLOC_SLOWPATH);
@@ -2653,6 +2755,16 @@ redo:
 		 * against code executing on this cpu *not* from access by
 		 * other cpus.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * cmpxchg_double()과 this_cpu_cmpxchg_double()이 다른 점은
+ * 첫 번째와 두 번째 인수를 per-cpu 인수가 사용되며 이렇게 하여 
+ * 현재 cpu 캐시의 tid 값을 알아온다.
+ *
+ * tid: 처음에 cpu 번호로 초기화되나 계속 증가된다. 증가되는 번호가
+ *      cpu끼리 겹칠 수 없게 설계되어 있다.
+ */
 		if (unlikely(!this_cpu_cmpxchg_double(
 				s->cpu_slab->freelist, s->cpu_slab->tid,
 				object, tid,
@@ -2661,6 +2773,12 @@ redo:
 			note_cmpxchg_failure("slab_alloc", s, tid);
 			goto redo;
 		}
+
+/* IAMROOT-12:
+ * -------------
+ * 다음 object에 대한 atomic opeation 작업에 대해 성공 확률을 높이기 위해 
+ * 미리 prefetch한다.
+ */
 		prefetch_freepointer(s, next_object);
 		stat(s, ALLOC_FASTPATH);
 	}
@@ -2681,6 +2799,10 @@ static __always_inline void *slab_alloc(struct kmem_cache *s,
 
 void *kmem_cache_alloc(struct kmem_cache *s, gfp_t gfpflags)
 {
+/* IAMROOT-12:
+ * -------------
+ * slab object를 할당한다.
+ */
 	void *ret = slab_alloc(s, gfpflags, _RET_IP_);
 
 	trace_kmem_cache_alloc(_RET_IP_, ret, s->object_size,
@@ -2890,6 +3012,11 @@ redo:
 	if (likely(page == c->page)) {
 		set_freepointer(s, object, c->freelist);
 
+/* IAMROOT-12:
+ * -------------
+ * this_cpu_cmpxchg_double(pcp1, pcp2, oval1, oval2, nval1, nval2)
+ *	- pcp 값과 oval 값이 같은 경우 nval을 pcp에 대입한다.
+ */
 		if (unlikely(!this_cpu_cmpxchg_double(
 				s->cpu_slab->freelist, s->cpu_slab->tid,
 				c->freelist, tid,

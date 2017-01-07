@@ -13,6 +13,11 @@ static struct {
 
 bool should_failslab(size_t size, gfp_t gfpflags, unsigned long cache_flags)
 {
+/* IAMROOT-12:
+ * -------------
+ * nofail, wait(ignore_gfp_wait이 설정된 경우) 옵션을 사용시에는 항상 false 반환
+ * false: object 할당 시 중간에 빠져나가지 못함
+ */
 	if (gfpflags & __GFP_NOFAIL)
 		return false;
 
@@ -22,6 +27,11 @@ bool should_failslab(size_t size, gfp_t gfpflags, unsigned long cache_flags)
 	if (failslab.cache_filter && !(cache_flags & SLAB_FAILSLAB))
 		return false;
 
+/* IAMROOT-12:
+ * -------------
+ * fault injection 기능으로 설정된 조건을 만족하는 경우 강제로 true를 발생시켜
+ * 할당을 실패하게 한다.
+ */
 	return should_fail(&failslab.attr, size);
 }
 
