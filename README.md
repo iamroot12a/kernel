@@ -310,83 +310,83 @@ page_address_init()
 
 ### 70주차
 - 2016.08.20, 강남 상상플러스 (9명, 권경환, 김종철, 문영일, 양유석, 유계성, 윤창호, 조현철, 최영민, 한상종)
- - page_alloc_init()
- - parse_args()
- - jump_label_init() ~
+- page_alloc_init()
+- parse_args()
+- jump_label_init() ~
 
 ### 71주차
 - 2016.08.27, 선릉 Kosslab (9명, 권경환, 김종철, 문영일, 박진영, 양유석, 유계성, 윤창호, 조현철, 최영민)
- - jump_label_init()
+- jump_label_init()
 
 ### 72주차
 - 2016.09.03, 토즈 선릉점 (9명, 권경환, 김종철, 문영일, 박진영, 양유석, 유계성, 윤창호, 조현철, 최영민)
- - setup_log_buf()
- - pidhash_init()
- - vfs_caches_init_early()
- - sort_main_extable()
- - trap_init()
+- setup_log_buf()
+- pidhash_init()
+- vfs_caches_init_early()
+- sort_main_extable()
+- trap_init()
 
 ### 73주차
 - 2016.09.10, 선릉 Kosslab (8명, 권경환, 문영일, 박진영, 유계성, 윤창호, 조현철, 최영민, 한상종)
- - mm_init() -> page_ext_init_flatmem()
+- mm_init() -> page_ext_init_flatmem()
  
 ### 74주차
 - 2016.09.17, (추석 명절)
  
 ### 75주차
 - 2016.09.24, 선릉 Kosslab (8명, 김종철, 문영일, 박진영, 양유석, 윤창호, 조현철, 최영민, 한상종)
- - mm_init() -> mem_init() ~
+- mm_init() -> mem_init() ~
 
 ### 76주차
 - 2016.10.01, 토즈 선릉점 (10명, 권경환, 김민호, 김종철, 문영일, 유계성, 윤창호, 임채훈, 조현철, 최영민, 한상종)
- - mm_init() -> mem_init() ~
+- mm_init() -> mem_init() ~
  
 ### 77주차
 - 2016.10.08, Kosslab (12명, 권경환, 김미르, 김민호, 김종철, 문영일, 박진영, 양유석, 윤창호, 임채훈, 조현철, 최영민, 한상종)
- - mm_init() -> mem_init()
- - 버디 할당/해제 ~  
+- mm_init() -> mem_init()
+- 버디 할당/해제 ~  
 
 ### 78주차
 - 2016.10.15, (야외 행사)
  
 ### 79주차
 - 2016.10.22, Kosslab (9명, 권경환, 김종철, 문영일, 양유석, 윤창호, 임채훈, 조현철, 최영민, 한상종)
- - 버디 할당/해제
+- 버디 할당/해제
 
 ### 80주차
 - 2016.10.29, 토즈 선릉점 (10명, 김미르, 권경환, 문영일, 박진영, 양유석, 유계성, 윤창호, 임채훈, 조현철, 최영민)
- - zonned allocator ~  
+- zonned allocator ~  
 
 ### 81주차
 - 2016.11.05, Kosslab (8명, 김민호, 김종철, 문영일, 박진영, 윤창호, 임채훈, 조현철, 최영민)
- - zonned allocator ~  
+- zonned allocator ~  
  
 ### 82주차
 - 2016.11.12, 토즈 선릉점 (9명, 권경환, 김종철, 문영일, 양유석, 유계성, 윤창호, 임채훈, 조현철, 최영민)
- - zonned allocator (Direct-Compaction) ~  
+- zonned allocator (Direct-Compaction) ~  
  
 ### 83주차
 - 2016.11.19, Kosslab (11명, 권경환, 김민호, 김종철, 문영일, 양유석, 유계성, 윤창호, 임채훈, 조현철, 최영민, 한상종)
- - zonned allocator (Direct-Compaction) ~  
+- zonned allocator (Direct-Compaction) ~  
 
 ### 84주차
 - 2016.11.26, 토즈 선릉점 (9명, 김영준, 김종철, 문영일, 유계성, 윤창호, 임채훈, 조현철, 최영민, 한상종)
- - zonned allocator (Direct-Compaction) ~  
+- zonned allocator (Direct-Compaction) ~  
 
 ### 85주차
 - 2016.12.03, Kosslab (10명, 권경환, 김영준, 김종철, 문영일, 양유석, 유계성, 윤창호, 임채훈, 조현철, 최영민)
- - zonned allocator (Direct-Compaction)
- - kmem_cache_init() ~
+- zonned allocator (Direct-Compaction)
+- kmem_cache_init() ~
 
 ### 86주차
 - 2016.12.10, 토즈 선릉점 (10명, 권경환, 김영준, 문영일, 박진영, 양유석, 윤창호, 임채훈, 조현철, 최영민, 한상종)
- - zonned allocator (Direct-Compaction)
+- zonned allocator (Direct-Compaction)
  - kmem_cache_init() ~
 
 ### 87주차
 - 2016.12.17, 토즈 선릉점 (8명, 김영준, 김종철, 문영일, 윤창호, 임채훈, 조현철, 최영민, 한상종)
-  - kmem_cache_init()
-  - new_slab()
+- kmem_cache_init()
+- new_slab()
 
 ### 88주차
 - 2016.12.24, (성탄연휴) 
@@ -396,5 +396,4 @@ page_address_init()
 
 ### 90주차
 - 2017.01.07, Kosslab (12명, 권경환, 김영준, 김종철, 문영일, 양유석, 유계성, 윤창호, 임채훈, 정재준, 조현철, 최영민, 한상종)
-  - kmem_cache_alloc() ~
-  
+- kmem_cache_alloc() ~  
