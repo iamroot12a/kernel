@@ -507,6 +507,12 @@ static inline int PageTransTail(struct page *page)
  */
 static inline int PageSlabPfmemalloc(struct page *page)
 {
+/* IAMROOT-12:
+ * -------------
+ * 비상용 slub 페이지 구분: PG_slab, PG_active 
+ * 비상용 slub -> pfmemalloc slub 페이지 -> 메모리 부족 시 
+ * Network Swap을 하기 위해 TCP object들이 사용되어야 하는 경우 사용
+ */
 	VM_BUG_ON_PAGE(!PageSlab(page), page);
 	return PageActive(page);
 }

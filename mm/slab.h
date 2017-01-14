@@ -351,6 +351,11 @@ struct kmem_cache_node {
 #endif
 
 #ifdef CONFIG_SLUB
+
+/* IAMROOT-12:
+ * -------------
+ * node->partial 리스트에 가지고 있는 slub 수
+ */
 	unsigned long nr_partial;
 	struct list_head partial;
 #ifdef CONFIG_SLUB_DEBUG

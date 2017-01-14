@@ -483,6 +483,10 @@ static inline struct page *compound_head(struct page *page)
  */
 static inline struct page *compound_head_fast(struct page *page)
 {
+/* IAMROOT-12:
+ * -------------
+ * PG_tail 페이지인 경우 선두 페이지를 가리킨다.
+ */
 	if (unlikely(PageTail(page)))
 		return page->first_page;
 	return page;
@@ -575,6 +579,10 @@ static inline void get_page(struct page *page)
 
 static inline struct page *virt_to_head_page(const void *x)
 {
+/* IAMROOT-12AB:
+ * -------------
+ * 가상주소에 해당하는 page descriptor 주소를 알아온다.
+ */
 	struct page *page = virt_to_page(x);
 
 	/*
@@ -583,6 +591,11 @@ static inline struct page *virt_to_head_page(const void *x)
 	 * already allocated page and this page won't be freed until
 	 * this virt_to_head_page() is finished. So use _fast variant.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * head 페이지를 반환한다. (slub은 head 페이지를 가리킨다)
+ */
 	return compound_head_fast(page);
 }
 

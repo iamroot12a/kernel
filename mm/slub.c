@@ -403,7 +403,20 @@ static inline bool __cmpxchg_double_slab(struct kmem_cache *s, struct page *page
 		void *freelist_new, unsigned long counters_new,
 		const char *n)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 아키텍처가 지원하는 경우 해당 아키텍처가 atomic으로 구현한 cmpxchg_double()을 사용하고,
+ * 그렇지 않은 경우 lock을 이용한 generic 코드를 사용한다.
+ * 예) x86, arm64에서 지원
+ */
+
 	VM_BUG_ON(!irqs_disabled());
+
+/* IAMROOT-12:
+ * -------------
+ * Pathpath:
+ */
 #if defined(CONFIG_HAVE_CMPXCHG_DOUBLE) && \
     defined(CONFIG_HAVE_ALIGNED_STRUCT_PAGE)
 	if (s->flags & __CMPXCHG_DOUBLE) {
@@ -413,6 +426,11 @@ static inline bool __cmpxchg_double_slab(struct kmem_cache *s, struct page *page
 			return 1;
 	} else
 #endif
+
+/* IAMROOT-12:
+ * -------------
+ * Slowpath:
+ */
 	{
 		slab_lock(page);
 		if (page->freelist == freelist_old &&
@@ -1643,12 +1661,21 @@ static void __free_slab(struct kmem_cache *s, struct page *page)
 		NR_SLAB_RECLAIMABLE : NR_SLAB_UNRECLAIMABLE,
 		-pages);
 
+/* IAMROOT-12:
+ * -------------
+ * PG_active, PG_slab 제거
+ */
 	__ClearPageSlabPfmemalloc(page);
 	__ClearPageSlab(page);
 
 	page_mapcount_reset(page);
 	if (current->reclaim_state)
 		current->reclaim_state->reclaimed_slab += pages;
+
+/* IAMROOT-12:
+ * -------------
+ * 버디시스템으로 할당 해제 (참조 카운터가 0인 경우)
+ */
 	__free_pages(page, order);
 	memcg_uncharge_slab(s, order);
 }
@@ -1693,6 +1720,11 @@ static void free_slab(struct kmem_cache *s, struct page *page)
 
 static void discard_slab(struct kmem_cache *s, struct page *page)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * dec_slabs_node()함수는 디버그 코드
+ */
 	dec_slabs_node(s, page_to_nid(page), page->objects);
 	free_slab(s, page);
 }
@@ -1755,6 +1787,13 @@ static inline void *acquire_slab(struct kmem_cache *s,
 	freelist = page->freelist;
 	counters = page->counters;
 	new.counters = counters;
+
+/* IAMROOT-12:
+ * -------------
+ * page: node->partial의 가장 첫 페이지를 인수로 받아왔음.
+ * objects: 남은 free object 수
+ * mode: true=node->partial에서 가져온 첫 slub 페이지인 경우
+ */
 	*objects = new.objects - new.inuse;
 	if (mode) {
 		new.inuse = page->objects;
@@ -1766,12 +1805,22 @@ static inline void *acquire_slab(struct kmem_cache *s,
 	VM_BUG_ON(new.frozen);
 	new.frozen = 1;
 
+/* IAMROOT-12:
+ * -------------
+ * page->freelist == freelist   ---(ok)---> page->freelist = new.freelist
+ * page->counters == counters   ---(ok)---> page->counters = new.counters
+ */
 	if (!__cmpxchg_double_slab(s, page,
 			freelist, counters,
 			new.freelist, new.counters,
 			"acquire_slab"))
 		return NULL;
 
+
+/* IAMROOT-12:
+ * -------------
+ * n->partial 리스트에서 하나의 slub 페이지를 제거한다.
+ */
 	remove_partial(n, page);
 	WARN_ON(!freelist);
 	return freelist;
@@ -1797,6 +1846,11 @@ static void *get_partial_node(struct kmem_cache *s, struct kmem_cache_node *n,
 	 * partial slab and there is none available then get_partials()
 	 * will return NULL.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * n->partial에 페이지가 없는 경우 null로 실패
+ */
 	if (!n || !n->nr_partial)
 		return NULL;
 
@@ -1804,13 +1858,28 @@ static void *get_partial_node(struct kmem_cache *s, struct kmem_cache_node *n,
 	list_for_each_entry_safe(page, page2, &n->partial, lru) {
 		void *t;
 
+/* IAMROOT-12:
+ * -------------
+ * pfmemalloc slub 페이지인 경우에는 ALLOC_NO_WATERMARKS 플래그 요청이 있는 경우에만 
+ * 사용을 허락한다.
+ */
 		if (!pfmemalloc_match(page, flags))
 			continue;
 
+/* IAMROOT-12:
+ * -------------
+ * 해당 페이지에서 free object 수를 objects에 담고 node 리스트에서 slub page를 꺼내고
+ * page->freelist를 가져온다. 처음 free object가 있는 페이지인 경우 다음과 같이 변경한다.
+ *	 (page->freelist=null, page->inuse <- 모두 사용중으로 변경)
+ */
 		t = acquire_slab(s, n, page, object == NULL, &objects);
 		if (!t)
 			break;
 
+/* IAMROOT-12:
+ * -------------
+ * available: 각 페이지의 free object 수를 더한다.
+ */
 		available += objects;
 		if (!object) {
 			c->page = page;
@@ -1820,6 +1889,11 @@ static void *get_partial_node(struct kmem_cache *s, struct kmem_cache_node *n,
 			put_cpu_partial(s, page, 0);
 			stat(s, CPU_PARTIAL_NODE);
 		}
+
+/* IAMROOT-12:
+ * -------------
+ * cpu_partial(object 수가 담김)의 절반 이상 준비된 경우 루프를 중단한다.
+ */
 		if (!kmem_cache_has_cpu_partial(s)
 			|| available > s->cpu_partial / 2)
 			break;
@@ -1861,6 +1935,12 @@ static void *get_any_partial(struct kmem_cache *s, gfp_t flags,
 	 * expensive if we do it every time we are trying to find a slab
 	 * with available objects.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 지정된 백분율의 확률로 다른 노드에서 메모리 할당을 할 수 있도록 하게 한다.
+ * (실패하는 경우 slub 페이지를 새로 할당한다)
+ */
 	if (!s->remote_node_defrag_ratio ||
 			get_cycles() % 1024 > s->remote_node_defrag_ratio)
 		return NULL;
@@ -1873,6 +1953,13 @@ static void *get_any_partial(struct kmem_cache *s, gfp_t flags,
 
 			n = get_node(s, zone_to_nid(zone));
 
+/* IAMROOT-12:
+ * -------------
+ * cpuset이 허락하는 zone이면서 지정 노드의 partial 리스트에 여유가 있으면 해당
+ * 노드를 사용한다.
+ * (partial 리스트에 등록한 slub 수가 노드에서 유지할 최소 slub 수를 초과하는 경우 
+ *  지정 노드를 이용한다.)
+ */
 			if (n && cpuset_zone_allowed(zone, flags) &&
 					n->nr_partial > s->min_partial) {
 				object = get_partial_node(s, n, c, flags);
@@ -1907,10 +1994,22 @@ static void *get_partial(struct kmem_cache *s, gfp_t flags, int node,
 	else if (!node_present_pages(node))
 		searchnode = node_to_mem_node(node);
 
+/* IAMROOT-12:
+ * -------------
+ * 요청 노드의 partial 리스트에서 object를 가져온다.
+ */
 	object = get_partial_node(s, get_node(s, searchnode), c, flags);
 	if (object || node != NUMA_NO_NODE)
 		return object;
 
+/* IAMROOT-12:
+ * -------------
+ * 요청 노드의 partial 리스트가 비어 있는 경우 다른 노드를 포함해서 object를 가져온다.
+ *
+ * 조건: 1. 백불율 통과(캐시마다 설정된 remote_node_defrag_ratio)
+ *       2. cpuset에서 허락한 zone
+ *       3. 가져올 다른 노드의 partial 리스트에 slub이 여유가 있는 경우
+ */
 	return get_any_partial(s, flags, c);
 }
 
@@ -2144,6 +2243,10 @@ static void unfreeze_partials(struct kmem_cache *s,
 		struct page new;
 		struct page old;
 
+/* IAMROOT-12:
+ * -------------
+ * c->partial에서 첫 페이지를 remove 한다.
+ */
 		c->partial = page->next;
 
 		n2 = get_node(s, page_to_nid(page));
@@ -2164,6 +2267,10 @@ static void unfreeze_partials(struct kmem_cache *s,
 			new.counters = old.counters;
 			new.freelist = old.freelist;
 
+/* IAMROOT-12:
+ * -------------
+ * 페이지 상태만 frozen=0으로 변경한다.
+ */
 			new.frozen = 0;
 
 		} while (!__cmpxchg_double_slab(s, page,
@@ -2172,9 +2279,20 @@ static void unfreeze_partials(struct kmem_cache *s,
 				"unfreezing slab"));
 
 		if (unlikely(!new.inuse && n->nr_partial >= s->min_partial)) {
+
+/* IAMROOT-12:
+ * -------------
+ * 현재 페이지에서 모든 object가 free인 경우 node->partial 리스트가 최소 유지 
+ * 초과인 경우 n->partial로 내려보내지 않고 바로 페이지를 버디시스템으로 회수하게 한다.
+ */
 			page->next = discard_page;
 			discard_page = page;
 		} else {
+
+/* IAMROOT-12:
+ * -------------
+ * node->partial 리스트의 마지막에 slub page 추가
+ */
 			add_partial(n, page, DEACTIVATE_TO_TAIL);
 			stat(s, FREE_ADD_PARTIAL);
 		}
@@ -2183,6 +2301,10 @@ static void unfreeze_partials(struct kmem_cache *s,
 	if (n)
 		spin_unlock(&n->list_lock);
 
+/* IAMROOT-12:
+ * -------------
+ * discard_page 리스트에 있는 slub page들을 모두 버디시스템에 free
+ */
 	while (discard_page) {
 		page = discard_page;
 		discard_page = discard_page->next;
@@ -2219,6 +2341,12 @@ static void put_cpu_partial(struct kmem_cache *s, struct page *page, int drain)
 		if (oldpage) {
 			pobjects = oldpage->pobjects;
 			pages = oldpage->pages;
+
+/* IAMROOT-12:
+ * -------------
+ * drain=1인 경우는 object 해제 시 호출되며 c->partial에 최대 유지할 object 수를 
+ * 초과 시 n->partial로 내려보내기 위해 사용된다. (단 빈 slub은 버디시스템으로 보낸다)
+ */
 			if (drain && pobjects > s->cpu_partial) {
 				unsigned long flags;
 				/*
@@ -2240,6 +2368,11 @@ static void put_cpu_partial(struct kmem_cache *s, struct page *page, int drain)
 
 		page->pages = pages;
 		page->pobjects = pobjects;
+
+/* IAMROOT-12:
+ * -------------
+ * 다음 slub 페이지와의 연결
+ */
 		page->next = oldpage;
 
 	} while (this_cpu_cmpxchg(s->cpu_slab->partial, oldpage, page)
@@ -2387,11 +2520,20 @@ static inline void *new_slab_objects(struct kmem_cache *s, gfp_t flags,
 	struct kmem_cache_cpu *c = *pc;
 	struct page *page;
 
+/* IAMROOT-12:
+ * -------------
+ * node->partial 리스트에서 freelist를 가져온다.
+ */
 	freelist = get_partial(s, flags, node, c);
 
 	if (freelist)
 		return freelist;
 
+/* IAMROOT-12:
+ * -------------
+ * node->partial 리스트에서 가져오지 못한 경우 페이지 할당자를 통해 새 slub 페이지를 
+ * 생성한다.
+ */
 	page = new_slab(s, flags, node);
 	if (page) {
 		c = raw_cpu_ptr(s->cpu_slab);
@@ -2416,6 +2558,12 @@ static inline void *new_slab_objects(struct kmem_cache *s, gfp_t flags,
 
 static inline bool pfmemalloc_match(struct page *page, gfp_t gfpflags)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * pfmemalloc slub일지라도  ALLOC_NO_WATERMARKS 플래그로 요청된 경우는 
+ * 비상용 slub 페이지 메모리를 사용할 수 있도록 한다.
+ */
 	if (unlikely(PageSlabPfmemalloc(page)))
 		return gfp_pfmemalloc_allowed(gfpflags);
 
@@ -2618,8 +2766,17 @@ load_freelist:
 	return freelist;
 
 new_slab:
-
+/* IAMROOT-12:
+ * -------------
+ * Slowpath: c->partial의 첫 slub 페이지를 사용하려 한다.
+ */
 	if (c->partial) {
+
+/* IAMROOT-12:
+ * -------------
+ * 락 없이 리스트 조작을 하였다. per-cpu 리스트는 preemption만 막아놓으면 
+ * 락 없이 리스트 조작이 가능하다.
+ */
 		page = c->page = c->partial;
 		c->partial = page->next;
 		stat(s, CPU_PARTIAL_ALLOC);
@@ -2627,6 +2784,11 @@ new_slab:
 		goto redo;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * Slowpath: n->partial의 첫 slub 페이지를 사용하려 한다. 
+ *           (비어있는 경우 new slub 페이지 할당)
+ */
 	freelist = new_slab_objects(s, gfpflags, node, &c);
 
 	if (unlikely(!freelist)) {
@@ -2878,18 +3040,34 @@ static void __slab_free(struct kmem_cache *s, struct page *page,
 		return;
 
 	do {
+
+/* IAMROOT-12:
+ * -------------
+ * 처음 진입 시에는 n=null, 노드가 바뀌는 경우에만 lock을 풀어준다.
+ * (노드가 안바뀐 경우에 lock을 그대로 유지하려는 목적이다)
+ */
 		if (unlikely(n)) {
 			spin_unlock_irqrestore(&n->list_lock, flags);
 			n = NULL;
 		}
 		prior = page->freelist;
 		counters = page->counters;
+
+/* IAMROOT-12:
+ * -------------
+ * 해당 slub의 freelist 선두에 object를 끼워 넣는다.
+ */
 		set_freepointer(s, object, prior);
 		new.counters = counters;
 		was_frozen = new.frozen;
 		new.inuse--;
-		if ((!new.inuse || !prior) && !was_frozen) {
 
+		if ((!new.inuse || !prior) && !was_frozen) {
+/* IAMROOT-12:
+ * -------------
+ * kmem_cache의 partial 리스트가 관리하지 않는 다 사용한 slub에서 object가 free 된 경우
+ * 이 slub을 frozen시켜 c->partial 리스트에 추가한다.
+ */
 			if (kmem_cache_has_cpu_partial(s) && !prior) {
 
 				/*
@@ -2902,6 +3080,10 @@ static void __slab_free(struct kmem_cache *s, struct page *page,
 
 			} else { /* Needs to be taken off a list */
 
+/* IAMROOT-12:
+ * -------------
+ * 노드를 선택 후 lock을 건다.
+ */
 				n = get_node(s, page_to_nid(page));
 				/*
 				 * Speculatively acquire the list_lock.
@@ -2927,6 +3109,13 @@ static void __slab_free(struct kmem_cache *s, struct page *page,
 		 * If we just froze the page then put it onto the
 		 * per cpu partial list.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 새롭게 frozen된 경우에만(new.frozen = 1) c->partail 리스트에 slub을 추가한다.
+ * (drain=1을 사용하여 c->partial 리스트의 적정량을 초과하는 경우 node->partial 
+ *  리스트로 c->partial 리스트 전체를 넘길 수도 있다.)
+ */
 		if (new.frozen && !was_frozen) {
 			put_cpu_partial(s, page, 1);
 			stat(s, CPU_PARTIAL_FREE);
@@ -2935,11 +3124,21 @@ static void __slab_free(struct kmem_cache *s, struct page *page,
 		 * The list lock was not taken therefore no list
 		 * activity can be necessary.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * cpu가 관리하는 page 였던 경우 FREE_FROZEN++ 만 수행한다. (lock은 없음)
+ */
 		if (was_frozen)
 			stat(s, FREE_FROZEN);
 		return;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 slub이 empty인 경우 노드의 partial 리스트의 최소 수를 초과한 경우에는 
+ * 버디 시스템으로 slub을 할당 해제한다.
+ */
 	if (unlikely(!new.inuse && n->nr_partial >= s->min_partial))
 		goto slab_empty;
 
@@ -2947,6 +3146,14 @@ static void __slab_free(struct kmem_cache *s, struct page *page,
 	 * Objects left in the slab. If it was not on the partial list before
 	 * then add it.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * cpu->partial 리스트를 지원하지 않는 시스템인 경우 
+ * partial 리스트에서 관리되지 않은 slub을 node->partial 리스트에 추가한다.
+ *	-c->partial 리스트가 존재한 경우는 조금 전 위 루틴에서 
+ *	 cpu->partial 리스트에 추가하였다.)
+ */
 	if (!kmem_cache_has_cpu_partial(s) && unlikely(!prior)) {
 		if (kmem_cache_debug(s))
 			remove_full(s, n, page);
@@ -3000,6 +3207,11 @@ redo:
 	 * data is retrieved via this pointer. If we are on the same cpu
 	 * during the cmpxchg then the free will succedd.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * slab_alloc()에도 동일 소스 있으므로 참고
+ */
 	do {
 		tid = this_cpu_read(s->cpu_slab->tid);
 		c = raw_cpu_ptr(s->cpu_slab);
@@ -3009,6 +3221,11 @@ redo:
 	/* Same with comment on barrier() in slab_alloc_node() */
 	barrier();
 
+/* IAMROOT-12:
+ * -------------
+ * Fastpath 조건: 요청 페이지가 현재 c->page와 동일한 페이지인 경우 
+ *                c->freelist의 선두에 요청 object를 추가한다.
+ */
 	if (likely(page == c->page)) {
 		set_freepointer(s, object, c->freelist);
 
@@ -3031,6 +3248,10 @@ redo:
 
 }
 
+/* IAMROOT-12:
+ * -------------
+ * slub object 할당 해제 진입점
+ */
 void kmem_cache_free(struct kmem_cache *s, void *x)
 {
 	s = cache_from_obj(s, x);

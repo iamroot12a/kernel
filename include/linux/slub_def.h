@@ -63,6 +63,11 @@ struct kmem_cache {
 	struct kmem_cache_cpu __percpu *cpu_slab;
 	/* Used for retriving partial slabs etc */
 	unsigned long flags;
+
+/* IAMROOT-12:
+ * -------------
+ * min_partial: 각 노드에서 적절히 유지할 slub 페이지 수
+ */
 	unsigned long min_partial;
 	int size;		/* The size of an object including meta data */
 	int object_size;	/* The size of an object without meta data */
@@ -74,6 +79,11 @@ struct kmem_cache {
  * offset이 지정되지만 없는 경우에는 0이 대입된다.)
  */
 	int offset;		/* Free pointer offset. */
+
+/* IAMROOT-12:
+ * -------------
+ * cpu partial 리스트가 적절히 소유할 object 수
+ */
 	int cpu_partial;	/* Number of per cpu partial objects to keep around */
 	struct kmem_cache_order_objects oo;
 
