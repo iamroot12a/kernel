@@ -6,7 +6,7 @@
 - [라즈베리파이2 에뮬레이션(QEMM 및 디버깅) Wiki][#im]
 [#iamroot]: http://www.iamroot.org
 [#moonc]: http://jake.dothome.co.kr
-[#im]: ttps://github.com/iamroot12cd/linux/wiki
+[#im]: https://github.com/iamroot12cd/linux/wiki
 
 ## History
 
