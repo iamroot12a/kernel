@@ -3,8 +3,10 @@
 ## 커뮤니티: IAMROOT 12차
 - [www.iamroot.org][#iamroot] | IAMROOT 홈페이지
 - [jake.dothome.co.kr][#moonc] | 문c 블로그
+- [라즈베리파이2 에뮬레이션(QEMM 및 디버깅) Wiki][#im]
 [#iamroot]: http://www.iamroot.org
 [#moonc]: http://jake.dothome.co.kr
+[#im]: ttps://github.com/iamroot12cd/linux/wiki
 
 ## History
 
