@@ -100,6 +100,10 @@
  */
 #define ZERO_SIZE_PTR ((void *)16)
 
+/* IAMROOT-12:
+ * -------------
+ * 16 이하의 주소인 경우 true
+ */
 #define ZERO_OR_NULL_PTR(x) ((unsigned long)(x) <= \
 				(unsigned long)ZERO_SIZE_PTR)
 
@@ -195,7 +199,10 @@ size_t ksize(const void *);
 
 /* IAMROOT-12:
  * -------------
- * slub을 사용하는 경우 8K 까지
+ * KMALLOC_SHIFT_HIGH   
+ *      slub: 12 (8K) 
+ * KMALLOC_SHIFT_MAX 
+ *      slub: 11+12=23 (8M)
  * (rpi2: 이미 KMALLOC_SHIFT_LOW가 이미 6으로 등록됨)
  */
 #define KMALLOC_SHIFT_HIGH	(PAGE_SHIFT + 1)
@@ -219,6 +226,13 @@ size_t ksize(const void *);
 #endif
 
 /* Maximum allocatable size */
+
+/* IAMROOT-12:
+ * -------------
+ * KMALLOC_MAX_SIZE: slub인 경우 8M 
+ * KMALLOC_MAX_CACHE_SIZE: slub인 경우 8K 
+ * KMALLOC_MAX_ORDER: slub인 경우 11
+ */
 #define KMALLOC_MAX_SIZE	(1UL << KMALLOC_SHIFT_MAX)
 /* Maximum size for which we actually use a slab cache */
 #define KMALLOC_MAX_CACHE_SIZE	(1UL << KMALLOC_SHIFT_HIGH)
@@ -262,13 +276,42 @@ static __always_inline int kmalloc_index(size_t size)
 	if (!size)
 		return 0;
 
+/* IAMROOT-12:
+ * -------------
+ * rpi2: 64이하인 경우 최하 인덱스 값으로 6을 리턴한다.
+ *       (결국 64바이트 이하를 요청하는 경우 항상 64 size인 kmalloc-64를 선택하게 한다.)
+ */
 	if (size <= KMALLOC_MIN_SIZE)
 		return KMALLOC_SHIFT_LOW;
 
+/* IAMROOT-12:
+ * -------------
+ * 요청 size가 65 ~ 96까지는 캐시 라인사이즈가 32이하인 경우에 한하여 항상 1을 반환한다.
+ *       (rpi2: 캐시 라인 사이즈가 64이상이므로 1이 반환되는 일이 없다.
+ *              다른 캐시라인이 32바이트인 시스템에서는 항상 1이 반환되어 96바이트 
+ *              size인 kmalloc-96을 선택하게 한다.)
+ */
 	if (KMALLOC_MIN_SIZE <= 32 && size > 64 && size <= 96)
 		return 1;
+
+/* IAMROOT-12:
+ * -------------
+ * 요청 size가 129 ~ 192까지 캐시 라인 사이즈가 64이하인 경우에 한하여 항상 2를 반환한다.
+ *      (rpi2: 조건을 만족하여 129 ~ 192까지의 사이즈를 요청하는 경우 2를 반환하여 
+ *             kmalloc-192를 선택하게 한다.)
+ */
 	if (KMALLOC_MIN_SIZE <= 64 && size > 128 && size <= 192)
 		return 2;
+
+/* IAMROOT-12:
+ * -------------
+ * 종합해서 rpi2의 경우 
+ *    8 ~  64:  kamlloc-64 
+ *   65 ~ 128:  kmalloc-128 
+ *  129 ~ 192:  kmalloc-192 (*)
+ *  193 ~ 256:  kmalloc-256
+ *  257 ~ 512:  kmalloc-512
+ */
 	if (size <=          8) return 3;
 	if (size <=         16) return 4;
 	if (size <=         32) return 5;
@@ -337,9 +380,19 @@ kmem_cache_alloc_node_trace(struct kmem_cache *s,
 #endif /* CONFIG_NUMA */
 
 #else /* CONFIG_TRACING */
+
+/* IAMROOT-12:
+ * -------------
+ * trace 옵션이 없는 걸로
+ */
 static __always_inline void *kmem_cache_alloc_trace(struct kmem_cache *s,
 		gfp_t flags, size_t size)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 
+ */
 	void *ret = kmem_cache_alloc(s, flags);
 
 	kasan_kmalloc(s, ret, size);
@@ -366,12 +419,22 @@ extern void *kmalloc_order_trace(size_t size, gfp_t flags, unsigned int order);
 static __always_inline void *
 kmalloc_order_trace(size_t size, gfp_t flags, unsigned int order)
 {
+/* IAMROOT-12:
+ * -------------
+ * kmalloc에서 요청한 order만큼의 페이지를 할당해온다.
+ * (rpi2: 8K size 초과한 경우 slub 할당자를 사용하지 않고 그냥 버디를 사용한다)
+ */
 	return kmalloc_order(size, flags, order);
 }
 #endif
 
 static __always_inline void *kmalloc_large(size_t size, gfp_t flags)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 예) 9000바이트 요청 시 -> order=2
+ */
 	unsigned int order = get_order(size);
 	return kmalloc_order_trace(size, flags, order);
 }
@@ -431,10 +494,25 @@ static __always_inline void *kmalloc_large(size_t size, gfp_t flags)
  */
 static __always_inline void *kmalloc(size_t size, gfp_t flags)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * size가 상수인 경우
+ */
 	if (__builtin_constant_p(size)) {
+
+/* IAMROOT-12:
+ * -------------
+ * size가 8K를 초과하는 경우 kmalloc_large() 호출
+ */
 		if (size > KMALLOC_MAX_CACHE_SIZE)
 			return kmalloc_large(size, flags);
 #ifndef CONFIG_SLOB
+
+/* IAMROOT-12:
+ * -------------
+ * DMA 요청하지 않은 경우 
+ */
 		if (!(flags & GFP_DMA)) {
 			int index = kmalloc_index(size);
 
@@ -446,6 +524,12 @@ static __always_inline void *kmalloc(size_t size, gfp_t flags)
 		}
 #endif
 	}
+
+/* IAMROOT-12:
+ * -------------
+ * size가 상수가 아닌 경우, DMA 요청한 경우 아래 함수를 이용한다.
+ */
+
 	return __kmalloc(size, flags);
 }
 

@@ -46,6 +46,12 @@ struct kmem_cache *kmem_cache;
  */
 static int slab_nomerge;
 
+/* IAMROOT-12:
+ * -------------
+ * "slub_nomerge" 커널 파라메터를 사용하는 경우 merge하지 않아  alias 캐시로
+ * 등록하지 않는다.
+ *
+ */
 static int __init setup_slab_nomerge(char *str)
 {
 	slab_nomerge = 1;
@@ -72,6 +78,17 @@ static int kmem_cache_sanity_check(const char *name, size_t size)
 {
 	struct kmem_cache *s = NULL;
 
+/* IAMROOT-12:
+ * -------------
+ * sanity check 오류:
+ *	- 이름이 지정되지 않은 경우 
+ *	- 인터럽트 수행중에 캐시를 만드는 경우 
+ *	- size가 4(arm64: 8) 바이트보다 작은 경우
+ *	- slub 캐시 사이즈가 8M보다 큰 경우
+ *	- 모듈에서 생성된 캐시를 모듈 해제전에 destroy를 하지 않고 빠져나간 
+ *	  경우 사용한 페이지가 해제되어 access가 되지 않을 경우를 위해 체크한다.
+ *	  (s->name이 vmalloc에서 할당한 것으로 주측)
+ */
 	if (!name || in_interrupt() || size < sizeof(void *) ||
 		size > KMALLOC_MAX_SIZE) {
 		pr_err("kmem_cache_create(%s) integrity check failed\n", name);
@@ -228,33 +245,72 @@ struct kmem_cache *find_mergeable(size_t size, size_t align,
 {
 	struct kmem_cache *s;
 
+/* IAMROOT-12:
+ * -------------
+ * "slub_merge" 커널 옵션을 사용했거나 merge 되면 안되는 플래그들이 있는 경우 
+ */
 	if (slab_nomerge || (flags & SLAB_NEVER_MERGE))
 		return NULL;
 
+/* IAMROOT-12:
+ * -------------
+ * slub 생성자가 별도로 있는 경우에는 merge할 수 없다.
+ */
 	if (ctor)
 		return NULL;
 
 	size = ALIGN(size, sizeof(void *));
 	align = calculate_alignment(flags, align, size);
 	size = ALIGN(size, align);
+
+/* IAMROOT-12:
+ * -------------
+ * slub 디버그 옵션 자동 추가(CONFIG_SLUB_DEBUG_ON 사용 시)
+ */
 	flags = kmem_cache_flags(size, flags, name, NULL);
 
 	list_for_each_entry_reverse(s, &slab_caches, list) {
+
+/* IAMROOT-12:
+ * -------------
+ * merge 불가능한(디버그 플래그 등) 캐시들은 skip
+ */
 		if (slab_unmergeable(s))
 			continue;
 
+/* IAMROOT-12:
+ * -------------
+ * size 초과 캐시들은 skip
+ */
 		if (size > s->size)
 			continue;
 
+/* IAMROOT-12:
+ * -------------
+ * 플래그 속성이 반드시 일치해야 하는데 그렇지 않은 경우 skip
+ */
 		if ((flags & SLAB_MERGE_SAME) != (s->flags & SLAB_MERGE_SAME))
 			continue;
 		/*
 		 * Check if alignment is compatible.
 		 * Courtesy of Adrian Drzewiecki
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 기존 캐시 사이즈가 새 캐시 요청 align으로 정렬되지 못하는 경우 skip 
+ * 예) s->size = 128, 새 캐시 요청 align = 64
+ *	-> merge 가능 
+ *     s->size = 192, 새 캐시 요청 align = 256 
+ *      -> merge 불가능
+ */
 		if ((s->size & ~(align - 1)) != s->size)
 			continue;
 
+/* IAMROOT-12:
+ * -------------
+ * 사이즈 차이가 4(64bit system: 8) 바이트 범위를 벗어나는 경우 skip
+ */
 		if (s->size - size >= sizeof(void *))
 			continue;
 
@@ -339,6 +395,10 @@ do_kmem_cache_create(const char *name, size_t object_size, size_t size,
 	if (err)
 		goto out_free_cache;
 
+/* IAMROOT-12:
+ * -------------
+ * 참조 카운터를 1로 설정하고 slab_caches 리스트에 추가한다.
+ */
 	s->refcount = 1;
 	list_add(&s->list, &slab_caches);
 out:
@@ -404,10 +464,19 @@ kmem_cache_create(const char *name, size_t size, size_t align,
 	 */
 	flags &= CACHE_CREATE_MASK;
 
+/* IAMROOT-12:
+ * -------------
+ * 기존 캐시와 merge되는 경우 alias 캐시로 등록하고 빠져나간다.
+ * 반환되는 캐시는 실제 사용할 캐시이다.
+ */
 	s = __kmem_cache_alias(name, size, align, flags, ctor);
 	if (s)
 		goto out_unlock;
 
+/* IAMROOT-12:
+ * -------------
+ * merge되지 않는 경우 kmalloc으로 name 사이즈를 할당받고 복사한다.
+ */
 	cache_name = kstrdup_const(name, GFP_KERNEL);
 	if (!cache_name) {
 		err = -ENOMEM;
@@ -739,11 +808,28 @@ struct kmem_cache *__init create_kmalloc_cache(const char *name, size_t size,
 /* IAMROOT-12:
  * -------------
  * slub을 사용하는 경우 KMALLOC_SHIFT_HIGH(13)+1 이다.
+ *
+ * -------------
+ * kmalloc_caches[]:
+ *      rpi2)   0: NULL 
+ *              1: NULL
+ *              2: kmalloc-192 
+ *              3~5: NULL
+ *              6: kmalloc-64
+ *              7: kmalloc-128 
+ *              8: kmalloc-256 
+ *              ...
+ *              13: kmalloc-8192 
  */
 struct kmem_cache *kmalloc_caches[KMALLOC_SHIFT_HIGH + 1];
 EXPORT_SYMBOL(kmalloc_caches);
 
 #ifdef CONFIG_ZONE_DMA
+
+/* IAMROOT-12:
+ * -------------
+ * dma-kmalloc-<size>
+ */
 struct kmem_cache *kmalloc_dma_caches[KMALLOC_SHIFT_HIGH + 1];
 EXPORT_SYMBOL(kmalloc_dma_caches);
 #endif
@@ -803,11 +889,20 @@ struct kmem_cache *kmalloc_slab(size_t size, gfp_t flags)
 {
 	int index;
 
+/* IAMROOT-12:
+ * -------------
+ * rpi2: size가 8M를 초과하는 경우 경고 및 null 반환
+ */
 	if (unlikely(size > KMALLOC_MAX_SIZE)) {
 		WARN_ON_ONCE(!(flags & __GFP_NOWARN));
 		return NULL;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * size가 192 이하인 경우 size_index 테이블 사용한다.
+ * (size가 0인 요청의 경우 16이 반환된다.)
+ */
 	if (size <= 192) {
 		if (!size)
 			return ZERO_SIZE_PTR;
@@ -817,6 +912,11 @@ struct kmem_cache *kmalloc_slab(size_t size, gfp_t flags)
 		index = fls(size - 1);
 
 #ifdef CONFIG_ZONE_DMA
+
+/* IAMROOT-12:
+ * -------------
+ * DMA 메모리를 요청하는 경우 "dma-kmalloc-<size>" 캐시를 사용한다.
+ */
 	if (unlikely((flags & GFP_DMA)))
 		return kmalloc_dma_caches[index];
 

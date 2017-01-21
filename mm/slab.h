@@ -118,9 +118,21 @@ static inline unsigned long kmem_cache_flags(unsigned long object_size,
 
 
 /* Legal flag mask for kmem_cache_create(), for various configurations */
+
+/* IAMROOT-12:
+ * -------------
+ * slab에서 core 플래그들
+ *   - SLAB_CACHE_DMA: ZONE_DMA에서 할당받은 페이지로 캐시를 만든다.
+ */
 #define SLAB_CORE_FLAGS (SLAB_HWCACHE_ALIGN | SLAB_CACHE_DMA | SLAB_PANIC | \
 			 SLAB_DESTROY_BY_RCU | SLAB_DEBUG_OBJECTS )
 
+
+/* IAMROOT-12:
+ * -------------
+ * slab에서 debug 플래그들
+ * - SLAB_DEBUG_FREE: free 동작 시 엄격히 체크(more expensive)
+ */
 #if defined(CONFIG_DEBUG_SLAB)
 #define SLAB_DEBUG_FLAGS (SLAB_RED_ZONE | SLAB_POISON | SLAB_STORE_USER)
 #elif defined(CONFIG_SLUB_DEBUG)
@@ -130,6 +142,10 @@ static inline unsigned long kmem_cache_flags(unsigned long object_size,
 #define SLAB_DEBUG_FLAGS (0)
 #endif
 
+/* IAMROOT-12:
+ * -------------
+ * slab에서 캐시 플래그들
+ */
 #if defined(CONFIG_SLAB)
 #define SLAB_CACHE_FLAGS (SLAB_MEM_SPREAD | SLAB_NOLEAKTRACE | \
 			  SLAB_RECLAIM_ACCOUNT | SLAB_TEMPORARY | SLAB_NOTRACK)
@@ -140,6 +156,10 @@ static inline unsigned long kmem_cache_flags(unsigned long object_size,
 #define SLAB_CACHE_FLAGS (0)
 #endif
 
+/* IAMROOT-12:
+ * -------------
+ * slab 캐시를 만들 때 사용하는 플래그들만 마스크
+ */
 #define CACHE_CREATE_MASK (SLAB_CORE_FLAGS | SLAB_DEBUG_FLAGS | SLAB_CACHE_FLAGS)
 
 int __kmem_cache_shutdown(struct kmem_cache *);

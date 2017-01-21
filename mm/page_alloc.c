@@ -3841,6 +3841,12 @@ struct page *alloc_kmem_pages_node(int nid, gfp_t gfp_mask, unsigned int order)
 void __free_kmem_pages(struct page *page, unsigned int order)
 {
 	memcg_kmem_uncharge_pages(page, order);
+
+/* IAMROOT-12:
+ * -------------
+ * large 페이지는 버디시스템에서 할당되었으므로 이에 따라 할당 해제 시
+ * 버디 시스템으로 돌려보낸다.
+ */
 	__free_pages(page, order);
 }
 

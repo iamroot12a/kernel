@@ -129,6 +129,11 @@ void put_online_cpus(void)
 	if (WARN_ON(refcount < 0)) /* try to fix things up */
 		atomic_inc(&cpu_hotplug.refcount);
 
+/* IAMROOT-12:
+ * -------------
+ * 참조 카운터를 감소시켜 0이 되는 순간
+ * cpu_hotplug.wq (hot plug용 대기큐)에서 대기하고 있는 태스크들을 동작시킨다.
+ */
 	if (refcount <= 0 && waitqueue_active(&cpu_hotplug.wq))
 		wake_up(&cpu_hotplug.wq);
 

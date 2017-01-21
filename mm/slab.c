@@ -2059,6 +2059,7 @@ __kmem_cache_alias(const char *name, size_t size, size_t align,
 
 	cachep = find_mergeable(size, align, flags, name, ctor);
 	if (cachep) {
+
 		cachep->refcount++;
 
 		/*

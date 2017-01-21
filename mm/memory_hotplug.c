@@ -81,6 +81,11 @@ void get_online_mems(void)
 	might_sleep();
 	if (mem_hotplug.active_writer == current)
 		return;
+
+/* IAMROOT-12:
+ * -------------
+ * 메모리 hotplug를 지원하기 위해 참조 카운터를 증가시킨다.
+ */
 	memhp_lock_acquire_read();
 	mutex_lock(&mem_hotplug.lock);
 	mem_hotplug.refcount++;
@@ -97,6 +102,11 @@ void put_online_mems(void)
 	if (WARN_ON(!mem_hotplug.refcount))
 		mem_hotplug.refcount++; /* try to fix things up */
 
+/* IAMROOT-12:
+ * -------------
+ * 메모리 hotplug를 위해 참조 카운터를 감소시켜 0이 되는 순간 
+ * mm_hotplug.active_writer에서 대기하고 있던 태스크를 깨운다.
+ */
 	if (!--mem_hotplug.refcount && unlikely(mem_hotplug.active_writer))
 		wake_up_process(mem_hotplug.active_writer);
 	mutex_unlock(&mem_hotplug.lock);

@@ -4028,11 +4028,25 @@ void *__kmalloc(size_t size, gfp_t flags)
 	struct kmem_cache *s;
 	void *ret;
 
+/* IAMROOT-12:
+ * -------------
+ * rpi2: 작은 확률로 8K보다 큰 경우 kmalloc_large() 호출한다.
+ */
 	if (unlikely(size > KMALLOC_MAX_CACHE_SIZE))
 		return kmalloc_large(size, flags);
 
+/* IAMROOT-12:
+ * -------------
+ * size로 kmalloc-<size> 캐시를 알아온다.
+ * (size가 0을 요청하는 경우 주소 16을 반환, size가 8M 초과하면 null)
+ */
 	s = kmalloc_slab(size, flags);
 
+/* IAMROOT-12:
+ * -------------
+ * 주소 16이하인 경우 모두 s를 반환한다.(16 또는 null)
+ * kfree에서 주소가 16인 경우 그냥 아무것도 처리하지 않고 빠져나오게 한다.
+ */
 	if (unlikely(ZERO_OR_NULL_PTR(s)))
 		return s;
 
@@ -4126,16 +4140,36 @@ void kfree(const void *x)
 
 	trace_kfree(_RET_IP_, x);
 
+/* IAMROOT-12:
+ * -------------
+ * kmalloc() 함수에서 size가 0으로 할당 시도한 경우 kfree가 잘된것처럼 
+ * 그냥 함수를 종료한다.
+ */
 	if (unlikely(ZERO_OR_NULL_PTR(x)))
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * 가상 주소 x로 첫 페이지를 찾는다. (slub을 다루는 페이지)
+ */
 	page = virt_to_head_page(x);
+
+/* IAMROOT-12:
+ * -------------
+ * slub 페이지가 아닌 경우(PG_slab이 없는 경우)
+ * - large page (버디시스템으로 할당 받은 페이지)
+ */
 	if (unlikely(!PageSlab(page))) {
 		BUG_ON(!PageCompound(page));
 		kfree_hook(x);
 		__free_kmem_pages(page, compound_order(page));
 		return;
 	}
+
+/* IAMROOT-12:
+ * -------------
+ * slab object를 할당 해제한다.
+ */
 	slab_free(page->slab_cache, page, object, _RET_IP_);
 }
 EXPORT_SYMBOL(kfree);
@@ -4509,23 +4543,51 @@ __kmem_cache_alias(const char *name, size_t size, size_t align,
 {
 	struct kmem_cache *s, *c;
 
+/* IAMROOT-12:
+ * -------------
+ * 기존 등록된 캐시와 merge가 가능한지 여부를 알아온다.
+ */
 	s = find_mergeable(size, align, flags, name, ctor);
 	if (s) {
+/* IAMROOT-12:
+ * -------------
+ * 생성 요청한 캐시가 기존 캐시를 사용하고 alias 캐시로 등록되는 경우마다 
+ * 기존 캐시의 참조 카운터를 증가시킨다. 
+ * (처음 만들어진 캐시는 1부터 시작)
+ * (증가 시킨 카운터는 캐시를 삭제시마다 감소시키고 0이되는 순간 캐시를 destroy 한다.)
+ */
 		s->refcount++;
 
 		/*
 		 * Adjust the object sizes so that we clear
 		 * the complete object on kzalloc.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * merge되는 캐시의 size는 기존 캐시와 4바이트 범위 이내이지만 object_size는 
+ * 다를 수 있다. 그 중 가장 큰 object_size를 대입한다.
+ */
 		s->object_size = max(s->object_size, (int)size);
+
+/* IAMROOT-12:
+ * -------------
+ * 메타 데이터 위치를 가리키는 s->inuse는 size(object_size)로 조정한다.
+ * -> 효과가 있을지 의문???
+ */
 		s->inuse = max_t(int, s->inuse, ALIGN(size, sizeof(void *)));
 
 		for_each_memcg_cache(c, s) {
 			c->object_size = s->object_size;
+
 			c->inuse = max_t(int, c->inuse,
 					 ALIGN(size, sizeof(void *)));
 		}
 
+/* IAMROOT-12:
+ * -------------
+ * "/sys/kernel/slab" 디렉토리에 캐시명(alias 포함)으로 디렉토리를 만든다.
+ */
 		if (sysfs_slab_alias(s, name)) {
 			s->refcount--;
 			s = NULL;
@@ -4539,10 +4601,6 @@ int __kmem_cache_create(struct kmem_cache *s, unsigned long flags)
 {
 	int err;
 
-/* IAMROOT-12:
- * -------------
- * 
- */
 	err = kmem_cache_open(s, flags);
 	if (err)
 		return err;
@@ -4552,6 +4610,13 @@ int __kmem_cache_create(struct kmem_cache *s, unsigned long flags)
 		return 0;
 
 	memcg_propagate_slab_attrs(s);
+
+/* IAMROOT-12:
+ * -------------
+ * "/sys/kernel/slab" 디렉토리에 slub 이름으로 디렉토리를 생성하고 관리할 수 있는 
+ * 가상 파일들이 생긴다.
+ */
+
 	err = sysfs_slab_add(s);
 	if (err)
 		kmem_cache_close(s);

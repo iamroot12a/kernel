@@ -279,6 +279,10 @@ static void put_compound_page(struct page *page)
 
 void put_page(struct page *page)
 {
+/* IAMROOT-12:
+ * -------------
+ * 더 이상 참조하지 않은 페이지(_count = 0)은 버디 시스템으로 환원시킨다.
+ */
 	if (unlikely(PageCompound(page)))
 		put_compound_page(page);
 	else if (put_page_testzero(page))
