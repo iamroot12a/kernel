@@ -404,3 +404,8 @@ page_address_init()
 - 2017.01.14, Kosslab (9명, 권경환, 김종철, 문영일, 양유석, 윤창호, 임채훈, 정재준, 조현철, 최영민)
 - kmem_cache_alloc()
 - kmem_cache_free()
+
+### 92주차
+- 2017.01.21, Kosslab (9명, 권경환, 김영준,김종철, 문영일, 양유석, 윤창호, 임채훈, 정재준, 조현철, 최영민, 한상종)
+- kmem_cache_create()
+- kmalloc() & kfree()
