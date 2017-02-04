@@ -23,9 +23,21 @@
 struct address_space;
 struct mem_cgroup;
 
+
+/* IAMROOT-12:
+ * -------------
+ * 기본적으로 4개 이상의 cpu를 가진 시스템에서 유효하게 설계되었다.
+ */
 #define USE_SPLIT_PTE_PTLOCKS	(NR_CPUS >= CONFIG_SPLIT_PTLOCK_CPUS)
 #define USE_SPLIT_PMD_PTLOCKS	(USE_SPLIT_PTE_PTLOCKS && \
 		IS_ENABLED(CONFIG_ARCH_ENABLE_SPLIT_PMD_PTLOCK))
+
+/* IAMROOT-12:
+ * -------------
+ * 32bit arm은 ALLOC_SPLIT_PTLOCKS
+ *  - debug를 사용하지 않는 경우 0
+ *  - debug를 사용하는 경우 1
+ */
 #define ALLOC_SPLIT_PTLOCKS	(SPINLOCK_SIZE > BITS_PER_LONG/8)
 
 typedef void compound_page_dtor(struct page *);

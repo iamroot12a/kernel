@@ -420,6 +420,10 @@ static void *pcpu_mem_zalloc(size_t size)
 	if (WARN_ON_ONCE(!slab_is_available()))
 		return NULL;
 
+/* IAMROOT-12:
+ * -------------
+ * 0으로 초기화된 size만큼의 object를 할당받아온다.
+ */
 	if (size <= PAGE_SIZE)
 		return kzalloc(size, GFP_KERNEL);
 	else
@@ -2913,6 +2917,11 @@ void __init percpu_init_late(void)
 	unsigned long flags;
 	int i;
 
+/* IAMROOT-12:
+ * -------------
+ * 기존에 static array로 할당받은 map을 새로운 slub object를 할당받은 후
+ * 복사하여 사용한다.
+ */
 	for (i = 0; (chunk = target_chunks[i]); i++) {
 		int *map;
 		const size_t size = PERCPU_DYNAMIC_EARLY_SLOTS * sizeof(map[0]);

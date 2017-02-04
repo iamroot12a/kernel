@@ -91,6 +91,11 @@ void __init add_static_vm_early(struct static_vm *svm)
 	void *vaddr;
 
 	vm = &svm->vm;
+
+/* IAMROOT-12:
+ * -------------
+ * vmlist에 추가한다. 추후 mm_init() -> vmalloc_init()에서 rb 트리에 추가된다.
+ */
 	vm_area_add_early(vm);
 	vaddr = vm->addr;
 

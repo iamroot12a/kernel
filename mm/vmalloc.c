@@ -309,11 +309,21 @@ static void __insert_vmap_area(struct vmap_area *va)
 	struct rb_node *parent = NULL;
 	struct rb_node *tmp;
 
+/* IAMROOT-12:
+ * -------------
+ * vmalloc address space (arm: 240M) 공간 관리는 2개의 관리 구조 사용
+ *	- RB Tree: 전역 &vmap_area_root (시작 주소를 찾을 때 가장 빠른 방법)
+ *	- 리스트: 전역 &vmap_area_list (size를 조사할 때 사용)
+ */
 	while (*p) {
 		struct vmap_area *tmp_va;
 
 		parent = *p;
 		tmp_va = rb_entry(parent, struct vmap_area, rb_node);
+/* IAMROOT-12:
+ * -------------
+ * 좌측 또는 우측으로 원하는 방향으로 리프 노드를 발견할 때 까지 이동한다.
+ */
 		if (va->va_start < tmp_va->va_end)
 			p = &(*p)->rb_left;
 		else if (va->va_end > tmp_va->va_start)
@@ -322,11 +332,31 @@ static void __insert_vmap_area(struct vmap_area *va)
 			BUG();
 	}
 
+/* IAMROOT-12:
+ * ------------
+ * p: leaf 노드의 결정된 좌/우 중 한쪽에 요청 노드를 대입한다.
+ */
 	rb_link_node(&va->rb_node, parent, p);
+
+/* IAMROOT-12:
+ * -------------
+ * 회전이 필요한 경우 회전을 처리하고, 컬러도 처리한다.
+ */
 	rb_insert_color(&va->rb_node, &vmap_area_root);
 
 	/* address-sort this list */
+/* IAMROOT-12:
+ * -------------
+ * RB 트리를 이용하여 현재 노드보다 작은 값을 가진 노드를 알아온다. 
+ */
 	tmp = rb_prev(&va->rb_node);
+
+/* IAMROOT-12:
+ * -------------
+ * tmp가 발견되지 않으면 현재 노드가 가장 작은 노드가 되므로 
+ * vmap_area_list(전역 리스트)의 선두에 추가한다.
+ * 발견된 경우 tmp(prev) 노드의 선두 즉 다음에 끼워 들어간다.
+ */
 	if (tmp) {
 		struct vmap_area *prev;
 		prev = rb_entry(tmp, struct vmap_area, rb_node);
@@ -356,6 +386,11 @@ static struct vmap_area *alloc_vmap_area(unsigned long size,
 	BUG_ON(size & ~PAGE_MASK);
 	BUG_ON(!is_power_of_2(align));
 
+/* IAMROOT-12:
+ * -------------
+ * vmap_area 구조체를 할당받아온다.
+ * (reclaim 관련한 gfp 플래그만 사용하여 할당해온다)
+ */
 	va = kmalloc_node(sizeof(struct vmap_area),
 			gfp_mask & GFP_RECLAIM_MASK, node);
 	if (unlikely(!va))
@@ -391,6 +426,11 @@ nocache:
 	cached_align = align;
 
 	/* find starting point for our search */
+/* IAMROOT-12:
+ * -------------
+ * 최근에 해제 요청된 vm의 이전(prev) vm이 free_vmap_cache 에 들어가 있다. 
+ * 이 vm부터 검색하면 할당할 가능성이 있기 때문에 빠르게 처리할 수 있다.
+ */
 	if (free_vmap_cache) {
 		first = rb_entry(free_vmap_cache, struct vmap_area, rb_node);
 		addr = ALIGN(first->va_end, align);
@@ -404,6 +444,11 @@ nocache:
 		if (addr + size < addr)
 			goto overflow;
 
+/* IAMROOT-12:
+ * -------------
+ * RB 트리 중앙에서부터 검색을 시작하여 
+ * 요청 범위에서 가장 하위(좌측) vm을 찾아 first에 대입한다.
+ */
 		n = vmap_area_root.rb_node;
 		first = NULL;
 
@@ -411,7 +456,18 @@ nocache:
 			struct vmap_area *tmp;
 			tmp = rb_entry(n, struct vmap_area, rb_node);
 			if (tmp->va_end >= addr) {
+
+/* IAMROOT-12:
+ * -------------
+ * first:
+ *	범위내에서 가장 하위(좌측)에 있는 vm
+ */
 				first = tmp;
+
+/* IAMROOT-12:
+ * -------------
+ * 아래쪽 범위와 붙어있는 vm이거나를 벗어난 경우 루프 탈출
+ */
 				if (tmp->va_start <= addr)
 					break;
 				n = n->rb_left;
@@ -419,11 +475,19 @@ nocache:
 				n = n->rb_right;
 		}
 
+/* IAMROOT-12:
+ * -------------
+ * 범위에 들어온 vm이 없는 경우
+ */
 		if (!first)
 			goto found;
 	}
 
 	/* from the starting point, walk areas until a suitable hole is found */
+/* IAMROOT-12:
+ * -------------
+ * vm의 하단(좌측)에 공간을 찾은 경우 루프를 탈출한다.
+ */
 	while (addr + size > first->va_start && addr + size <= vend) {
 		if (addr + cached_hole_size < first->va_start)
 			cached_hole_size = first->va_start - addr;
@@ -431,6 +495,11 @@ nocache:
 		if (addr + size < addr)
 			goto overflow;
 
+/* IAMROOT-12:
+ * -------------
+ * 마지막 엔트리인 경우 무조건 found 
+ * (모든 엔트리의 좌측에서 공간을 찾을 수 없다) 
+ */
 		if (list_is_last(&first->list, &vmap_area_list))
 			goto found;
 
@@ -439,6 +508,12 @@ nocache:
 	}
 
 found:
+
+/* IAMROOT-12:
+ * -------------
+ * 찾은 공간이지만 size를 더해서 요청 범위를 초과하는 경우 overflow
+ * (추가할 공간이 없는 경우이다)
+ */
 	if (addr + size > vend)
 		goto overflow;
 
@@ -480,6 +555,14 @@ static void __free_vmap_area(struct vmap_area *va)
 			struct vmap_area *cache;
 			cache = rb_entry(free_vmap_cache, struct vmap_area, rb_node);
 			if (va->va_start <= cache->va_start) {
+
+/* IAMROOT-12:
+ * -------------
+ * 하나를 지우면 그 이전 vm을 캐시에 보관한다.
+ * 할당 시 이 캐시부터 검색할 수 있도록 한다.
+ *
+ * 왜 va->list.prev를 사용하지 않고 rb_prev()를 사용???
+ */
 				free_vmap_cache = rb_prev(&va->rb_node);
 				/*
 				 * We don't try to update cached_hole_size or
@@ -1192,14 +1275,41 @@ void __init vmalloc_init(void)
 		struct vmap_block_queue *vbq;
 		struct vfree_deferred *p;
 
+/* IAMROOT-12:
+ * -------------
+ * per-cpu 기반의 vmap_block_queue는 vmap() 대신 vm_map_ram() 함수를 
+ * 사용하는 경우 매핑된 vmap을 free할 때 deferred(유예) 할 수 있다.
+ * (-> lazy TLB flush, 매핑 재활용)   
+ *
+ * 현재 vm_map_ram() 함수는 일부 드라이버에서만 사용한다.
+ */
 		vbq = &per_cpu(vmap_block_queue, i);
 		spin_lock_init(&vbq->lock);
 		INIT_LIST_HEAD(&vbq->free);
+
+/* IAMROOT-12:
+ * -------------
+ * per-cpu 기반의 vfree_deferred는 인터럽트 컨텍스트에서 
+ * 요청해온 vfree에 대해 유예시켜 추후 처리하기 위한 리스트이다.
+ *  
+ * 워크큐에 등록된 free_work() 함수를 스케쥴하여 처리한다.
+ */
 		p = &per_cpu(vfree_deferred, i);
 		init_llist_head(&p->list);
+
+/* IAMROOT-12:
+ * -------------
+ * free_work() 함수를 통해 vfree_deferred리스트에 있는 엔트리들을 
+ * 모두 __vunmap() 한다.
+ */
 		INIT_WORK(&p->wq, free_work);
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * add_area_add_early() 함수에서 추가한 vm들을 정식으로 할당받고 등록한다.
+ * (정식 등록: rb tree(&vmap_area_root) 및 list(&vmap_area_list)로 관리)
+ */
 	/* Import existing vmlist entries. */
 	for (tmp = vmlist; tmp; tmp = tmp->next) {
 		va = kzalloc(sizeof(struct vmap_area), GFP_NOWAIT);
@@ -1212,6 +1322,10 @@ void __init vmalloc_init(void)
 
 	vmap_area_pcpu_hole = VMALLOC_END;
 
+/* IAMROOT-12:
+ * -------------
+ * vmap 사용 가능
+ */
 	vmap_initialized = true;
 }
 
@@ -1321,7 +1435,16 @@ static struct vm_struct *__get_vm_area_node(unsigned long size,
 	struct vmap_area *va;
 	struct vm_struct *area;
 
+/* IAMROOT-12:
+ * -------------
+ * vmalloc 함수는 인터럽트 처리중에는 사용할 수 없다.
+ */
 	BUG_ON(in_interrupt());
+
+/* IAMROOT-12:
+ * -------------
+ * io 영역으로 요청하는 경우 1 page ~ 16M 범위로 한정한다.
+ */
 	if (flags & VM_IOREMAP)
 		align = 1ul << clamp(fls(size), PAGE_SHIFT, IOREMAP_MAX_ORDER);
 
@@ -1329,10 +1452,18 @@ static struct vm_struct *__get_vm_area_node(unsigned long size,
 	if (unlikely(!size))
 		return NULL;
 
+/* IAMROOT-12:
+ * -------------
+ * vm_struct 구조체를 할당 받아온다.
+ */
 	area = kzalloc_node(sizeof(*area), gfp_mask & GFP_RECLAIM_MASK, node);
 	if (unlikely(!area))
 		return NULL;
 
+/* IAMROOT-12:
+ * -------------
+ * VM_NO_GUARD 옵션을 사용하지않는 경우 가드 용도로 1 페이지를 더 추가한다.
+ */
 	if (!(flags & VM_NO_GUARD))
 		size += PAGE_SIZE;
 
@@ -1646,6 +1777,10 @@ void *__vmalloc_node_range(unsigned long size, unsigned long align,
 	void *addr;
 	unsigned long real_size = size;
 
+/* IAMROOT-12:
+ * -------------
+ * 요청 사이즈를 페이지 단위로 정렬한다.
+ */
 	size = PAGE_ALIGN(size);
 	if (!size || (size >> PAGE_SHIFT) > totalram_pages)
 		goto fail;
@@ -1699,6 +1834,10 @@ static void *__vmalloc_node(unsigned long size, unsigned long align,
 			    gfp_t gfp_mask, pgprot_t prot,
 			    int node, const void *caller)
 {
+/* IAMROOT-12:
+ * -------------
+ * 메모리를 할당받아 vmalloc address space를 사용하여 매핑한다.
+ */
 	return __vmalloc_node_range(size, align, VMALLOC_START, VMALLOC_END,
 				gfp_mask, prot, 0, node, caller);
 }
@@ -1728,6 +1867,10 @@ static inline void *__vmalloc_node_flags(unsigned long size,
  */
 void *vmalloc(unsigned long size)
 {
+/* IAMROOT-12:
+ * -------------
+ * highmem 우선 할당
+ */
 	return __vmalloc_node_flags(size, NUMA_NO_NODE,
 				    GFP_KERNEL | __GFP_HIGHMEM);
 }

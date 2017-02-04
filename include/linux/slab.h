@@ -683,6 +683,11 @@ static inline void *kmem_cache_zalloc(struct kmem_cache *k, gfp_t flags)
  */
 static inline void *kzalloc(size_t size, gfp_t flags)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * kmalloc에서 할당받은 object를 하나 받아올 때 0으로 초기화된다.
+ */
 	return kmalloc(size, flags | __GFP_ZERO);
 }
 

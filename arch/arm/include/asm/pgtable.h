@@ -88,6 +88,18 @@ extern pgprot_t		pgprot_s2_device;
 
 #define _MOD_PROT(p, b)	__pgprot(pgprot_val(p) | (b))
 
+/* IAMROOT-12:
+ * -------------
+ * vmap 시 페이지 속성 
+ *  - PAGE_NONE:
+ *      NUMA 시스템에서 해당 페이지를 읽을 때 accesss 권한 실패로 인해 
+ *      abort exception이 발생되어 fault된 후 해당 페이지를 사용하는 
+ *      태스크의 migration을 고려하는 Automatic NUMA balancing을 위해 사용된다.
+ *  - PAGE_SHARED 
+ *      user 공유 데이터 페이지 
+ *  - PAGE_KERNEL 
+ *      kernel 데이터 페이지
+ */
 #define PAGE_NONE		_MOD_PROT(pgprot_user, L_PTE_XN | L_PTE_RDONLY | L_PTE_NONE)
 #define PAGE_SHARED		_MOD_PROT(pgprot_user, L_PTE_USER | L_PTE_XN)
 #define PAGE_SHARED_EXEC	_MOD_PROT(pgprot_user, L_PTE_USER)

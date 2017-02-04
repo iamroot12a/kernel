@@ -10,6 +10,18 @@
 struct vm_area_struct;		/* vma defining user mapping in mm_types.h */
 
 /* bits in flags of vmalloc's vm_struct below */
+
+/* IAMROOT-12:
+ * -------------
+ * VM_IOREMAP
+ *      io 영역을 매핑 시 사용
+ * VM_ALLOC
+ *      vmalloc() 요청 시 
+ * VM_MAP
+ *      vmap() 요청 시
+ * VM_UNINITIALIZED
+ *      vm_struct가 완전히 초기화되지 않았을 때
+ */
 #define VM_IOREMAP		0x00000001	/* ioremap() and friends */
 #define VM_ALLOC		0x00000002	/* vmalloc() */
 #define VM_MAP			0x00000004	/* vmap()ed pages */

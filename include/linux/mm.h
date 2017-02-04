@@ -1737,7 +1737,20 @@ static inline void pte_lock_deinit(struct page *page) {}
 
 static inline void pgtable_init(void)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * spinlock이 아래와 같은 특정 조건에서 전용 kmem_cache를 사용한다.
+ *  - 공통 조건: 4 cpus 이상, spinlock_t 컴파일 시 4 바이트 초과
+ *  - arm 조건: mmu, vipt 캐시
+ */
 	ptlock_cache_init();
+
+/* IAMROOT-12:
+ * -------------
+ * 다른 아키텍처에서 사용한다.
+ * (x86, arm, amr64에서는 코드가 없다.)
+ */
 	pgtable_cache_init();
 }
 

@@ -3746,6 +3746,16 @@ static struct kmem_cache *page_ptl_cachep;
 
 void __init ptlock_cache_init(void)
 {
+/* IAMROOT-12:
+ * -------------
+ * spinlock debug 기능을 사용하는 경우 spinlock 사이즈가 커지게 되고 
+ * 이러한 경우 kmalloc으로 할당받아 사용시 메모리 낭비가 발생할 수 
+ * 있는 경우에 별도의 kmem_cache를 생성하게 한다.
+ * (x86 아키텍처에서 debug 기능을 사용하는 spinlock이 72바이트를 
+ *  사용하게 되는데 kmalloc-96으로 할당받아오면 24바이트가 낭비되는 
+ *  결과가 있고 이를 아주 많이 사용하면 메모리 소모가 커진다.
+ *  이러한 경우를 위해 전용 사이즈의 캐시를 만들어 사용한다.)
+ */
 	page_ptl_cachep = kmem_cache_create("page->ptl", sizeof(spinlock_t), 0,
 			SLAB_PANIC, NULL);
 }
