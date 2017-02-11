@@ -602,13 +602,28 @@ int __pte_alloc(struct mm_struct *mm, struct vm_area_struct *vma,
 
 int __pte_alloc_kernel(pmd_t *pmd, unsigned long address)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 커널용(lowmem) 물리 페이지 1개 페이지를 할당받고 그 가상 주소를 알아온다.
+ *	- highmem 페이지를 사용하지 않는다.
+ */
 	pte_t *new = pte_alloc_one_kernel(&init_mm, address);
 	if (!new)
 		return -ENOMEM;
 
 	smp_wmb(); /* See comment in __pte_alloc */
 
+/* IAMROOT-12:
+ * -------------
+ * 페이지 테이블 엔트리를 조작하기 위해 page table 락을 건다
+ */
 	spin_lock(&init_mm.page_table_lock);
+
+/* IAMROOT-12:
+ * -------------
+ * lock을 걸기 전에 다시 한 번 매핑 확인을 한다.
+ */
 	if (likely(pmd_none(*pmd))) {	/* Has another populated it ? */
 		pmd_populate_kernel(&init_mm, pmd, new);
 		new = NULL;

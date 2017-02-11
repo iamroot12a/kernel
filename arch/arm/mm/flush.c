@@ -297,6 +297,18 @@ void __sync_icache_dcache(pte_t pteval)
 	struct page *page;
 	struct address_space *mapping;
 
+/* IAMROOT-12:
+ * -------------
+ * i-cache와 d-cache를 flush한다.
+ * 만일 아키텍처의 d-cache가 vipt nonaliasing 이면서 데이터 페이지를 
+ * 조작하는 경우 flush 하지 않는다.
+ */
+
+/* IAMROOT-12:
+ * -------------
+ * rpi2: i-cache=vipt aliasing, d-cache=pipt (linux에서는 vipt nonaliasing)
+ *       실행페이지가 아닌 데이터 페이지인 경우 flush 필요없다.
+ */
 	if (cache_is_vipt_nonaliasing() && !pte_exec(pteval))
 		/* only flush non-aliasing VIPT caches for exec mappings */
 		return;
@@ -305,7 +317,18 @@ void __sync_icache_dcache(pte_t pteval)
 		return;
 
 	page = pfn_to_page(pfn);
+
+/* IAMROOT-12:
+ * -------------
+ * armv6의 vipt cache aliasing을 하는 SMP의 경우
+ */
 	if (cache_is_vipt_aliasing())
+
+/* IAMROOT-12:
+ * -------------
+ * file 매핑을 가져온다.
+ */
+
 		mapping = page_mapping(page);
 	else
 		mapping = NULL;

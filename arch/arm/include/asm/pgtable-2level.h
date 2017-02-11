@@ -10,6 +10,12 @@
 #ifndef _ASM_PGTABLE_2LEVEL_H
 #define _ASM_PGTABLE_2LEVEL_H
 
+/* IAMROOT-12:
+ * -------------
+ * 32bit arm에서는 아래와 같이 fold 선언한다.
+ * (32bit arm with LPAE는 3 레벨의 페이지 테이블 변환을 사용한다.
+ *  그래서 이 때에는 pmd를 사용한다.)
+ */
 #define __PAGETABLE_PMD_FOLDED
 
 /*
@@ -131,7 +137,17 @@
  * L_PTE_VALID & L_PTE_PRESENT
  *      -L_PTE_NONE과 반대의 속성 
  * L_PTE_YOUNG
- *      -페이지에 접근이 된 경우 
+ *      -페이지에 접근이 된 경우 1로 설정 
+ *       - 한 번도 사용되지 않은 메모리 페이지는 0
+ *       (유저 페이지를 할당 할 때 lazy 메모리 할당 기법을 사용하여 
+ *        처음 할당 시 항상 fault가 발생한다. arm에서는 young을 처리하는 
+ *        하드웨어가 없어서 fault 후에 페이지에 접근이 되었다는 young
+ *        비트를 설정한다.
+ *
+ *        lazy 페이지 할당을 사용하지 않는 커널 메모리도 처음 접근이 
+ *        되었는지 여부를 알아내기 위해 매핑 시 read/write 접근을 못하게 
+ *        하여 fault를 발생 후 young을 설정하게 한다.)
+ *
  * L_PTE_DIRTY
  *      -페이지가 변경된 경우
  * L_PTE_RDONLY
@@ -233,6 +249,11 @@ static inline pmd_t *pmd_offset(pud_t *pud, unsigned long addr)
  * ARMv7: cpu_v7_set_pte_ext - arch/arm/mm/proc-v7-2level.S
  */
 #define set_pte_ext(ptep,pte,ext) cpu_set_pte_ext(ptep,pte,ext)
+
+/* IAMROOT-12:
+ * -------------
+ * arm에서는 사용하지 않는다.
+ */
 #define pte_special(pte)	(0)
 static inline pte_t pte_mkspecial(pte_t pte) { return pte; }
 

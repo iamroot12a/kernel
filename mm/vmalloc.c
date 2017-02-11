@@ -59,8 +59,17 @@ static void vunmap_pte_range(pmd_t *pmd, unsigned long addr, unsigned long end)
 {
 	pte_t *pte;
 
+/* IAMROOT-12:
+ * -------------
+ * 가상 주소 addr로 pte 엔트리 주소를 알아온다.
+ */
 	pte = pte_offset_kernel(pmd, addr);
 	do {
+
+/* IAMROOT-12:
+ * -------------
+ * 가상 주소 addr에 해당하는 pte 엔트리 값에 0을 지정하여 언매핑한다.
+ */
 		pte_t ptent = ptep_get_and_clear(&init_mm, addr, pte);
 		WARN_ON(!pte_none(ptent) && !pte_present(ptent));
 	} while (pte++, addr += PAGE_SIZE, addr != end);
@@ -71,6 +80,11 @@ static void vunmap_pmd_range(pud_t *pud, unsigned long addr, unsigned long end)
 	pmd_t *pmd;
 	unsigned long next;
 
+/* IAMROOT-12:
+ * -------------
+ * pmd 범위에서 매핑된 1개의 엔트리에 대해 하위 pte 함수를 반복하여 호출한다.
+ * (32bit arm은 pgd=pud=pmd와 동일하므로 1번의 루프만 수행한다.)
+ */
 	pmd = pmd_offset(pud, addr);
 	do {
 		next = pmd_addr_end(addr, end);
@@ -85,6 +99,11 @@ static void vunmap_pud_range(pgd_t *pgd, unsigned long addr, unsigned long end)
 	pud_t *pud;
 	unsigned long next;
 
+/* IAMROOT-12:
+ * -------------
+ * pud 범위에서 매핑된 1개의 엔트리에 대해 하위 pmd 함수를 반복하여 호출한다.
+ * (32bit arm은 pgd와 동일하므로 1번의 루프만 수행한다.)
+ */
 	pud = pud_offset(pgd, addr);
 	do {
 		next = pud_addr_end(addr, end);
@@ -100,11 +119,30 @@ static void vunmap_page_range(unsigned long addr, unsigned long end)
 	unsigned long next;
 
 	BUG_ON(addr >= end);
+
+/* IAMROOT-12:
+ * -------------
+ * 가상주소 addr에 해당하는 pgd 엔트리 주소를 가져온다.
+ */
 	pgd = pgd_offset_k(addr);
+
+/* IAMROOT-12:
+ * -------------
+ * 요청 범위를 pgd 사이즈 단위로 루프를 돈다.
+ */
 	do {
 		next = pgd_addr_end(addr, end);
+/* IAMROOT-12:
+ * -------------
+ * 매핑되지 않은 pgd 엔트리이거나 bad 엔트리인 경우 skip 한다.
+ */
 		if (pgd_none_or_clear_bad(pgd))
 			continue;
+
+/* IAMROOT-12:
+ * -------------
+ * 1개의 pgd 엔트리에 해당하는 범위로 아래 pud 함수를 호출한다.
+ */
 		vunmap_pud_range(pgd, addr, next);
 	} while (pgd++, addr = next, addr != end);
 }
@@ -119,6 +157,11 @@ static int vmap_pte_range(pmd_t *pmd, unsigned long addr,
 	 * callers keep track of where we're up to.
 	 */
 
+/* IAMROOT-12:
+ * -------------
+ * pte 테이블이 없는 경우 할당하고 상위와 연결한다.
+ * (32bit arm에서는 pgd 엔트리와 연결한다. 한 번에 2개쌍)
+ */
 	pte = pte_alloc_kernel(pmd, addr);
 	if (!pte)
 		return -ENOMEM;
@@ -141,9 +184,19 @@ static int vmap_pmd_range(pud_t *pud, unsigned long addr,
 	pmd_t *pmd;
 	unsigned long next;
 
+/* IAMROOT-12:
+ * -------------
+ * 32bit arm에서는 pmd 테이블을 할당하지 않고 pgd 테이블을 사용한다.
+ * (pgd=pud=pmd)
+ */
 	pmd = pmd_alloc(&init_mm, pud, addr);
 	if (!pmd)
 		return -ENOMEM;
+
+/* IAMROOT-12:
+ * -------------
+ * 32bit arm에서는 1번만 루프를 수행한다.
+ */
 	do {
 		next = pmd_addr_end(addr, end);
 		if (vmap_pte_range(pmd, addr, next, prot, pages, nr))
@@ -158,9 +211,18 @@ static int vmap_pud_range(pgd_t *pgd, unsigned long addr,
 	pud_t *pud;
 	unsigned long next;
 
+/* IAMROOT-12:
+ * -------------
+ * 32bit arm에서는 no pud이므로 항당되어 있던 pgd 주소를 반환해온다.
+ */
 	pud = pud_alloc(&init_mm, pgd, addr);
 	if (!pud)
 		return -ENOMEM;
+
+/* IAMROOT-12:
+ * -------------
+ * 32bit arm에서는 no pud로 동작하므로 루프를 1번만 수행한다.
+ */
 	do {
 		next = pud_addr_end(addr, end);
 		if (vmap_pmd_range(pud, addr, next, prot, pages, nr))
@@ -185,9 +247,26 @@ static int vmap_page_range_noflush(unsigned long start, unsigned long end,
 	int nr = 0;
 
 	BUG_ON(addr >= end);
+
+/* IAMROOT-12:
+ * -------------
+ * 리눅스 pgd 엔트리를 찾아온다.
+ * (32bit arm 리눅스에서는 pgd 엔트리가 총 2048개(hw=4096개)
+ */
 	pgd = pgd_offset_k(addr);
 	do {
+
+/* IAMROOT-12:
+ * -------------
+ * 다음 리눅스 pgd 엔트리 
+ * (엔트리 하나가 2M를 담당한다. (hw pgd 엔트리는 1M를 담당한다)
+ */
 		next = pgd_addr_end(addr, end);
+
+/* IAMROOT-12:
+ * -------------
+ * pgd 1개 범위로만 pud 매핑을 요청한다.
+ */
 		err = vmap_pud_range(pgd, addr, next, prot, pages, &nr);
 		if (err)
 			return err;
@@ -201,6 +280,10 @@ static int vmap_page_range(unsigned long start, unsigned long end,
 {
 	int ret;
 
+/* IAMROOT-12:
+ * -------------
+ * 요청 범위를 vmap 매핑하고 아키텍처에 따라 d-cache를 flush 한다.
+ */
 	ret = vmap_page_range_noflush(start, end, prot, pages);
 	flush_cache_vmap(start, end);
 	return ret;
@@ -417,11 +500,25 @@ retry:
 			size < cached_hole_size ||
 			vstart < cached_vstart ||
 			align < cached_align) {
+
+/* IAMROOT-12:
+ * -------------
+ * free_vmap_cache를 사용하지 않고 다시 처음부터 검색하는 조건
+ *	- 요청 size가 기억해둔 hole size보다 작은 경우 
+ *	  (hole을 이용하기 위해 처음부터 검색하여 hole을 찾는다.)
+ *	- 시작 범위가 cache된 시작 범위보다 작은 경우 
+ *	  (vmlloc address space -> module address space)
+ *	- 요청 align이 cache된 align보다 작아진 경우
+ */
 nocache:
 		cached_hole_size = 0;
 		free_vmap_cache = NULL;
 	}
 	/* record if we encounter less permissive parameters */
+/* IAMROOT-12:
+ * -------------
+ * caced된 시작 범위와 align은 항상 마지막 요청된 값을 보관한다.
+ */
 	cached_vstart = vstart;
 	cached_align = align;
 
@@ -486,6 +583,10 @@ nocache:
 	/* from the starting point, walk areas until a suitable hole is found */
 /* IAMROOT-12:
  * -------------
+ * 두 가지 조건으로 여기에 진입 한다.
+ *	- RB 트리에 의해 범위 중 가장 하위에 있는 vm부터 
+ *	- 캐시에 으해 시작되는 vm부터
+ *
  * vm의 하단(좌측)에 공간을 찾은 경우 루프를 탈출한다.
  */
 	while (addr + size > first->va_start && addr + size <= vend) {
@@ -518,9 +619,22 @@ found:
 		goto overflow;
 
 	va->va_start = addr;
+
+/* IAMROOT-12:
+ * -------------
+ * va->va_end는 끝 주소 + 1 
+ *	예) va->va_start = 0x0001_0000, size가 0x1000 
+ *	    va->va_end =   0x0001_1000
+ */
 	va->va_end = addr + size;
 	va->flags = 0;
 	__insert_vmap_area(va);
+
+/* IAMROOT-12:
+ * -------------
+ * 마지막 추가한 vm 엔트리를 캐시가 가리키게 한다.
+ * (가능하면 다음 검색 시 이 vm부터 검색하게 한다)
+ */
 	free_vmap_cache = &va->rb_node;
 	spin_unlock(&vmap_area_lock);
 
@@ -533,6 +647,12 @@ found:
 overflow:
 	spin_unlock(&vmap_area_lock);
 	if (!purged) {
+
+/* IAMROOT-12:
+ * -------------
+ * vmalloc 공간 부족으로 매핑이 실패하는 경우 lazy TLB free 처리되어 
+ * 실제 삭제되지 못한 공간들을 모두 purge 처리한 후에 1회 재시도한다.
+ */
 		purge_vmap_area_lazy();
 		purged = 1;
 		goto retry;
@@ -549,6 +669,11 @@ static void __free_vmap_area(struct vmap_area *va)
 	BUG_ON(RB_EMPTY_NODE(&va->rb_node));
 
 	if (free_vmap_cache) {
+
+/* IAMROOT-12:
+ * -------------
+ * 캐시 이전에 hole(삭제로 인해)이 생기게되는 경우 캐시를 사용하지 않게 한다.
+ */
 		if (va->va_end < cached_vstart) {
 			free_vmap_cache = NULL;
 		} else {
@@ -571,6 +696,11 @@ static void __free_vmap_area(struct vmap_area *va)
 			}
 		}
 	}
+
+/* IAMROOT-12:
+ * -------------
+ * rb 트리와 리스트 양쪽에서 vmap_area를 제거한다.
+ */
 	rb_erase(&va->rb_node, &vmap_area_root);
 	RB_CLEAR_NODE(&va->rb_node);
 	list_del_rcu(&va->list);
@@ -581,8 +711,18 @@ static void __free_vmap_area(struct vmap_area *va)
 	 * here too, consider only end addresses which fall inside
 	 * vmalloc area proper.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * vmalloc address space 에서 가장 높이 있는 pcpu hole의 끝 주소를 갱신한다.
+ */
 	if (va->va_end > VMALLOC_START && va->va_end <= VMALLOC_END)
 		vmap_area_pcpu_hole = max(vmap_area_pcpu_hole, va->va_end);
+
+/* IAMROOT-12:
+ * -------------
+ * vmap_area를 rcu 방법으로 삭제한다.
+ */
 
 	kfree_rcu(va, rcu_head);
 }
@@ -602,6 +742,11 @@ static void free_vmap_area(struct vmap_area *va)
  */
 static void unmap_vmap_area(struct vmap_area *va)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 요청 범위에 해당하는 페이지 테이블 엔트리들을 언매핑한다.
+ */
 	vunmap_page_range(va->va_start, va->va_end);
 }
 
@@ -646,6 +791,11 @@ static unsigned long lazy_max_pages(void)
 {
 	unsigned int log;
 
+
+/* IAMROOT-12:
+ * -------------
+ * cpu가 4개인 경우 log=3 -> lazy_max_pages = 24k 
+ */
 	log = fls(num_online_cpus());
 
 	return log * (32UL * 1024 * 1024 / PAGE_SIZE);
@@ -662,6 +812,11 @@ static void purge_fragmented_blocks_allcpus(void);
  */
 void set_iounmap_nonlazy(void)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * iounmap에서는 lazy free를 하지 않고 즉각 free한다.
+ */
 	atomic_set(&vmap_lazy_nr, lazy_max_pages()+1);
 }
 
@@ -695,9 +850,22 @@ static void __purge_vmap_area_lazy(unsigned long *start, unsigned long *end,
 	} else
 		spin_lock(&purge_lock);
 
+/* IAMROOT-12:
+ * -------------
+ * vmap() & vunmap()을 대체하는 vm_map_ram() 및 vm_unmap_ram()에서
+ * per-cpu map 기반의 lazy TLB flush를 사용할 때 아래의 purge 동작을 
+ * 수행한다.
+ */
 	if (sync)
 		purge_fragmented_blocks_allcpus();
 
+/* IAMROOT-12:
+ * -------------
+ * vmap_area_list에 있는 vmap_area 엔트리들 중 free 요청된 엔트리들을 
+ * 모두 임시 valist에 추가한다.
+ * 추가하는 동안 가장 낮은 주소가 *start에 대입되고,
+ *               가장 높은 주소가 *end에 대입된다.
+ */
 	rcu_read_lock();
 	list_for_each_entry_rcu(va, &vmap_area_list, list) {
 		if (va->flags & VM_LAZY_FREE) {
@@ -713,12 +881,24 @@ static void __purge_vmap_area_lazy(unsigned long *start, unsigned long *end,
 	}
 	rcu_read_unlock();
 
+/* IAMROOT-12:
+ * -------------
+ * vmap_lazy_nr에서 free 영역 페이지 수를 감소시킨다.
+ */
 	if (nr)
 		atomic_sub(nr, &vmap_lazy_nr);
 
+/* IAMROOT-12:
+ * -------------
+ * 산출된 가장 낮은 주소부터 높은 주소까지 tlb flush를 수행한다.
+ */
 	if (nr || force_flush)
 		flush_tlb_kernel_range(*start, *end);
 
+/* IAMROOT-12:
+ * -------------
+ * 임시 valist에 있는 모든 vm들을 모두 삭제한다.
+ */
 	if (nr) {
 		spin_lock(&vmap_area_lock);
 		list_for_each_entry_safe(va, n_va, &valist, purge_list)
@@ -756,7 +936,18 @@ static void purge_vmap_area_lazy(void)
  */
 static void free_vmap_area_noflush(struct vmap_area *va)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * vm_area의 플래그에 lazy_free를 추가한다.
+ */
 	va->flags |= VM_LAZY_FREE;
+
+/* IAMROOT-12:
+ * -------------
+ * lazy free 페이지가 적정 수를 초과하는 경우 purge 한다.
+ * (rpi2: 24k를 초과할 때마다 한꺼번에 몰아서 처리한다. 96M)
+ */
 	atomic_add((va->va_end - va->va_start) >> PAGE_SHIFT, &vmap_lazy_nr);
 	if (unlikely(atomic_read(&vmap_lazy_nr) > lazy_max_pages()))
 		try_purge_vmap_area_lazy();
@@ -768,6 +959,11 @@ static void free_vmap_area_noflush(struct vmap_area *va)
  */
 static void free_unmap_vmap_area_noflush(struct vmap_area *va)
 {
+/* IAMROOT-12:
+ * -------------
+ * vm 영역에 해당하는 페이지 테이블 엔트리들을 언매핑한다.
+ * (pgd -> pud -> pmd -> pte 순)
+ */
 	unmap_vmap_area(va);
 	free_vmap_area_noflush(va);
 }
@@ -785,6 +981,10 @@ static struct vmap_area *find_vmap_area(unsigned long addr)
 {
 	struct vmap_area *va;
 
+/* IAMROOT-12:
+ * -------------
+ * 주소로 vmap_area를 찾아온다.
+ */
 	spin_lock(&vmap_area_lock);
 	va = __find_vmap_area(addr);
 	spin_unlock(&vmap_area_lock);
@@ -1398,6 +1598,10 @@ int map_vm_area(struct vm_struct *area, pgprot_t prot, struct page **pages)
 	unsigned long end = addr + get_vm_area_size(area);
 	int err;
 
+/* IAMROOT-12:
+ * -------------
+ * vm의 범위로 vmap 매핑을 수행한다.
+ */
 	err = vmap_page_range(addr, end, prot, pages);
 
 	return err > 0 ? 0 : err;
@@ -1411,6 +1615,11 @@ static void setup_vmalloc_vm(struct vm_struct *vm, struct vmap_area *va,
 	vm->flags = flags;
 	vm->addr = (void *)va->va_start;
 	vm->size = va->va_end - va->va_start;
+
+/* IAMROOT-12:
+ * -------------
+ * 호출 함수를 저장해둔다.
+ */
 	vm->caller = caller;
 	va->vm = vm;
 	va->flags |= VM_VM_AREA;
@@ -1467,12 +1676,20 @@ static struct vm_struct *__get_vm_area_node(unsigned long size,
 	if (!(flags & VM_NO_GUARD))
 		size += PAGE_SIZE;
 
+/* IAMROOT-12:
+ * -------------
+ * 가상 주소 공간에서 매핑할 주소를 결정하고 vmap_area 형태로 할당해온다.
+ */
 	va = alloc_vmap_area(size, align, start, end, node, gfp_mask);
 	if (IS_ERR(va)) {
 		kfree(area);
 		return NULL;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * vmap_area -> vm_struct 정보를 구성한다.
+ */
 	setup_vmalloc_vm(area, va, flags, caller);
 
 	return area;
@@ -1513,6 +1730,11 @@ struct vm_struct *get_vm_area(unsigned long size, unsigned long flags)
 struct vm_struct *get_vm_area_caller(unsigned long size, unsigned long flags,
 				const void *caller)
 {
+/* IAMROOT-12:
+ * -------------
+ * vmalloc address space 범위에서 size 만큼 할당하여 vm_struct(vmap_area 포함)를
+ * 구성해온다. 
+ */
 	return __get_vm_area_node(size, 1, flags, VMALLOC_START, VMALLOC_END,
 				  NUMA_NO_NODE, GFP_KERNEL, caller);
 }
@@ -1548,11 +1770,30 @@ struct vm_struct *remove_vm_area(const void *addr)
 {
 	struct vmap_area *va;
 
+/* IAMROOT-12:
+ * -------------
+ * 주소로 vmap_area를 찾아온다.
+ */
 	va = find_vmap_area((unsigned long)addr);
+
+/* IAMROOT-12:
+ * -------------
+ * vmap_area 엔트리의 플래그에 VM_VM_AREA가 설정된 경우에만
+ */
 	if (va && va->flags & VM_VM_AREA) {
+
+/* IAMROOT-12:
+ * -------------
+ * vm_struct 포인터를 백업해두고
+ */
 		struct vm_struct *vm = va->vm;
 
 		spin_lock(&vmap_area_lock);
+
+/* IAMROOT-12:
+ * -------------
+ * vm_struct를 가리키는 포인터에 null을 대입한다.
+ */
 		va->vm = NULL;
 		va->flags &= ~VM_VM_AREA;
 		spin_unlock(&vmap_area_lock);
@@ -1578,6 +1819,11 @@ static void __vunmap(const void *addr, int deallocate_pages)
 			addr))
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * 실제 vmap_area를 제거하는 대신 lazy free 플래그를 설정한다.
+ * (일정량을 초과하면 한꺼번에 purge 한다)
+ */
 	area = remove_vm_area(addr);
 	if (unlikely(!area)) {
 		WARN(1, KERN_ERR "Trying to vfree() nonexistent vm area (%p)\n",
@@ -1588,9 +1834,19 @@ static void __vunmap(const void *addr, int deallocate_pages)
 	debug_check_no_locks_freed(addr, area->size);
 	debug_check_no_obj_freed(addr, area->size);
 
+
+/* IAMROOT-12:
+ * -------------
+ * vfree() -> __vunmap()을 호출하는 경우 할당된 페이지까지 지운다.
+ */
 	if (deallocate_pages) {
 		int i;
 
+/* IAMROOT-12:
+ * -------------
+ * vm_struct가 관리하는 vm용 mem_map(page 포인터) 들이 가리키는 
+ * 페이지들을 페이지 할당자로 되돌려준다. (할당 해제)
+ */
 		for (i = 0; i < area->nr_pages; i++) {
 			struct page *page = area->pages[i];
 
@@ -1604,6 +1860,11 @@ static void __vunmap(const void *addr, int deallocate_pages)
 			kfree(area->pages);
 	}
 
+
+/* IAMROOT-12:
+ * -------------
+ * vm_struct만 삭제한다. vmmap_alloc는 lazy free 처리된다.
+ */
 	kfree(area);
 	return;
 }
@@ -1630,11 +1891,29 @@ void vfree(const void *addr)
 
 	if (!addr)
 		return;
+
+/* IAMROOT-12:
+ * -------------
+ * 인터럽트 수행 중 vfree를 호출하는 경우 처리를 유보한다.
+ * per-cpu vfree_deferred 리스트에 요청 인수인 주소를 추가하고,
+ * 스케쥴한다. 
+ *
+ * 처음 추가한 엔트리에 대해서만 스케쥴한다.
+ * (그 이후에 등록한 엔트리는 그냥 추가만 된다.)
+ *
+ * addr이 가리키는 data content에 리스트를 구성한다.
+ * free할 메모리이기 때문에 임시적인 용도록 사용한다.
+ */
 	if (unlikely(in_interrupt())) {
 		struct vfree_deferred *p = this_cpu_ptr(&vfree_deferred);
 		if (llist_add((struct llist_node *)addr, &p->list))
 			schedule_work(&p->wq);
 	} else
+
+/* IAMROOT-12:
+ * -------------
+ * 할당된 메모리까지 해제한다.
+ */
 		__vunmap(addr, 1);
 }
 EXPORT_SYMBOL(vfree);
@@ -1650,9 +1929,19 @@ EXPORT_SYMBOL(vfree);
  */
 void vunmap(const void *addr)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * vmap()과 달리 인터럽트 핸들링 중에 호출되면 안된다.
+ */
 	BUG_ON(in_interrupt());
 	might_sleep();
 	if (addr)
+
+/* IAMROOT-12:
+ * -------------
+ * 메모리 할당해제 없이 vunmap만 수행하기 위해 2번째 인수를 0으로 한다.
+ */
 		__vunmap(addr, 0);
 }
 EXPORT_SYMBOL(vunmap);
@@ -1677,11 +1966,20 @@ void *vmap(struct page **pages, unsigned int count,
 	if (count > totalram_pages)
 		return NULL;
 
+/* IAMROOT-12:
+ * -------------
+ * vmalloc address space 범위에서 size 만큼 할당하여 vm_struct(vmap_area 포함)를
+ * 구성해온다. 
+ */
 	area = get_vm_area_caller((count << PAGE_SHIFT), flags,
 					__builtin_return_address(0));
 	if (!area)
 		return NULL;
 
+/* IAMROOT-12:
+ * -------------
+ * 구성해온 vm 영역에 pages에 연결된 물리 메모리를 prot 속성으로 매핑한다.
+ */
 	if (map_vm_area(area, prot, pages)) {
 		vunmap(area->addr);
 		return NULL;
@@ -1703,11 +2001,26 @@ static void *__vmalloc_area_node(struct vm_struct *area, gfp_t gfp_mask,
 	const gfp_t nested_gfp = (gfp_mask & GFP_RECLAIM_MASK) | __GFP_ZERO;
 	const gfp_t alloc_mask = gfp_mask | __GFP_NOWARN;
 
+/* IAMROOT-12:
+ * -------------
+ * vm이 실제 사용하는 페이지 수(가드 페이지 제외)
+ */
 	nr_pages = get_vm_area_size(area) >> PAGE_SHIFT;
+
+/* IAMROOT-12:
+ * -------------
+ * vm에 대한 물리페이지 정보를 연결하기 위해 vm용 mem_map(포인터만)을 구성한다.
+ */
 	array_size = (nr_pages * sizeof(struct page *));
 
 	area->nr_pages = nr_pages;
 	/* Please note that the recursion is strictly bounded. */
+
+/* IAMROOT-12:
+ * -------------
+ * vm용 mem_map의 사이즈가 1페이지를 초과하는 경우 vmalloc을 사용하여 
+ * 메모리를 할당하고 그렇지 않은 경우 kmalloc으로 할당한다.
+ */
 	if (array_size > PAGE_SIZE) {
 		pages = __vmalloc_node(array_size, 1, nested_gfp|__GFP_HIGHMEM,
 				PAGE_KERNEL, node, area->caller);
@@ -1715,6 +2028,11 @@ static void *__vmalloc_area_node(struct vm_struct *area, gfp_t gfp_mask,
 	} else {
 		pages = kmalloc_node(array_size, nested_gfp, node);
 	}
+
+/* IAMROOT-12:
+ * -------------
+ * 다음 멤버가 할당받은 vm용 mem_map을 가리킨다.
+ */
 	area->pages = pages;
 	if (!area->pages) {
 		remove_vm_area(area->addr);
@@ -1722,6 +2040,11 @@ static void *__vmalloc_area_node(struct vm_struct *area, gfp_t gfp_mask,
 		return NULL;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * order 0 물리 페이지를 필요한 페이지 수 만큼 루프를 돌며 반복하여 
+ * 할당해서 vm용 mem_map의 각 엔트리에 연결한다.
+ */
 	for (i = 0; i < area->nr_pages; i++) {
 		struct page *page;
 
@@ -1740,6 +2063,11 @@ static void *__vmalloc_area_node(struct vm_struct *area, gfp_t gfp_mask,
 			cond_resched();
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 가상공간(area) + 매핑속성(prot), mem_map(포인터 어레이)을 인수로 
+ * 매핑을 수행한다.
+ */
 	if (map_vm_area(area, prot, pages))
 		goto fail;
 	return area->addr;
@@ -1785,6 +2113,10 @@ void *__vmalloc_node_range(unsigned long size, unsigned long align,
 	if (!size || (size >> PAGE_SHIFT) > totalram_pages)
 		goto fail;
 
+/* IAMROOT-12:
+ * -------------
+ * 매핑할 주소를 구하고 vm_struct & vmap_area를 구성해온다.
+ */
 	area = __get_vm_area_node(size, align, VM_ALLOC | VM_UNINITIALIZED |
 				vm_flags, start, end, node, gfp_mask, caller);
 	if (!area)

@@ -213,11 +213,15 @@ void flush_tlb_kernel_range(unsigned long start, unsigned long end)
 /* IAMROOT-12AB:
  * -------------
  * ARMv7의 경우 tlb_ops_need_broadcast() 함수는 false를 반환한다.
+ * (아키텍처 broadcast하기 때문에 sw에서는 코어마다 루프를 돌며 
+ * 수행할 필요 없이 TLBIMVAIS 명령을 사용하여 inner share 영역에 있는
+ * 다른 cpu의 TLB도 flush 하도록 broadcast 한다)
  *
  * smp 머신에서 한 cpu에서 TLB를 flush할 때 다른 cpu에 대해서도
  * TLB를 같이 flush하도록 할 때 사용한다
  *
- * IPI(Inter Processor Interrupt): 다른 cpu를 여러 용도로 소프트 인터럽트를 걸때 사용
+ * IPI(Inter Processor Interrupt): 다른 cpu를 여러 용도로 소프트 인터럽트를 
+ * 걸때 사용
  */
 	if (tlb_ops_need_broadcast()) {
 		struct tlb_args ta;

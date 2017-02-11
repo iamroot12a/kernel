@@ -370,6 +370,11 @@ extern void flush_kernel_dcache_page(struct page *);
  */
 static inline void flush_cache_vmap(unsigned long start, unsigned long end)
 {
+/* IAMROOT-12:
+ * -------------
+ * 데이터 캐시가 vipt aliasing을 사용하는 경우 flush 한다.
+ * (rpi2: armv7의 경우 pipt를 지원하고 flush하지 않는다)
+ */
 	if (!cache_is_vipt_nonaliasing())
 		flush_cache_all();
 	else
@@ -382,6 +387,11 @@ static inline void flush_cache_vmap(unsigned long start, unsigned long end)
 
 static inline void flush_cache_vunmap(unsigned long start, unsigned long end)
 {
+/* IAMROOT-12:
+ * -------------
+ * 데이터 캐시가 vipt aliasing을 사용하는 경우 flush 한다.
+ * (rpi2: armv7의 경우 pipt를 지원하고 flush하지 않는다)
+ */
 	if (!cache_is_vipt_nonaliasing())
 		flush_cache_all();
 }

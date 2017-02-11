@@ -3752,10 +3752,21 @@ unsigned long __get_free_pages(gfp_t gfp_mask, unsigned int order)
 {
 	struct page *page;
 
+/* IAMROOT-12:
+ * -------------
+ * 요청한 order 페이지를 할당 받은 메모리의 가상 주소를 반환한다.
+ * (커널 가상 주소가 반환된다.)
+ */
+
 	/*
 	 * __get_free_pages() returns a 32-bit address, which cannot represent
 	 * a highmem page
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * highmem 페이지로 요청된 경우 버그
+ */
 	VM_BUG_ON((gfp_mask & __GFP_HIGHMEM) != 0);
 
 	page = alloc_pages(gfp_mask, order);

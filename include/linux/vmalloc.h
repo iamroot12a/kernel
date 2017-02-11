@@ -110,6 +110,12 @@ void vmalloc_sync_all(void);
  *	Lowlevel-APIs (not for driver use!)
  */
 
+
+/* IAMROOT-12:
+ * -------------
+ * vm이 사용하는 size(바이트)를 알아온다.
+ * (가드 페이지를 사용하는 경우 그 1개 가드 페이지 수는 감소하여 반환)
+ */
 static inline size_t get_vm_area_size(const struct vm_struct *area)
 {
 	if (!(area->flags & VM_NO_GUARD))

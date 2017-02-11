@@ -3,6 +3,10 @@
 
 #ifndef __ASSEMBLY__
 
+/* IAMROOT-12:
+ * -------------
+ * 32bit arm에서는 no pud로 컴파일되므로 아래가 항상 선언된다.
+ */
 #define __PAGETABLE_PUD_FOLDED
 
 /*

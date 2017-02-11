@@ -84,6 +84,11 @@ static inline pte_t ptep_get_and_clear(struct mm_struct *mm,
 				       unsigned long address,
 				       pte_t *ptep)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * pte 엔트리 값을 반환하고, 매핑을 클리어한다.
+ */
 	pte_t pte = *ptep;
 	pte_clear(mm, address, ptep);
 	return pte;
@@ -324,6 +329,11 @@ void pmd_clear_bad(pmd_t *);
 
 static inline int pgd_none_or_clear_bad(pgd_t *pgd)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 매핑되지 않은 pgd 엔트리이거나 bad 엔트리인 경우 true를 반환한다.
+ */
 	if (pgd_none(*pgd))
 		return 1;
 	if (unlikely(pgd_bad(*pgd))) {

@@ -574,6 +574,11 @@ void free_pages_exact(void *virt, size_t size);
 /* This is different from alloc_pages_exact_node !!! */
 void * __meminit alloc_pages_exact_nid(int nid, size_t size, gfp_t gfp_mask);
 
+/* IAMROOT-12:
+ * -------------
+ * 페이지 할당자로부터 1 페이지를 받아와서 그 가상주소를 반환한다.
+ * (제한: lowmem만 가능)
+ */
 #define __get_free_page(gfp_mask) \
 		__get_free_pages((gfp_mask), 0)
 

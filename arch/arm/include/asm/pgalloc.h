@@ -70,7 +70,7 @@ static inline void clean_pte_table(pte_t *pte)
  * This actually allocates two hardware PTE tables, but we wrap this up
  * into one table thus:
  *
- *  +------------+
+ *  +------------+ <- low address
  *  | Linux pt 0 |
  *  +------------+
  *  | Linux pt 1 |
@@ -85,6 +85,11 @@ pte_alloc_one_kernel(struct mm_struct *mm, unsigned long addr)
 {
 	pte_t *pte;
 
+/* IAMROOT-12:
+ * -------------
+ * pte: 페이지 할당자로부터 1개 물리 페이지를 할당하고 그 가상 주소를 반환해온다.
+ *      (물리페이지는 lowmem 페이지)
+ */
 	pte = (pte_t *)__get_free_page(PGALLOC_GFP);
 	if (pte)
 		clean_pte_table(pte);
