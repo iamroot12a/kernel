@@ -13,6 +13,11 @@
 #include <uapi/asm/ptrace.h>
 
 #ifndef __ASSEMBLY__
+
+/* IAMROOT-12:
+ * -------------
+ * exception 핸들러에서 현재 레지스터들을 백업해두기 위한 공간
+ */
 struct pt_regs {
 	unsigned long uregs[18];
 };

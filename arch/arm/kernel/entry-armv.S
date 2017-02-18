@@ -307,6 +307,11 @@ __fiq_svc:
 ENDPROC(__fiq_svc)
 
 	.align	5
+
+/* IAMROOT-12:
+ * -------------
+ * cr_alignment 주소를 가리킨다.
+ */
 .LCcralign:
 	.word	cr_alignment
 #ifdef MULTI_DABORT
@@ -369,20 +374,42 @@ ENDPROC(__fiq_abt)
 	.macro	usr_entry, trace=1
  UNWIND(.fnstart	)
  UNWIND(.cantunwind	)	@ don't unwind the user space
+
+/* IAMROOT-12:
+ * -------------
+ * stack을 pt_regs 구조체 사이즈 만큼 증가시키고 r1~r12를 백업한다.
+ */
 	sub	sp, sp, #S_FRAME_SIZE
  ARM(	stmib	sp, {r1 - r12}	)
  THUMB(	stmia	sp, {r0 - r12}	)
 
+/* IAMROOT-12:
+ * -------------
+ * r7 <- SCTLR 
+ * r8 <- cr_alignment 주소
+ */
  ATRAP(	mrc	p15, 0, r7, c1, c0, 0)
  ATRAP(	ldr	r8, .LCcralign)
 
+/* IAMROOT-12:
+ * -------------
+ * r3 ~ r5 <- [r0](이전 모드의 스택 - 3 word stack(r0_<old>, lr_<e>, spsr)
+ */
 	ldmia	r0, {r3 - r5}
 	add	r0, sp, #S_PC		@ here for interlock avoidance
 	mov	r6, #-1			@  ""  ""     ""        ""
 
+/* IAMROOT-12:
+ * -------------
+ * pt_regs의 첫 번째 r0 위치에 r3(기존 r0)를 백업한다.
+ */
 	str	r3, [sp]		@ save the "real" r0 copied
 					@ from the exception stack
 
+/* IAMROOT-12:
+ * -------------
+ * r8 <- cr_alignment 값을 로드 
+ */
  ATRAP(	ldr	r8, [r8, #0])
 
 	@
@@ -394,11 +421,32 @@ ENDPROC(__fiq_abt)
 	@
 	@ Also, separately save sp_usr and lr_usr
 	@
+
+/* IAMROOT-12:
+ * -------------
+ * stack에 위치한 pt_regs 값
+ * ---------------------------
+ *           old-r0 <- orig_r0 
+ *           psr    <- spsr_<e>
+ *   r0 ->   pc     <- lr_<e>
+ *           lr     <- lr
+ *           sp     <- sp
+ *           ....
+ *   sp ->   r0 
+ *
+ */
 	stmia	r0, {r4 - r6}
  ARM(	stmdb	r0, {sp, lr}^			)
  THUMB(	store_user_sp_lr r0, r1, S_SP - S_PC	)
 
 	@ Enable the alignment trap while in kernel mode
+
+/* IAMROOT-12:
+ * -------------
+ * SCTLR 값을 읽어서 저장해두었던 cr_alignment값과 
+ * exception되어 다시 SCTLR을 읽어서 비교하여 다른 경우 
+ * cr_alignment -> SCTLR에 저장하여 설정한다.
+ */
  ATRAP(	teq	r8, r7)
  ATRAP( mcrne	p15, 0, r8, c1, c0, 0)
 
@@ -1059,6 +1107,15 @@ __kuser_helper_end:
 	.align	5
 
 vector_\name:
+
+/* IAMROOT-12:
+ * -------------
+ * vector_stub 매크로 
+ *	12 byte의 임시 stack에 보관할 내용은 다음과 같다.
+ *		- r0   (현재 모드 r0로 scratch되므로 백업해둔다)
+ *		- lr   (exception되기 전 pc)
+ *		- spsr (exception되기 전 cpsr)
+ */
 	.if \correction
 	sub	lr, lr, #\correction
 	.endif
@@ -1067,13 +1124,46 @@ vector_\name:
 	@ Save r0, lr_<exception> (parent PC) and spsr_<exception>
 	@ (parent CPSR)
 	@
-	stmia	sp, {r0, lr}		@ save r0, lr
+
+/* IAMROOT-12:
+ * -------------
+ * stack 증가 없이 r0, lr(기존 pc) 레지스터를 보관한다.
+ *
+ *            lr(기존 모드 pc)
+ *	sp -> r0
+ */
+	stmia	sp, {r0, lr}		@ save r0, lr 
+
+/* IAMROOT-12:
+ * -------------
+ * 기존 모드의 cpsr -> sp+8 위치에 보관
+ * 현재 exception stub로 오기 전 cpsr->spsr로 복제되었었다.
+ * (exception 발생 시 arm 아키텍처가 자동으로 수행)
+ *
+ *	      spsr(기존 모드 cpsr)
+ *	      lr(기존 모드 pc)
+ *	sp -> r0
+ */
 	mrs	lr, spsr
 	str	lr, [sp, #8]		@ save spsr
 
 	@
 	@ Prepare for SVC32 mode.  IRQs remain disabled.
 	@
+
+/* IAMROOT-12:
+ * -------------
+ * 현재 모드를 svc 모드로 바꾼다. 
+ *	(current mode(IRQ) ^ stub mode(IRQ) ^ mode(SVC) = mode SVC)
+ *	     10010         ^    (    10010  ^    10011) = 
+ *	     10010         ^    (        00001        ) = 10011
+ *
+ * 5 bit 비트클리어 명령 후 or 명령으로 5 bit를 더하면 2개의 
+ * 인스트럭션이 사용되므로 1 개의 인스트럭션으로 처리하기 위해 
+ * eor 명령을 사용하였다.
+ *
+ * exception 발생 시 arm 아키텍처가 irq, fiq 비트를 자동으로 cpsr에 mask 시킨다.
+ */
 	mrs	r0, cpsr
 	eor	r0, r0, #(\mode ^ SVC_MODE | PSR_ISETSTATE)
 	msr	spsr_cxsf, r0
@@ -1081,6 +1171,14 @@ vector_\name:
 	@
 	@ the branch table must immediately follow this code
 	@
+
+/* IAMROOT-12:
+ * -------------
+ * spsr에서 mode 5bit 중 실제 사용하는 4bit만 사용하여 인덱스를 산출한다.
+ * pc는 항상 instruction pipe에서 실행되는 위치 + 2 word (8 byte)위치를 
+ * 가리키므로 이 매크로의 뒷 부분에는 항상 16개의 테이블이 있는 것을 
+ * 보장하여야 한다.
+ */
 	and	lr, lr, #0x0f
  THUMB(	adr	r0, 1f			)
  THUMB(	ldr	lr, [r0, lr, lsl #2]	)
@@ -1093,7 +1191,6 @@ ENDPROC(vector_\name)
 	@ handler addresses follow this label
 1:
 	.endm
-
 
 /* IAMROOT-12AB:
  * -------------
@@ -1114,6 +1211,12 @@ __stubs_start:
 	.word	vector_swi
 
 vector_rst:
+
+/* IAMROOT-12:
+ * -------------
+ * 리셋 exception이 발생한 경우 SYS_ERROR0 syscall을 호출한다.
+ */
+
  ARM(	swi	SYS_ERROR0	)
  THUMB(	svc	#0		)
  THUMB(	nop			)
@@ -1177,6 +1280,12 @@ vector_rst:
 /*
  * Prefetch abort dispatcher
  * Enter in ABT mode, spsr = USR CPSR, lr = USR PC
+ */
+
+/* IAMROOT-12:
+ * -------------
+ * pre-fetch abort exception stub 
+ *	
  */
 	vector_stub	pabt, ABT_MODE, 4
 
@@ -1268,6 +1377,15 @@ vector_addrexcptn:
  *
  * 나머지 7개의 벡터는 branch 코드를 직접 사용하여 해당 핸들러로 jump 한다.
  * 해당 핸들러는 근거리(다음 페이지)에 위치한다. 
+ *
+ * 1) 리셋
+ * 2) undefined instruction 
+ * 3) swi 
+ * 4) pre-fetch abort 
+ * 5) data abort 
+ * 6) n/a
+ * 7) irq 
+ * 8) fiq
  */
 	.section .vectors, "ax", %progbits
 __vectors_start:
@@ -1282,6 +1400,10 @@ __vectors_start:
 
 	.data
 
+/* IAMROOT-12:
+ * -------------
+ * 부트업 타임에 SCTLR 값이 저장된다.
+ */
 	.globl	cr_alignment
 cr_alignment:
 	.space	4

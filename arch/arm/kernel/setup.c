@@ -150,9 +150,10 @@ int __cpu_architecture __read_mostly = CPU_ARCH_UNKNOWN;
 /* IAMROOT-12A:
  * ------------
  * 각 CPU 모드용 스택 저장 장소이다.
- * 배열이 3인 이유???
+ * 배열이 3인 이유?
+ *	- 각 exception 모드에서 3개의 레지스터를 보관할 때 사용한다.
+ *	   (r0, lr, spsr)
  */
-
 struct stack {
 	u32 irq[3];
 	u32 abt[3];

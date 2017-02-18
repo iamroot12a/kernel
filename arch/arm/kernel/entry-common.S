@@ -116,17 +116,49 @@ ENDPROC(ret_from_fork)
  *-----------------------------------------------------------------------------
  */
 
+/* IAMROOT-12:
+ * -------------
+ * .aling 5 = 2^5(32) byte 정렬
+ */
 	.align	5
 ENTRY(vector_swi)
 #ifdef CONFIG_CPU_V7M
 	v7m_exception_entry
 #else
+
+/* IAMROOT-12:
+ * -------------
+ * stack에 pt_regs 구조체 크기만큼 증가시켜 확보한다.
+ */
 	sub	sp, sp, #S_FRAME_SIZE
+
+/* IAMROOT-12:
+ * -------------
+ * sp가 가리키는 주소부터 r0~r12 레지스터를 저장하게 한다. (sp 변경 없음)
+ */
 	stmia	sp, {r0 - r12}			@ Calling r0 - r12
  ARM(	add	r8, sp, #S_PC		)
+
+/* IAMROOT-12:
+ * -------------
+ * sp와 lr을 저장하고 spsr->cpsr로 복사한다.
+ *
+ * ^ 사용법
+ *      1) stm인 경우
+ *	   - user 모드의 sp, lr 레지스터가 뱅크되어 일반적으로는 다른 모드에서 
+ *	     접근할 수 없어서 이 user 레지스터 값을 access하고자할 때 사용
+ *	2) ldm인 경우 
+ *	   - pc가 포함된 경우 spsr->cpsr로 복사된다.
+ *	     (기존 모드로 복귀할 때 현재 spsr(사실은 백업받아 두었던)->cpsr) 
+ */
  ARM(	stmdb	r8, {sp, lr}^		)	@ Calling sp, lr
  THUMB(	mov	r8, sp			)
  THUMB(	store_user_sp_lr r8, r10, S_SP	)	@ calling sp, lr
+
+/* IAMROOT-12:
+ * -------------
+ * r8 <- swi_spsr (직전 모드의 cpsr 값이 뱅크되면서 복사되었다) 
+ */
 	mrs	r8, spsr			@ called from non-FIQ mode, so ok.
 	str	lr, [sp, #S_PC]			@ Save calling PC
 	str	r8, [sp, #S_PSR]		@ Save CPSR
