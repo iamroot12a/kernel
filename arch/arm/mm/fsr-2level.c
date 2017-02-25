@@ -1,3 +1,8 @@
+
+/* IAMROOT-12:
+ * -------------
+ * Data Fault에 대한 핸들러
+ */
 static struct fsr_info fsr_info[] = {
 	/*
 	 * The following are the standard ARMv3 and ARMv4 aborts.  ARMv5
@@ -42,6 +47,12 @@ static struct fsr_info fsr_info[] = {
 	{ do_bad,		SIGBUS,  0,		"unknown 31"			   },
 };
 
+
+/* IAMROOT-12:
+ * -------------
+ * Instruction Fault에 대한 핸들러
+ * (status 레지스터가 5bit를 사용하여 총 32가지의 상태별로 핸들러가 호출된다.)
+ */
 static struct fsr_info ifsr_info[] = {
 	{ do_bad,		SIGBUS,  0,		"unknown 0"			   },
 	{ do_bad,		SIGBUS,  0,		"unknown 1"			   },

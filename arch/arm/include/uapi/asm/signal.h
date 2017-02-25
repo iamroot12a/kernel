@@ -14,6 +14,20 @@ typedef unsigned long sigset_t;
 
 #endif /* __KERNEL__ */
 
+/* IAMROOT-12:
+ * -------------
+ * 32가지의 시그널
+ * (include/uapi/asm-generic/siginfo.h 참고)
+ *
+ *  - SIGBUS
+ *      1) invalid unaligned address access 
+ *      2) 물리적으로 없는 주소 access 
+ *      3) obejct specific h/w access errer 
+ *  - SIGSEGV(SIGnal 
+ *      1) 매핑되지 않은 주소 access 
+ *      2) invalid permission 
+ *      3) domain 접근 
+ */
 #define SIGHUP		 1
 #define SIGINT		 2
 #define SIGQUIT		 3

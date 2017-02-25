@@ -252,22 +252,56 @@
 	ldmia	r8, {pc}^
 	.endm
 
+/* IAMROOT-12:
+ * -------------
+ * fast는 fast syscall에서 1로 설정되어 진입된다.
+ */
 	.macro	restore_user_regs, fast = 0, offset = 0
 	mov	r2, sp
 	ldr	r1, [r2, #\offset + S_PSR]	@ get calling cpsr
 	ldr	lr, [r2, #\offset + S_PC]!	@ get pc
+
+/* IAMROOT-12:
+ * -------------
+ * spsr_svc <- r1 (복원)
+ */
 	msr	spsr_cxsf, r1			@ save in spsr_svc
 #if defined(CONFIG_CPU_V6) || defined(CONFIG_CPU_32v6K)
 	@ We must avoid clrex due to Cortex-A15 erratum #830321
+
+/* IAMROOT-12:
+ * -------------
+ * user 모드로 돌아갈 때 마다 수동을 clear exclusive 모니터를 한다.
+ * atomic operation을 진행하는 동안 preemption 되었다가 다시 유저로
+ * 돌아갈 때 강제로 strex(특정 프로세서에 clrex 버그)를 수행하여 
+ * atiomic operation을 실패하게 만든다.
+ */
 	strex	r1, r2, [r2]			@ clear the exclusive monitor
 #endif
+
+/* IAMROOT-12:
+ * -------------
+ * fast syscall을 사용하는 경우 r0의 보관 및 복구가 필요 없다.
+ * ldmdb {}^ : spsr이 가리키는 모드의 레지스터셋으로 복구한다.
+ */
 	.if	\fast
 	ldmdb	r2, {r1 - lr}^			@ get calling r1 - lr
 	.else
 	ldmdb	r2, {r0 - lr}^			@ get calling r0 - lr
 	.endif
+
+/* IAMROOT-12:
+ * -------------
+ * ARMv5T와 그 이전 버전의 아키텍처는 ldm {}^ 후에는 반드시 nop이 필요한다.
+ */
+
 	mov	r0, r0				@ ARMv5T and earlier require a nop
 						@ after ldm {}^
+
+/* IAMROOT-12:
+ * -------------
+ * 
+ */
 	add	sp, sp, #\offset + S_FRAME_SIZE
 	movs	pc, lr				@ return & move spsr_svc into cpsr
 	.endm
@@ -360,6 +394,11 @@
 /*
  * Context tracking subsystem.  Used to instrument transitions
  * between user and kernel mode.
+ */
+
+/* IAMROOT-12:
+ * -------------
+ * user -> 커널 context tracking 정보를 분석할 때 사용하는 디버그 정보
  */
 	.macro ct_user_exit, save = 1
 #ifdef CONFIG_CONTEXT_TRACKING

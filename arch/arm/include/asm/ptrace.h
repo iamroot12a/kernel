@@ -22,6 +22,10 @@ struct pt_regs {
 	unsigned long uregs[18];
 };
 
+/* IAMROOT-12:
+ * -------------
+ * 스택에 보관해둔 cpsr(현재 상태레지스터)값이 usr 모드인 경우 true
+ */
 #define user_mode(regs)	\
 	(((regs)->ARM_cpsr & 0xf) == 0)
 

@@ -187,6 +187,11 @@
 /*
  * Get current thread_info.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * 현재 cpu 스택의 가장 마지막에 있는 thread_info 구조체를 가져온다.
+ */
 	.macro	get_thread_info, rd
  ARM(	mov	\rd, sp, lsr #THREAD_SIZE_ORDER + PAGE_SHIFT	)
  THUMB(	mov	\rd, sp			)

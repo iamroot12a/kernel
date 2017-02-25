@@ -46,6 +46,11 @@
 # ifdef CPU_PABORT_HANDLER
 #  define MULTI_PABORT 1
 # else
+
+/* IAMROOT-12:
+ * -------------
+ * rpi2: v7_pabort
+ */
 #  define CPU_PABORT_HANDLER v7_pabort
 # endif
 #endif

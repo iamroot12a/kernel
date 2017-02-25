@@ -51,10 +51,28 @@
 	.macro	pabt_helper
 	@ PABORT handler takes pt_regs in r2, fault address in r4 and psr in r5
 #ifdef MULTI_PABORT
+/* IAMROOT-12:
+ * -------------
+ * 컴파일 타임에 결정하지 않고 런타임에 아키텍처가 결정되는 경우에 사용된다.
+ * (Device Tree를 사용해야 하는 경우에는 무조건 이러한 방법을 사용한다.)
+ *
+ * 전역 processor (processor 구조체) 포인터 -> ip에 저장
+ */
 	ldr	ip, .LCprocfns
 	mov	lr, pc
+
+/* IAMROOT-12:
+ * -------------
+ * processor->_prefetch_abort() 함수로 jump한다.
+ */
+
 	ldr	pc, [ip, #PROCESSOR_PABT_FUNC]
 #else
+/* IAMROOT-12:
+ * -------------
+ * rpi2: ARMv7 코드로 고정되어 컴파일되므로 아래 루틴이 동작한다.
+ * (arch/arm/mm/pabort-v7.S - v7_pabort 엔트리 수행)
+ */
 	bl	CPU_PABORT_HANDLER
 #endif
 	.endm
@@ -316,6 +334,11 @@ ENDPROC(__fiq_svc)
 	.word	cr_alignment
 #ifdef MULTI_DABORT
 .LCprocfns:
+
+/* IAMROOT-12:
+ * -------------
+ * 전역 processor (processor 구조체)를 가리키는 포인터
+ */
 	.word	processor
 #endif
 .LCfp:
@@ -427,13 +450,12 @@ ENDPROC(__fiq_abt)
  * stack에 위치한 pt_regs 값
  * ---------------------------
  *           old-r0 <- orig_r0 
- *           psr    <- spsr_<e>
+ *           psr    <- spsr_<e>  
  *   r0 ->   pc     <- lr_<e>
  *           lr     <- lr
  *           sp     <- sp
  *           ....
  *   sp ->   r0 
- *
  */
 	stmia	r0, {r4 - r6}
  ARM(	stmdb	r0, {sp, lr}^			)
@@ -453,9 +475,23 @@ ENDPROC(__fiq_abt)
 	@
 	@ Clear FP to mark the first stack frame
 	@
+
+/* IAMROOT-12:
+ * -------------
+ * back trace 등의 디버그 정보를 위해 CONFIG_FRAME_POINTER를 설정하고 
+ * 사용한다. 이 옵션을 설정하지 않으면 frame pointer에 대한 정보를 
+ * 사용하지 못해 디버그 정보가 상당히 제한된다.
+ *
+ * 추측: 이 시점 이전의 back trace는 추적을 못하므로 0으로 초기화한다.
+ */
 	zero_fp
 
 	.if	\trace
+
+/* IAMROOT-12:
+ * -------------
+ * hardirq tracing을 위한 코드
+ */
 #ifdef CONFIG_IRQSOFF_TRACER
 	bl	trace_hardirqs_off
 #endif
@@ -771,6 +807,11 @@ ENDPROC(__und_usr_fault_16)
 
 	.align	5
 __pabt_usr:
+
+/* IAMROOT-12:
+ * -------------
+ * 스택에 pt_regs 공간을 확보하고 레지스터들을 보관한다.
+ */
 	usr_entry
 	mov	r2, sp				@ regs
 	pabt_helper
@@ -782,6 +823,13 @@ __pabt_usr:
 ENTRY(ret_from_exception)
  UNWIND(.fnstart	)
  UNWIND(.cantunwind	)
+
+/* IAMROOT-12:
+ * -------------
+ * arch/arm/include/asm/assembler.h
+ * tsk: r9
+ * why: r8
+ */
 	get_thread_info tsk
 	mov	why, #0
 	b	ret_to_user

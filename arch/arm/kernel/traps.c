@@ -240,6 +240,11 @@ static int __die(const char *str, int err, struct pt_regs *regs)
 	static int die_counter;
 	int ret;
 
+/* IAMROOT-12:
+ * -------------
+ * 이머전시 메시지를 출력하고 디버그(backtrace 포함) 정보를 출력한다.
+ */
+
 	pr_emerg("Internal error: %s: %x [#%d]" S_PREEMPT S_SMP S_ISA "\n",
 	         str, err, ++die_counter);
 
@@ -305,8 +310,18 @@ static void oops_end(unsigned long flags, struct pt_regs *regs, int signr)
 	raw_local_irq_restore(flags);
 	oops_exit();
 
+/* IAMROOT-12:
+ * -------------
+ * 인터럽트 서비스 중인 경우 panic 처리한다.
+ */
 	if (in_interrupt())
 		panic("Fatal exception in interrupt");
+
+/* IAMROOT-12:
+ * -------------
+ * "oops=panic" 커널 파라메터 또는 CONFIG_PANIC_ON_OOPS_VALUE 커널 옵션이 
+ * 설정된 경우 곧바로 panic 처리한다.
+ */
 	if (panic_on_oops)
 		panic("Fatal exception");
 	if (signr)
@@ -322,11 +337,26 @@ void die(const char *str, struct pt_regs *regs, int err)
 	unsigned long flags = oops_begin();
 	int sig = SIGSEGV;
 
+/* IAMROOT-12:
+ * -------------
+ * 커널에서 문제가 생긴 경우 버그 리포트 출력을 한다.
+ */
+
 	if (!user_mode(regs))
 		bug_type = report_bug(regs->ARM_pc, regs);
+
+/* IAMROOT-12:
+ * -------------
+ * 버그 타입이 명백한 경우 "Oops - BUG" 메시지를 출력한다.
+ */
 	if (bug_type != BUG_TRAP_TYPE_NONE)
 		str = "Oops - BUG";
 
+/* IAMROOT-12:
+ * -------------
+ * 죽기 전에 스택백트레이스 등 디버그 정보 출력 
+ * (스택백트레이스 정보가 출력되면 0을 반환한다.)
+ */
 	if (__die(str, err, regs))
 		sig = 0;
 
@@ -336,12 +366,22 @@ void die(const char *str, struct pt_regs *regs, int err)
 void arm_notify_die(const char *str, struct pt_regs *regs,
 		struct siginfo *info, unsigned long err, unsigned long trap)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * exception 당시 user 모드였던 경우 signal을 보낸다.
+ */
 	if (user_mode(regs)) {
 		current->thread.error_code = err;
 		current->thread.trap_no = trap;
 
 		force_sig_info(info->si_signo, info, current);
 	} else {
+
+/* IAMROOT-12:
+ * -------------
+ * exception 당시 kernel 모드였던 경우 die 처리한다.
+ */
 		die(str, regs, err);
 	}
 }

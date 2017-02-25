@@ -18,6 +18,11 @@ static inline int fsr_fs(unsigned int fsr)
 #else
 static inline int fsr_fs(unsigned int fsr)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * FSR(Falut Status Register):bit10, bit3:0를 읽어서 0~31 값으로 반환한다.
+ */
 	return (fsr & FSR_FS3_0) | (fsr & FSR_FS4) >> 6;
 }
 #endif

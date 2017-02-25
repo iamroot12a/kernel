@@ -27,6 +27,11 @@
 #define PANIC_TIMER_STEP 100
 #define PANIC_BLINK_SPD 18
 
+/* IAMROOT-12:
+ * -------------
+ * CONFIG_PANIC_ON_OOPS_VALUE에 따라 panic 처리 여부가 결정된다.
+ * rpi2: 0으로 처리되어 panic되지 않는다.
+ */
 int panic_on_oops = CONFIG_PANIC_ON_OOPS_VALUE;
 static unsigned long tainted_mask;
 static int pause_on_oops;
@@ -512,6 +517,11 @@ static int __init oops_setup(char *s)
 {
 	if (!s)
 		return -EINVAL;
+
+/* IAMROOT-12:
+ * -------------
+ * "oops=panic"인 경우 panic_on_oops = 1이 설정된다.
+ */
 	if (!strcmp(s, "panic"))
 		panic_on_oops = 1;
 	return 0;

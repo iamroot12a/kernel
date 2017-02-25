@@ -577,17 +577,39 @@ hook_ifault_code(int nr, int (*fn)(unsigned long, unsigned int, struct pt_regs *
 asmlinkage void __exception
 do_PrefetchAbort(unsigned long addr, unsigned int ifsr, struct pt_regs *regs)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * fsr_info[fs] 구조체 하나를 가져온다.
+ */
 	const struct fsr_info *inf = ifsr_info + fsr_fs(ifsr);
 	struct siginfo info;
 
+/* IAMROOT-12:
+ * -------------
+ * 0~31개의 핸들러 중 fault 값에 따른 하나를 호출한다.
+ * 성공하면 종료하고 실패하는 경우 alert 메시지를 출력하고
+ *   - user에서 문제가 생긴 경우 signal을 발생
+ *   - kernel에서 문제가 생긴 경우 die 처리한다.
+ *
+ */
 	if (!inf->fn(addr, ifsr | FSR_LNX_PF, regs))
 		return;
 
 	pr_alert("Unhandled prefetch abort: %s (0x%03x) at 0x%08lx\n",
 		inf->name, ifsr, addr);
 
+/* IAMROOT-12:
+ * -------------
+ * 시그널 번호
+ */
 	info.si_signo = inf->sig;
 	info.si_errno = 0;
+
+/* IAMROOT-12:
+ * -------------
+ * 코드는 fault에 대한 이유(why) 코드가 담긴다.
+ */
 	info.si_code  = inf->code;
 	info.si_addr  = (void __user *)addr;
 	arm_notify_die("", regs, &info, ifsr, 0);

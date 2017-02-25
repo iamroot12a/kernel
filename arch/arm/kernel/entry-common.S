@@ -16,6 +16,12 @@
 #ifdef CONFIG_NEED_RET_TO_USER
 #include <mach/entry-macro.S>
 #else
+
+/* IAMROOT-12:
+ * -------------
+ * ARCH_IOP13XX 아키텍처(freescale)에서 사용하는 코드로 rpi2에서는 blank
+ */
+
 	.macro  arch_ret_to_user, tmp1, tmp2
 	.endm
 #endif
@@ -69,14 +75,35 @@ ENTRY(ret_to_user)
 ret_slow_syscall:
 	disable_irq				@ disable interrupts
 ENTRY(ret_to_user_from_irq)
+
+/* IAMROOT-12:
+ * -------------
+ * tsk <- thread_info()
+ *
+ * curr->flags에 TIF_WORK_MASK플래그가 있는 경우 work_pending으로 이동
+ */
 	ldr	r1, [tsk, #TI_FLAGS]
 	tst	r1, #_TIF_WORK_MASK
 	bne	work_pending
 no_work_pending:
+
+/* IAMROOT-12:
+ * -------------
+ * 디버그 tracing을 한다.
+ */
 	asm_trace_hardirqs_on
 
 	/* perform architecture specific actions before user return */
+
+/* IAMROOT-12:
+ * -------------
+ * rpi2는 아래 코드가 blank이다.
+ */
 	arch_ret_to_user r1, lr
+/* IAMROOT-12:
+ * -------------
+ * CONFIG_CONTEXT_TRACKING 커널 옵션을 사용하는 경우 사용된다.
+ */
 	ct_user_enter save = 0
 
 	restore_user_regs fast = 0, offset = 0
