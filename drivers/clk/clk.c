@@ -3033,6 +3033,11 @@ static int parent_ready(struct device_node *np)
 	int i = 0;
 
 	while (true) {
+
+/* IAMROOT-12:
+ * -------------
+ * i 인덱스의 부모 클럭을 찾는다.
+ */
 		struct clk *clk = of_clk_get(np, i);
 
 		/* this parent is ready we can check the next one */
@@ -3043,6 +3048,11 @@ static int parent_ready(struct device_node *np)
 		}
 
 		/* at least one parent is not ready, we exit now */
+
+/* IAMROOT-12:
+ * -------------
+ * 한 부모라도 초기화되지 않은 경우 0을 반환한다.
+ */
 		if (PTR_ERR(clk) == -EPROBE_DEFER)
 			return 0;
 
@@ -3054,6 +3064,11 @@ static int parent_ready(struct device_node *np)
 		 * parent, no need to wait for them, then we can
 		 * consider their absence as being ready
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 모든 부모가 준비된 경우
+ */
 		return 1;
 	}
 }
@@ -3078,6 +3093,15 @@ void __init of_clk_init(const struct of_device_id *matches)
 		matches = &__clk_of_table;
 
 	/* First prepare the list of the clocks providers */
+
+/* IAMROOT-12:
+ * -------------
+ * 클럭 드라이버들(of_device_id 구조체가 __clk_of_table 섹션)의 compatible명과
+ * 디바이스 트리의 compatible 명이 동일한 노드들에 대한 iteration
+ *
+ * clk_provider_list에 clock_provider를 구성한다.
+ * (clock_provider는 device_node *와 초기화 함수로 구성된다)
+ */
 	for_each_matching_node_and_match(np, matches, &match) {
 		struct clock_provider *parent =
 			kzalloc(sizeof(struct clock_provider),	GFP_KERNEL);
@@ -3087,12 +3111,24 @@ void __init of_clk_init(const struct of_device_id *matches)
 		list_add_tail(&parent->node, &clk_provider_list);
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 가장 상위 부모부터 초기화를 수행한다. (dependency)
+ * (루프 중 한 번도 초기화되지 않은 경우가 발생하면 최종적으로 초기화한다)
+ */
 	while (!list_empty(&clk_provider_list)) {
 		is_init_done = false;
 		list_for_each_entry_safe(clk_provider, next,
 					&clk_provider_list, node) {
 			if (force || parent_ready(clk_provider->np)) {
 
+/* IAMROOT-12:
+ * -------------
+ * drivers/clk 디렉토리에 등록된 클럭 디바이스의 초기화 함수를 호출한다.
+ * rpi2: "fixed-rate" 및 "fixed-factor" 드라이버를 사용한다.
+ *       - drivers/clk/clk-fixed-rate.c - of_fixed_clk_setup() 
+ *       - drivers/clk/clk-fixed-factor.c - of_fixed_factor_clk_setup() 
+ */
 				clk_provider->clk_init_cb(clk_provider->np);
 				of_clk_set_defaults(clk_provider->np, true);
 

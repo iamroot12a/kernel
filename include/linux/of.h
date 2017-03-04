@@ -849,6 +849,12 @@ static inline int of_property_read_s32(const struct device_node *np,
 #define for_each_matching_node(dn, matches) \
 	for (dn = of_find_matching_node(NULL, matches); dn; \
 	     dn = of_find_matching_node(dn, matches))
+
+/* IAMROOT-12:
+ * -------------
+ * matches: of_device_id들이 저장된 섹션 주소 (OF_DECLARE)
+ * match:   
+ */
 #define for_each_matching_node_and_match(dn, matches, match) \
 	for (dn = of_find_matching_node_and_match(NULL, matches, match); \
 	     dn; dn = of_find_matching_node_and_match(dn, matches, match))
@@ -897,6 +903,13 @@ static inline int of_get_available_child_count(const struct device_node *np)
  *        .data = rmem_cma_setup }
  */
 #ifdef CONFIG_OF
+
+/* IAMROOT-12:
+ * -------------
+ * of_device_id 구조체를 __<table>__of_table 섹션에 저장한다.
+ * .compatible = 드라이버명 
+ * .data = 초기화 함수
+ */
 #define _OF_DECLARE(table, name, compat, fn, fn_type)			\
 	static const struct of_device_id __of_table_##name		\
 		__used __section(__##table##_of_table)			\
@@ -910,9 +923,19 @@ static inline int of_get_available_child_count(const struct device_node *np)
 		     .data = (fn == (fn_type)NULL) ? fn : fn }
 #endif
 
+/* IAMROOT-12:
+ * -------------
+ * 컴파일 시 타입체크 용도로만 사용한다.
+ */
 typedef int (*of_init_fn_2)(struct device_node *, struct device_node *);
 typedef void (*of_init_fn_1)(struct device_node *);
 
+/* IAMROOT-12:
+ * -------------
+ * __<table>__of_table 형태의 섹션에 저장한다.
+ * compat=드라이버명 
+ * fn=초기화 함수를 지정한다.
+ */
 #define OF_DECLARE_1(table, name, compat, fn) \
 		_OF_DECLARE(table, name, compat, fn, of_init_fn_1)
 #define OF_DECLARE_2(table, name, compat, fn) \

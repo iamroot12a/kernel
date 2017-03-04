@@ -59,11 +59,22 @@ ret_fast_syscall:
 fast_work_pending:
 	str	r0, [sp, #S_R0+S_OFF]!		@ returned r0
 work_pending:
+
+/* IAMROOT-12:
+ * -------------
+ * r1: curr->flags 에 TIF_WORK_MASK 관련 비트가 설정되어 pending work를 수행 
+ */
 	mov	r0, sp				@ 'regs'
 	mov	r2, why				@ 'syscall'
 	bl	do_work_pending
 	cmp	r0, #0
 	beq	no_work_pending
+
+/* IAMROOT-12:
+ * -------------
+ * pending된 signal 처리 중 restart해야 하는 경우 예외처리를 위해
+ * restart_syscall을 호출하기 위해 준비한다.
+ */
 	movlt	scno, #(__NR_restart_syscall - __NR_SYSCALL_BASE)
 	ldmia	sp, {r0 - r6}			@ have to reload r0 - r6
 	b	local_restart			@ ... and off we go

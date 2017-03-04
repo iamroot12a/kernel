@@ -56,6 +56,12 @@ struct clk *of_clk_get_by_clkspec(struct of_phandle_args *clkspec)
 	return __of_clk_get_by_clkspec(clkspec, NULL, __func__);
 }
 
+
+/* IAMROOT-12:
+ * -------------
+ * "clocks" 속성 값에서 부모 클럭을 찾아온다.
+ * (클럭 소스(부모)가 여러 개일 때 index로 지정한다.)
+ */
 static struct clk *__of_clk_get(struct device_node *np, int index,
 			       const char *dev_id, const char *con_id)
 {
@@ -77,6 +83,10 @@ static struct clk *__of_clk_get(struct device_node *np, int index,
 	return clk;
 }
 
+/* IAMROOT-12:
+ * -------------
+ * index 번호의 부모 클럭을 찾는다.
+ */
 struct clk *of_clk_get(struct device_node *np, int index)
 {
 	return __of_clk_get(np, index, np->full_name, NULL);

@@ -612,6 +612,11 @@ struct clk_onecell_data {
 
 extern struct of_device_id __clk_of_table;
 
+/* IAMROOT-12:
+ * -------------
+ * __clk_of_table 섹션에 of_device_id 구조체 형태로 저장한다.
+ * (.compatible=드라이버명, .data=초기화함수)
+ */
 #define CLK_OF_DECLARE(name, compat, fn) OF_DECLARE_1(clk, name, compat, fn)
 
 #ifdef CONFIG_OF

@@ -197,7 +197,17 @@
 	.endm
 
 #ifndef CONFIG_THUMB2_KERNEL
+
+/* IAMROOT-12:
+ * -------------
+ * svc_exit 매크로
+ */
 	.macro	svc_exit, rpsr, irq = 0
+
+/* IAMROOT-12:
+ * -------------
+ * 인수 irq=0/1 여부에 따라 디버그용으로 trace_hardirqs_on/off를 수행
+ */
 	.if	\irq != 0
 	@ IRQs already off
 #ifdef CONFIG_TRACE_IRQFLAGS
@@ -215,12 +225,27 @@
 	blne	trace_hardirqs_off
 #endif
 	.endif
+
+/* IAMROOT-12:
+ * -------------
+ * 인수로 받은 \rpsr -> spsr에 저장
+ */
 	msr	spsr_cxsf, \rpsr
 #if defined(CONFIG_CPU_V6) || defined(CONFIG_CPU_32v6K)
+
+/* IAMROOT-12:
+ * -------------
+ * 스택의 사용하지 않는 공간을 이용하여 clrex와 동일하게 동작하는 strex 수행 
+ */
 	@ We must avoid clrex due to Cortex-A15 erratum #830321
 	sub	r0, sp, #4			@ uninhabited address
 	strex	r1, r2, [r0]			@ clear the exclusive monitor
 #endif
+
+/* IAMROOT-12:
+ * -------------
+ * 커널 모드의 레지스터들을 모두 복구
+ */
 	ldmia	sp, {r0 - pc}^			@ load r0 - pc, cpsr
 	.endm
 

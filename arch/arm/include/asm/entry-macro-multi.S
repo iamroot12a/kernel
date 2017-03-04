@@ -4,6 +4,11 @@
  * Interrupt handling.  Preserves r7, r8, r9
  */
 	.macro	arch_irq_handler_default
+
+/* IAMROOT-12:
+ * -------------
+ * arch/arm/mach-bcm2709//include/mach/entry-macro.S
+ */
 	get_irqnr_preamble r6, lr
 1:	get_irqnr_and_base r0, r2, r6, lr
 	movne	r1, sp
@@ -11,6 +16,12 @@
 	@ routine called with r0 = irq number, r1 = struct pt_regs *
 	@
 	adrne	lr, BSYM(1b)
+
+/* IAMROOT-12:
+ * -------------
+ * r0: irqno
+ * r1: pt_regs *
+ */
 	bne	asm_do_IRQ
 
 #ifdef CONFIG_SMP

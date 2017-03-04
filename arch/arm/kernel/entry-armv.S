@@ -37,12 +37,30 @@
  * Interrupt handling.
  */
 	.macro	irq_handler
+
+/* IAMROOT-12:
+ * -------------
+ * Device Tree등을 사용하는 시스템에서는 컴파일 타임에 아키텍처가 결정되지 않아
+ * irq 핸들러 함수를 결정할 수 없으므로 런타임에 결정해서 동작해야 한다.
+ * (부트업 타임에 전역 handle_arch_irq 후크에 런타임에 결정된 irq 핸들러를 
+ * 설정해줘야 한다.)
+ *
+ * 추후 커널 v4.4 이상에서는 아래 MULTI_IRQ_HANDLER를 설정하여 사용한다.
+ */
 #ifdef CONFIG_MULTI_IRQ_HANDLER
 	ldr	r1, =handle_arch_irq
 	mov	r0, sp
 	adr	lr, BSYM(9997f)
 	ldr	pc, [r1]
 #else
+
+/* IAMROOT-12:
+ * -------------
+ * 컴파일 타임에 해당 아키텍처가 결정되었으므로 irq 핸들러를 직접 호출한다.
+ * rpi2: MULTI_IRQ_HANDLER를 사용하지 않는다.
+ *
+ * -> arch/arm/include/asm/entry-macro-multi.S 
+ */
 	arch_irq_handler_default
 #endif
 9997:
@@ -159,6 +177,10 @@ ENDPROC(__und_invalid)
  * SVC mode handlers
  */
 
+/* IAMROOT-12:
+ * -------------
+ * CONFIG_AEABI를 지원하는 경우만 코드가 컴파일되게 한다.
+ */
 #if defined(CONFIG_AEABI) && (__LINUX_ARM_ARCH__ >= 5)
 #define SPFIX(code...) code
 #else
@@ -168,6 +190,14 @@ ENDPROC(__und_invalid)
 	.macro	svc_entry, stack_hole=0, trace=1
  UNWIND(.fnstart		)
  UNWIND(.save {r0 - pc}		)
+
+/* IAMROOT-12:
+ * -------------
+ * sp=레지스터들 + stack_hole - 4 바이트 (r0용은 루틴 뒤에서 추가)
+ *
+ * stack_hole은 CONFIG_KPROBES 커널 옵션을 사용할 때 stmdb등 멀티플 명령에
+ * 대해 에뮬레이션하며 최대 16개의 레지스터 백업 공간을 확보하게 한다.
+ */
 	sub	sp, sp, #(S_FRAME_SIZE + \stack_hole - 4)
 #ifdef CONFIG_THUMB2_KERNEL
  SPFIX(	str	r0, [sp]	)	@ temporarily saved
@@ -175,8 +205,21 @@ ENDPROC(__und_invalid)
  SPFIX(	tst	r0, #4		)	@ test original stack alignment
  SPFIX(	ldr	r0, [sp]	)	@ restored
 #else
+
+/* IAMROOT-12:
+ * -------------
+ * 8바이트 정렬여부를 체크한다.
+ */
  SPFIX(	tst	sp, #4		)
 #endif
+
+/* IAMROOT-12:
+ * -------------
+ * r0를 제외한 스택이 8바이트 정렬된 경우 스택을 4만큼 증가한다.
+ * (결국 r0를 포함한 스택이 8바이트 정렬되어 있지 않은 경우 4만큼 추가하여 정렬)
+ * sp=0x0000_1004 
+ * sp=0x0000_1008 -> 0x0000_10004 
+ */
  SPFIX(	subeq	sp, sp, #4	)
 	stmia	sp, {r1 - r12}
 
@@ -307,6 +350,11 @@ __und_svc_finish:
 ENDPROC(__und_svc)
 
 	.align	5
+
+/* IAMROOT-12:
+ * -------------
+ * 커널(svc)모드에서 pre-fetch abort exception되어 진입한 경우
+ */
 __pabt_svc:
 	svc_entry
 	mov	r2, sp				@ regs
@@ -1459,5 +1507,10 @@ cr_alignment:
 #ifdef CONFIG_MULTI_IRQ_HANDLER
 	.globl	handle_arch_irq
 handle_arch_irq:
+
+/* IAMROOT-12:
+ * -------------
+ * irq 핸들러 함수의 주소를 가리킨다. (런타임에 결정)
+ */
 	.space	4
 #endif
