@@ -429,3 +429,8 @@ page_address_init()
 ### 97주차
 - 2017.02.25, Kosslab (9명, 권경환, 문영일, 양유석, 윤창호, 임채훈, 정재준, 조현철, 최영민, 한상종)
 - exception handler ~
+
+### 98주차
+- 2017.03.04, Kosslab (10명, 권경환, 김민호, 김종철, 문영일, 윤창호, 임채훈, 정재준, 조현철, 최영민, 한상종)
+- exception handler
+- common clk subsystem
