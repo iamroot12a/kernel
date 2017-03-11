@@ -77,6 +77,11 @@ struct clk_core {
 	struct kref		ref;
 };
 
+/* IAMROOT-12:
+ * -------------
+ * clk 구조체에는 가장 중요한 클럭 정보를 담은 clk_core를 가리키고 
+ * child_node들을 담고 있다.
+ */
 struct clk {
 	struct clk_core	*core;
 	const char *dev_id;
@@ -600,13 +605,34 @@ EXPORT_SYMBOL_GPL(__clk_get_parent);
 static struct clk_core *clk_core_get_parent_by_index(struct clk_core *clk,
 							 u8 index)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 요청한 인덱스가 부모 수보다 많으면 null을 반환한다.
+ */
 	if (!clk || index >= clk->num_parents)
 		return NULL;
+
+/* IAMROOT-12:
+ * -------------
+ * 부모배열이 만들어지지 않은 경우 인덱스에 해당하는 부모이름으로 검색하여 반환한다
+ */
 	else if (!clk->parents)
 		return clk_core_lookup(clk->parent_names[index]);
+
+/* IAMROOT-12:
+ * -------------
+ * 해당 인덱스에 대한 부모가 지정되지 않은 경우 해당하는 부모이름으로 검색하여 
+ * 해당 인덱스에 저장하고 반환한다.
+ */
 	else if (!clk->parents[index])
 		return clk->parents[index] =
 			clk_core_lookup(clk->parent_names[index]);
+
+/* IAMROOT-12:
+ * -------------
+ * 해당 인덱스에 이미 부모가 지정되어 있는 경우 검색없이 바로 그 클럭을 반환한다
+ */
 	else
 		return clk->parents[index];
 }
@@ -738,9 +764,17 @@ static struct clk_core *__clk_lookup_subtree(const char *name,
 	struct clk_core *child;
 	struct clk_core *ret;
 
+/* IAMROOT-12:
+ * -------------
+ * clk_core->name과 요청한 name이 동일하면 해당 클럭코어를 반환한다.
+ */
 	if (!strcmp(clk->name, name))
 		return clk;
 
+/* IAMROOT-12:
+ * -------------
+ * 자식 클럭을 대상으로 검색한다. (재귀루틴)
+ */
 	hlist_for_each_entry(child, &clk->children, child_node) {
 		ret = __clk_lookup_subtree(name, child);
 		if (ret)
@@ -759,6 +793,11 @@ static struct clk_core *clk_core_lookup(const char *name)
 		return NULL;
 
 	/* search the 'proper' clk tree first */
+
+/* IAMROOT-12:
+ * -------------
+ * 루트만 등록되는 리스트에서 name으로 검색한다.
+ */
 	hlist_for_each_entry(root_clk, &clk_root_list, child_node) {
 		ret = __clk_lookup_subtree(name, root_clk);
 		if (ret)
@@ -766,6 +805,11 @@ static struct clk_core *clk_core_lookup(const char *name)
 	}
 
 	/* if not found, then search the orphan tree */
+
+/* IAMROOT-12:
+ * -------------
+ * 고아 클럭만 등록되는 리스트에서 name으로 검색한다.
+ */
 	hlist_for_each_entry(root_clk, &clk_orphan_list, child_node) {
 		ret = __clk_lookup_subtree(name, root_clk);
 		if (ret)
@@ -1218,6 +1262,12 @@ static int __clk_notify(struct clk_core *clk, unsigned long msg,
 	cnd.old_rate = old_rate;
 	cnd.new_rate = new_rate;
 
+/* IAMROOT-12:
+ * -------------
+ * 클럭 notify 체인에 등록한 클럭에서 인수로 지정된 클럭이 있는 경우 
+ * 그 클럭에 등록된 함수를 호출하고 결과를 알아온다.
+ * (결과: NOTIFY_DONE, NOTIFY_STOP, NOTIFY_BAD)
+ */
 	list_for_each_entry(cn, &clk_notifier_list, node) {
 		if (cn->clk->core == clk) {
 			cnd.clk = cn->clk;
@@ -1245,15 +1295,35 @@ static void __clk_recalc_accuracies(struct clk_core *clk)
 	unsigned long parent_accuracy = 0;
 	struct clk_core *child;
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 클럭 및 자식 클럭들의 정확도를 재산출하게 한다.
+ */
+
+/* IAMROOT-12:
+ * -------------
+ * 부모가 지정된 경우 부모의 정확도를 가져온다.
+ */
 	if (clk->parent)
 		parent_accuracy = clk->parent->accuracy;
 
+/* IAMROOT-12:
+ * -------------
+ * 가져온 부모이 정확도로 (*recalc_accuracy) 함수를 호출하여 재계산된 
+ * 정확도를 클럭에 설정한다.
+ *
+ * (*recalc_accuracy)가 제공되지 않는 경우에는 부모의 정확도 값을 사용한다.
+ */
 	if (clk->ops->recalc_accuracy)
 		clk->accuracy = clk->ops->recalc_accuracy(clk->hw,
 							  parent_accuracy);
 	else
 		clk->accuracy = parent_accuracy;
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 클럭의 children 클럭들을 모두 재계산한다. (재귀호출)
+ */
 	hlist_for_each_entry(child, &clk->children, child_node)
 		__clk_recalc_accuracies(child);
 }
@@ -1293,6 +1363,12 @@ EXPORT_SYMBOL_GPL(clk_get_accuracy);
 static unsigned long clk_recalc(struct clk_core *clk,
 				unsigned long parent_rate)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * (*recalc_rate) 함수가 제공된 경우 호출하여 재산출된 rate를 가져오고 
+ * 함수가 없으면 부모 rate 값을 그대로 반환한다.
+ */
 	if (clk->ops->recalc_rate)
 		return clk->ops->recalc_rate(clk->hw, parent_rate);
 	return parent_rate;
@@ -1318,6 +1394,10 @@ static void __clk_recalc_rates(struct clk_core *clk, unsigned long msg)
 	unsigned long parent_rate = 0;
 	struct clk_core *child;
 
+/* IAMROOT-12:
+ * -------------
+ * 부모 클럭의 rate로 현재 클럭 및 자식들 클럭들을 모두 재계산한다. 
+ */
 	old_rate = clk->rate;
 
 	if (clk->parent)
@@ -1329,6 +1409,11 @@ static void __clk_recalc_rates(struct clk_core *clk, unsigned long msg)
 	 * ignore NOTIFY_STOP and NOTIFY_BAD return values for POST_RATE_CHANGE
 	 * & ABORT_RATE_CHANGE notifiers
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * notify 체인에 등록된 클럭에 대해 등록된 함수를 호출하고 그 결과는 무시한다.
+ */
 	if (clk->notifier_count && msg)
 		__clk_notify(clk, msg, old_rate, clk->rate);
 
@@ -1403,8 +1488,23 @@ static int clk_fetch_parent_index(struct clk_core *clk,
 
 static void clk_reparent(struct clk_core *clk, struct clk_core *new_parent)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 기존 관리되고 있는 리스트에서 제거하는데 다음과 같이 2가지 케이스가 가능하다.
+ *     1) 전역 고아 클럭 리스트에서 제거
+ *     2) 기존 모 노드의 children에서 제거
+ */
 	hlist_del(&clk->child_node);
 
+
+/* IAMROOT-12:
+ * -------------
+ * 부모가 지정되었을 때 이미 그 부모의 새 자식이 이 클럭인 경우 null을 대입하고
+ * 부모의 children 리스트에 추가한다. 
+ *
+ * 부모가 없는 경우 고아 클럭 리스트에 추가한다.
+ */
 	if (new_parent) {
 		/* avoid duplicate POST_RATE_CHANGE notifications */
 		if (new_parent->new_child == clk)
@@ -1415,6 +1515,10 @@ static void clk_reparent(struct clk_core *clk, struct clk_core *new_parent)
 		hlist_add_head(&clk->child_node, &clk_orphan_list);
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 새 부모를 선택한다.
+ */
 	clk->parent = new_parent;
 }
 
@@ -1931,9 +2035,17 @@ static struct clk_core *__clk_init_parent(struct clk_core *clk)
 
 	/* handle the trivial cases */
 
+/* IAMROOT-12:
+ * -------------
+ * 부모 클럭이 없는 경우 종료
+ */
 	if (!clk->num_parents)
 		goto out;
 
+/* IAMROOT-12:
+ * -------------
+ * 부모 클럭이 하나인 경우 부모 클럭을 찾아 연결한다.
+ */
 	if (clk->num_parents == 1) {
 		if (IS_ERR_OR_NULL(clk->parent))
 			clk->parent = clk_core_lookup(clk->parent_names[0]);
@@ -1941,6 +2053,10 @@ static struct clk_core *__clk_init_parent(struct clk_core *clk)
 		goto out;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * mux 타입 클럭에서 (*get_parent) 함수가 구현되지 않은 드라이버는 에러
+ */
 	if (!clk->ops->get_parent) {
 		WARN(!clk->ops->get_parent,
 			"%s: multi-parent clocks must implement .get_parent\n",
@@ -1954,13 +2070,25 @@ static struct clk_core *__clk_init_parent(struct clk_core *clk)
 	 * that is done by the calling function.
 	 */
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 시점에서 가장(best) 적절한 부모 클럭 인덱스를 구한다.
+ */
 	index = clk->ops->get_parent(clk->hw);
 
+/* IAMROOT-12:
+ * -------------
+ * 부모 클럭을 연결하기 위해 부모 수 만큼 포인터 배열을 할당한다.
+ */
 	if (!clk->parents)
 		clk->parents =
 			kcalloc(clk->num_parents, sizeof(struct clk *),
 					GFP_KERNEL);
 
+/* IAMROOT-12:
+ * -------------
+ * 인덱스에 따른 부모를 찾아 연결하고 반환한다.
+ */
 	ret = clk_core_get_parent_by_index(clk, index);
 
 out:
@@ -1970,6 +2098,12 @@ out:
 static void clk_core_reparent(struct clk_core *clk,
 				  struct clk_core *new_parent)
 {
+/* IAMROOT-12:
+ * -------------
+ * 새 부모로 바뀌면서 현재 클럭 이하 모든 자식 클럭들의 정확도와 rate를 
+ * 재설정한다. 다만 rate를 바꾸는 과정에서 클럭 notify chain에 등록한 
+ * 함수의 처리 결과를 반영하지는 않는다.
+ */
 	clk_reparent(clk, new_parent);
 	__clk_recalc_accuracies(clk);
 	__clk_recalc_rates(clk, POST_RATE_CHANGE);
@@ -2227,6 +2361,11 @@ static int __clk_init(struct device *dev, struct clk *clk_user)
 	clk_prepare_lock();
 
 	/* check to see if a clock with this name is already registered */
+
+/* IAMROOT-12:
+ * -------------
+ * 모든 클럭 트리에서 clk_core->name으로 검색
+ */
 	if (clk_core_lookup(clk->name)) {
 		pr_debug("%s: clk %s already initialized\n",
 				__func__, clk->name);
@@ -2235,6 +2374,15 @@ static int __clk_init(struct device *dev, struct clk *clk_user)
 	}
 
 	/* check that clk_ops are sane.  See Documentation/clk.txt */
+
+/* IAMROOT-12:
+ * -------------
+ * (*set_rate)를 제공한 클럭은 (*round_rate) 또는 (*determine_rate) 함수가
+ * (*recalc_rate) 함수와 같이 제공되어야 한다.
+ *
+ * (*set_rate)를 제공하는 클럭은 다음 3가지 기본 타입이 있다.
+ *   fixed-factor, divider, fractional-divider, (composite)
+ */
 	if (clk->ops->set_rate &&
 	    !((clk->ops->round_rate || clk->ops->determine_rate) &&
 	      clk->ops->recalc_rate)) {
@@ -2244,6 +2392,12 @@ static int __clk_init(struct device *dev, struct clk *clk_user)
 		goto out;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * (*set_parent)를 제공한 클럭은 (*get_parent)도 제공해야 한다.
+ *
+ * (*set_parent)를 제공하는 클럭은 mux 타입 클럭이다. (composite 포함)
+ */
 	if (clk->ops->set_parent && !clk->ops->get_parent) {
 		pr_warning("%s: %s must implement .get_parent & .set_parent\n",
 				__func__, clk->name);
@@ -2251,6 +2405,13 @@ static int __clk_init(struct device *dev, struct clk *clk_user)
 		goto out;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * (*set_rate_and_parent) 함수가 제공된 경우 (*set_parent)와 (*set_rate) 함수도
+ * 제공해야 한다.
+ *
+ * (*set_rate_and_parent)를 제공하는 클럭은 composite 타입 클럭이다.
+ */
 	if (clk->ops->set_rate_and_parent &&
 			!(clk->ops->set_parent && clk->ops->set_rate)) {
 		pr_warn("%s: %s must implement .set_parent & .set_rate\n",
@@ -2260,6 +2421,13 @@ static int __clk_init(struct device *dev, struct clk *clk_user)
 	}
 
 	/* throw a WARN if any entries in parent_names are NULL */
+
+/* IAMROOT-12:
+ * -------------
+ * 부모 클럭명들 중 하나라도 null인 클럭은 경고 메시지를 출력한다.
+ *
+ * (디바이스 트리 구성 시 스펠링 오류 또는 구성 오류 시 발생할 수 있다.)
+ */
 	for (i = 0; i < clk->num_parents; i++)
 		WARN(!clk->parent_names[i],
 				"%s: invalid NULL in %s's .parent_names\n",
@@ -2275,6 +2443,14 @@ static int __clk_init(struct device *dev, struct clk *clk_user)
 	 * If clk->parents is not NULL we skip this entire block.  This allows
 	 * for clock drivers to statically initialize clk->parents.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * mux(멀티플렉서) 타입 클럭 장치에 부모 클럭 배열이 구성되지 않은 경우 할당한다.
+ *
+ * 부모가 하나일 경우 clk_core->parents는 부모 클럭을 가리키지만 
+ * 부모가 둘 이상일 경우 배열로 사용한다.
+ */
 	if (clk->num_parents > 1 && !clk->parents) {
 		clk->parents = kcalloc(clk->num_parents, sizeof(struct clk *),
 					GFP_KERNEL);
@@ -2284,12 +2460,22 @@ static int __clk_init(struct device *dev, struct clk *clk_user)
 		 * for a NULL pointer.  We can always perform lazy lookups for
 		 * missing parents later on.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 부모 클럭명으로 부모클럭을 찾아 연결한다.
+ */
 		if (clk->parents)
 			for (i = 0; i < clk->num_parents; i++)
 				clk->parents[i] =
 					clk_core_lookup(clk->parent_names[i]);
 	}
 
+
+/* IAMROOT-12:
+ * -------------
+ * 부모 클럭을 찾아서 연결한다.
+ */
 	clk->parent = __clk_init_parent(clk);
 
 	/*
@@ -2302,6 +2488,13 @@ static int __clk_init(struct device *dev, struct clk *clk_user)
 	 * clocks and re-parent any that are children of the clock currently
 	 * being clk_init'd.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 부모가 선택된 경우 이 클럭을 부모클럭의 자식으로 등록한다.
+ * 부모가 없이 루트 노드인 경우 루트 노드만 있는 리스트에 등록하고,
+ * 그렇지 않은 경우 고아 노드만 있는 리스트에 등록한다.
+ */
 	if (clk->parent)
 		hlist_add_head(&clk->child_node,
 				&clk->parent->children);
@@ -2317,6 +2510,15 @@ static int __clk_init(struct device *dev, struct clk *clk_user)
 	 * parent (or is orphaned) then accuracy is set to zero (perfect
 	 * clock).
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * (*recalc_accuracy)가 등록된 경우 해당 함수를 호출할 때 부모의 정확도를 
+ * 사용하여 함수를 호출한다.
+ *
+ * 등록된 함수가 없는 경우 부모의 정확도를 사용하고 그렇지 않으면 0을 대입한다.
+ * (0->perfect 클럭: 원하는 rate와 동일하게 설정된 경우로 추정됨)
+ */
 	if (clk->ops->recalc_accuracy)
 		clk->accuracy = clk->ops->recalc_accuracy(clk->hw,
 					__clk_get_accuracy(clk->parent));
@@ -2330,6 +2532,12 @@ static int __clk_init(struct device *dev, struct clk *clk_user)
 	 * Since a phase is by definition relative to its parent, just
 	 * query the current clock phase, or just assume it's in phase.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * (*get_phase)가 등록된 경우 위상 값을 알아온다. 
+ * 함수가 제공되지 않는 경우 위상 값은 0도 이다. (0=match)
+ */
 	if (clk->ops->get_phase)
 		clk->phase = clk->ops->get_phase(clk->hw);
 	else
@@ -2341,6 +2549,13 @@ static int __clk_init(struct device *dev, struct clk *clk_user)
 	 * parent's rate.  If a clock doesn't have a parent (or is orphaned)
 	 * then rate is set to zero.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * (*recalc_rate)가 등록된 경우 부모 클럭 주파수 값으로 재계산한다.
+ * 만일 함수가 제공되지 않는 경우 부모 클럭 주파수를 사용하고,
+ * 부모가 없는 경우 0으로 한다.
+ */
 	if (clk->ops->recalc_rate)
 		rate = clk->ops->recalc_rate(clk->hw,
 				clk_core_get_rate_nolock(clk->parent));
@@ -2354,6 +2569,18 @@ static int __clk_init(struct device *dev, struct clk *clk_user)
 	 * walk the list of orphan clocks and reparent any that are children of
 	 * this clock
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 예) 고아 클럭의 부모가 이제야 등록되는 상황에서 고아 클럭 리스트들을 
+ *     순서대로 처리하는데 
+ *
+ * case A) (*get_parent)가 제공되는 mux의 경우 
+ *
+ *     (*get_parent)하여 부모 인덱스 값을 한 번에 얻어오고 그 부모의 이름과
+ *     등록할 클럭의 이름이 동일한 경우 고아 클럭의 부모로 지금 등록한 클럭을 
+ *     지정한다.
+ */
 	hlist_for_each_entry_safe(orphan, tmp2, &clk_orphan_list, child_node) {
 		if (orphan->num_parents && orphan->ops->get_parent) {
 			i = orphan->ops->get_parent(orphan->hw);
@@ -2362,6 +2589,14 @@ static int __clk_init(struct device *dev, struct clk *clk_user)
 			continue;
 		}
 
+
+/* IAMROOT-12:
+ * -------------
+ * case B) (*get_parent)가 제공되지 않는 경우 
+ *
+ *      부모 수만큼 루프를 돌며 그 부모의 이름과 등록할 클럭의 이름이 동일한 
+ *      경우 고아 클럭의 부모로 지금 등록한 클럭을 지정한다.
+ */
 		for (i = 0; i < orphan->num_parents; i++)
 			if (!strcmp(clk->name, orphan->parent_names[i])) {
 				clk_core_reparent(orphan, clk);
@@ -2377,6 +2612,11 @@ static int __clk_init(struct device *dev, struct clk *clk_user)
 	 * Please consider other ways of solving initialization problems before
 	 * using this callback, as its use is discouraged.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 플랫폼 종속 코드가 잇는 경우 해당 초기화 함수를 수행한다.
+ */
 	if (clk->ops->init)
 		clk->ops->init(clk->hw);
 
@@ -2399,6 +2639,10 @@ struct clk *__clk_create_clk(struct clk_hw *hw, const char *dev_id,
 	if (!hw || IS_ERR(hw))
 		return (struct clk *) hw;
 
+/* IAMROOT-12:
+ * -------------
+ * clk 구조체를 할당받는다.
+ */
 	clk = kzalloc(sizeof(*clk), GFP_KERNEL);
 	if (!clk)
 		return ERR_PTR(-ENOMEM);
@@ -2409,6 +2653,11 @@ struct clk *__clk_create_clk(struct clk_hw *hw, const char *dev_id,
 	clk->max_rate = ULONG_MAX;
 
 	clk_prepare_lock();
+
+/* IAMROOT-12:
+ * -------------
+ * clk_core->clks에 할당받은 clk 구조체를 등록한다.
+ */
 	hlist_add_head(&clk->child_node, &hw->core->clks);
 	clk_prepare_unlock();
 
@@ -2440,6 +2689,10 @@ struct clk *clk_register(struct device *dev, struct clk_hw *hw)
 	int i, ret;
 	struct clk_core *clk;
 
+/* IAMROOT-12:
+ * -------------
+ * clk_core 구조체를 할당받는다.
+ */
 	clk = kzalloc(sizeof(*clk), GFP_KERNEL);
 	if (!clk) {
 		pr_err("%s: could not allocate clk\n", __func__);
@@ -2462,6 +2715,13 @@ struct clk *clk_register(struct device *dev, struct clk_hw *hw)
 	hw->core = clk;
 
 	/* allocate local copy in case parent_names is __initdata */
+
+/* IAMROOT-12:
+ * -------------
+ * num_parents 갯수만큼 문자열(부모클럭명)을 가리키는 포인터 배열을 할당한다.
+ *
+ * fixed-rate 타입 클럭은 부모가 없으므로 null이다.
+ */
 	clk->parent_names = kcalloc(clk->num_parents, sizeof(char *),
 					GFP_KERNEL);
 
@@ -2473,6 +2733,11 @@ struct clk *clk_register(struct device *dev, struct clk_hw *hw)
 
 
 	/* copy each string name in case parent_names is __initdata */
+
+/* IAMROOT-12:
+ * -------------
+ * 부모클럭에 대한 문자열을 복사하여 연결한다.
+ */
 	for (i = 0; i < clk->num_parents; i++) {
 		clk->parent_names[i] = kstrdup_const(hw->init->parent_names[i],
 						GFP_KERNEL);
@@ -2483,6 +2748,10 @@ struct clk *clk_register(struct device *dev, struct clk_hw *hw)
 		}
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * clk_core->clks 리스트를 초기화하고 clk 구조체 하나를 할당받아 등록한다.
+ */
 	INIT_HLIST_HEAD(&clk->clks);
 
 	hw->clk = __clk_create_clk(hw, NULL, NULL);

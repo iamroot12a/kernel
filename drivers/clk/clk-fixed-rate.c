@@ -71,6 +71,10 @@ struct clk *clk_register_fixed_rate_with_accuracy(struct device *dev,
 		return ERR_PTR(-ENOMEM);
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * clk_init_data 구조체는 클럭 등록 후 사용되지 않는다.
+ */
 	init.name = name;
 	init.ops = &clk_fixed_rate_ops;
 	init.flags = flags | CLK_IS_BASIC;
@@ -83,6 +87,13 @@ struct clk *clk_register_fixed_rate_with_accuracy(struct device *dev,
 	fixed->hw.init = &init;
 
 	/* register the clock */
+
+/* IAMROOT-12:
+ * -------------
+ * fixed-rate 타입 정보를 clk_fixed_rate에 구성하고 클럭을 등록한다.
+ * 
+ * fixed->hw 구조체는 custom(clk_fiexed_rate, ...) 클럭 정보와의 연결을 취급한다.
+ */
 	clk = clk_register(dev, &fixed->hw);
 	if (IS_ERR(clk))
 		kfree(fixed);
@@ -119,6 +130,13 @@ void of_fixed_clk_setup(struct device_node *node)
 	u32 rate;
 	u32 accuracy = 0;
 
+/* IAMROOT-12:
+ * -------------
+ * 아래 속성 값들을 읽어와서 fixed-rate 타입 클럭을 등록한다.
+ * rate     <- "clock-frequency"
+ * accuracy <- "clock-accuracy"
+ * clk_name <- "clock-output-names"
+ */
 	if (of_property_read_u32(node, "clock-frequency", &rate))
 		return;
 
@@ -126,6 +144,10 @@ void of_fixed_clk_setup(struct device_node *node)
 
 	of_property_read_string(node, "clock-output-names", &clk_name);
 
+/* IAMROOT-12:
+ * -------------
+ * fixed-rate 타입 클럭은 항상 루트로 등록한다.
+ */
 	clk = clk_register_fixed_rate_with_accuracy(NULL, clk_name, NULL,
 						    CLK_IS_ROOT, rate,
 						    accuracy);
