@@ -22,6 +22,27 @@
  * top-level framework.  custom flags for dealing with hardware specifics
  * belong in struct clk_foo
  */
+
+/* IAMROOT-12:
+ * -------------
+ * CLK_SET_RATE_GATE
+ *      - 
+ * CLK_SET_PARENT_GATE
+ *
+ * CLK_SET_RATE_PARENT
+ *      -
+ * CLK_IGNORE_UNUSED
+ *      -
+ * CLK_IS_ROOT
+ *      -
+ * CLK_IS_BASIC
+ *
+ * CLK_GET_RATE_NOCACHE 
+ * 
+ * CLK_SET_RATE_NO_REPARENT 
+ *
+ * CLK_GET_ACCURACY_NOCACHE
+ */
 #define CLK_SET_RATE_GATE	BIT(0) /* must be gated across rate change */
 #define CLK_SET_PARENT_GATE	BIT(1) /* must be gated across re-parent */
 #define CLK_SET_RATE_PARENT	BIT(2) /* propagate rate change up one level */

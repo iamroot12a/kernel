@@ -31,6 +31,11 @@
 static unsigned long clk_fixed_rate_recalc_rate(struct clk_hw *hw,
 		unsigned long parent_rate)
 {
+/* IAMROOT-12:
+ * -------------
+ * fixed-rate 타입의 클럭에서 재계산은 변환없이 그대로 rate를 반환한다.
+ */
+
 	return to_clk_fixed_rate(hw)->fixed_rate;
 }
 

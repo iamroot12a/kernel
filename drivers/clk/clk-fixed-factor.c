@@ -28,9 +28,20 @@
 static unsigned long clk_factor_recalc_rate(struct clk_hw *hw,
 		unsigned long parent_rate)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * clk_fixed_factor 구조체 내부에 hw가 있는데 이 주소를 사용하여 
+ * clk_fixed_factor 구조체 주소를 알아온다.
+ */
 	struct clk_fixed_factor *fix = to_clk_fixed_factor(hw);
 	unsigned long long int rate;
 
+/* IAMROOT-12:
+ * -------------
+ * 인수로 받은 parent_rate * mult / div 값을 반환한다.
+ * (예: parent_rate(80Mhz) * mult(1) / div(8) = 10Mhz를 반환
+ */
 	rate = (unsigned long long int)parent_rate * fix->mult;
 	do_div(rate, fix->div);
 	return (unsigned long)rate;
@@ -84,10 +95,19 @@ struct clk *clk_register_fixed_factor(struct device *dev, const char *name,
 	fix->div = div;
 	fix->hw.init = &init;
 
+/* IAMROOT-12:
+ * -------------
+ * local 용도의 구조체로 클럭이 등록된 후 버린다.
+ */
 	init.name = name;
 	init.ops = &clk_fixed_factor_ops;
 	init.flags = flags | CLK_IS_BASIC;
 	init.parent_names = &parent_name;
+
+/* IAMROOT-12:
+ * -------------
+ * 부모 클럭은 무조건 1개 (mux 클럭인 경우에만 n개)
+ */
 	init.num_parents = 1;
 
 	clk = clk_register(dev, &fix->hw);
@@ -110,6 +130,11 @@ void __init of_fixed_factor_clk_setup(struct device_node *node)
 	const char *parent_name;
 	u32 div, mult;
 
+/* IAMROOT-12:
+ * -------------
+ * "clock-div" 및 "clock-mult" 속성 값을 읽어온다.
+ * (divider 값, multiplier 값)
+ */
 	if (of_property_read_u32(node, "clock-div", &div)) {
 		pr_err("%s Fixed factor clock <%s> must have a clock-div property\n",
 			__func__, node->name);
@@ -122,11 +147,32 @@ void __init of_fixed_factor_clk_setup(struct device_node *node)
 		return;
 	}
 
+
+/* IAMROOT-12:
+ * -------------
+ * "clock-outpu-names" 속성 값(클럭명)을 읽어온다.
+ */
 	of_property_read_string(node, "clock-output-names", &clk_name);
+
+/* IAMROOT-12:
+ * -------------
+ * 부모 인덱스는 0으로 부모클럭명을 알아온다.
+ * (부모 클럭이 멀티 클럭인 경우 처음 것을 사용한다.)
+ */
 	parent_name = of_clk_get_parent_name(node, 0);
 
+/* IAMROOT-12:
+ * -------------
+ * fixed-factor형 클럭을 등록한다.
+ */
 	clk = clk_register_fixed_factor(NULL, clk_name, parent_name, 0,
 					mult, div);
+
+/* IAMROOT-12:
+ * -------------
+ * 디바이스 트리에서 이 클럭의 parsing은 simple_get을 사용한다.
+ * -of_clk_src_simple_get() 함수는 parsing 없이 그대로 인덱스를 전달
+ */
 	if (!IS_ERR(clk))
 		of_clk_add_provider(node, of_clk_src_simple_get, clk);
 }

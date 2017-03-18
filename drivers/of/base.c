@@ -221,6 +221,11 @@ static int __init of_init(void)
 }
 core_initcall(of_init);
 
+
+/* IAMROOT-12:
+ * -------------
+ * 속성을 찾고 속성이 사용한 바이트 수가 lenp에 담긴다.
+ */
 static struct property *__of_find_property(const struct device_node *np,
 					   const char *name, int *lenp)
 {
@@ -309,6 +314,11 @@ const void *__of_get_property(const struct device_node *np,
 /*
  * Find a property with a given name for a given node
  * and return the value.
+ */
+
+/* IAMROOT-12:
+ * -------------
+ * 지정된 노드에서 속성을 찾고 속성이 사용한 바이트 수가 lenp에 담긴다.
  */
 const void *of_get_property(const struct device_node *np, const char *name,
 			    int *lenp)
@@ -1057,6 +1067,10 @@ struct device_node *of_find_node_by_phandle(phandle handle)
 	if (!handle)
 		return NULL;
 
+/* IAMROOT-12:
+ * -------------
+ * 전체 노드를 검색하여 해당 노드의 phandle 값을 찾아 그 노드를 반환한다.
+ */
 	raw_spin_lock_irqsave(&devtree_lock, flags);
 	for_each_of_allnodes(np)
 		if (np->phandle == handle)
@@ -1442,6 +1456,17 @@ static int __of_parse_phandle_with_args(const struct device_node *np,
 	phandle phandle;
 
 	/* Retrieve the phandle list property */
+
+/* IAMROOT-12:
+ * -------------
+ * 예) "clocks = "<&c0 16>, <&c1 24 30>"; ---> list_name="clocks"
+ *                  ^
+ *                  |
+ *                  +---- phandle
+ *
+ *     요청 index=1,    out_args = { np=&c1, args_count=2, args[] = {24, 30}}
+ *
+ */
 	list = of_get_property(np, list_name, &size);
 	if (!list)
 		return -ENOENT;
@@ -1456,6 +1481,11 @@ static int __of_parse_phandle_with_args(const struct device_node *np,
 		 * If phandle is 0, then it is an empty entry with no
 		 * arguments.  Skip forward to the next entry.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 빅엔디안 형태의 4바이트 phandle 값을 읽어온다.
+ */
 		phandle = be32_to_cpup(list++);
 		if (phandle) {
 			/*
@@ -1467,7 +1497,18 @@ static int __of_parse_phandle_with_args(const struct device_node *np,
 			 * except when we're going to return the found node
 			 * below.
 			 */
+
+/* IAMROOT-12:
+ * -------------
+ * 예) "#clock-cells = 1"   --> cells_name 
+ */
+
 			if (cells_name || cur_index == index) {
+
+/* IAMROOT-12:
+ * -------------
+ * phandle 값으로 노드를 찾아온다.
+ */
 				node = of_find_node_by_phandle(phandle);
 				if (!node) {
 					pr_err("%s: could not find phandle\n",
@@ -1476,6 +1517,14 @@ static int __of_parse_phandle_with_args(const struct device_node *np,
 				}
 			}
 
+/* IAMROOT-12:
+ * -------------
+ * 예) 부모 클럭(phandle이 가리키는) 노드의 #clock-cells 속성 값을 읽어온다.
+ *     count <- "#clock-cells" 값이 담기고 phandle 뒤에 따라오는 인수를
+ *     몇 개 읽어와야 하는지 결정하게 한다.
+ *
+ *     특정 시스템은 2를 사용하는 경우도 있다. (보통 0 ~ 1)
+ */
 			if (cells_name) {
 				if (of_property_read_u32(node, cells_name,
 							 &count)) {
@@ -1485,6 +1534,12 @@ static int __of_parse_phandle_with_args(const struct device_node *np,
 					goto err;
 				}
 			} else {
+
+/* IAMROOT-12:
+ * -------------
+ * 예) 부모 클럭 노드에 "#clock-cells"가 없는 경우 인수로 지정한 cell_count(0)
+ * 값을 사용한다.
+ */
 				count = cell_count;
 			}
 
@@ -1514,6 +1569,12 @@ static int __of_parse_phandle_with_args(const struct device_node *np,
 				int i;
 				if (WARN_ON(count > MAX_PHANDLE_ARGS))
 					count = MAX_PHANDLE_ARGS;
+
+/* IAMROOT-12:
+ * -------------
+ * 찾은 노드와 인수 갯수를 out_args->np와 out_args_args_count에 대입한다.
+ * 그 후 인수 갯수 만큼 읽어 out_args->args[]에 저장한다.
+ */
 				out_args->np = node;
 				out_args->args_count = count;
 				for (i = 0; i < count; i++)
@@ -1609,6 +1670,13 @@ int of_parse_phandle_with_args(const struct device_node *np, const char *list_na
 {
 	if (index < 0)
 		return -EINVAL;
+
+/* IAMROOT-12:
+ * -------------
+ * list_name: 예) 클럭 디바이스를 취급 시 "clocks" 속성 사용
+ * cells_name: 예)     "                  "#clock-cells" 속성 사용
+ */
+
 	return __of_parse_phandle_with_args(np, list_name, cells_name, 0,
 					    index, out_args);
 }

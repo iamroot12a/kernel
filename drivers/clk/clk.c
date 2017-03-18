@@ -664,6 +664,11 @@ static unsigned long clk_core_get_rate_nolock(struct clk_core *clk)
 		goto out;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 루트 클럭이거나 부모 클럭이 있는 경우 현재 클럭의 rate 값을 반환하고,
+ * 부모 클럭이 지정되지 않은 경우 0을 반환한다.
+ */
 	ret = clk->rate;
 
 	if (clk->flags & CLK_IS_ROOT)
@@ -2364,7 +2369,9 @@ static int __clk_init(struct device *dev, struct clk *clk_user)
 
 /* IAMROOT-12:
  * -------------
- * 모든 클럭 트리에서 clk_core->name으로 검색
+ * 모든 클럭 트리에서 clk_core->name으로 검색하여 이미 클럭명이 지정된 경우 
+ * 초기화가 된것으로 간주하여 함수를 빠져나간다.
+ * (루트 클럭 리스트 & 코아 클럭 리스트에서 검색)
  */
 	if (clk_core_lookup(clk->name)) {
 		pr_debug("%s: clk %s already initialized\n",
@@ -2518,6 +2525,8 @@ static int __clk_init(struct device *dev, struct clk *clk_user)
  *
  * 등록된 함수가 없는 경우 부모의 정확도를 사용하고 그렇지 않으면 0을 대입한다.
  * (0->perfect 클럭: 원하는 rate와 동일하게 설정된 경우로 추정됨)
+ *
+ * (*recalc_accuracy)의 구현은 fixed-rate 타입의 함수에서 구현되어 있다.
  */
 	if (clk->ops->recalc_accuracy)
 		clk->accuracy = clk->ops->recalc_accuracy(clk->hw,
@@ -2537,6 +2546,8 @@ static int __clk_init(struct device *dev, struct clk *clk_user)
  * -------------
  * (*get_phase)가 등록된 경우 위상 값을 알아온다. 
  * 함수가 제공되지 않는 경우 위상 값은 0도 이다. (0=match)
+ *
+ * 예) sunxi/clk-mod0.c & rockchip/clk-mmc-phase.c
  */
 	if (clk->ops->get_phase)
 		clk->phase = clk->ops->get_phase(clk->hw);
@@ -2555,6 +2566,10 @@ static int __clk_init(struct device *dev, struct clk *clk_user)
  * (*recalc_rate)가 등록된 경우 부모 클럭 주파수 값으로 재계산한다.
  * 만일 함수가 제공되지 않는 경우 부모 클럭 주파수를 사용하고,
  * 부모가 없는 경우 0으로 한다.
+ *
+ * (*recalc_rate)가 없는 타입: gate, mux,  타입 
+ *
+ * fixed-factor 타입: clk_factor_recalc_rate()
  */
 	if (clk->ops->recalc_rate)
 		rate = clk->ops->recalc_rate(clk->hw,
@@ -2719,8 +2734,11 @@ struct clk *clk_register(struct device *dev, struct clk_hw *hw)
 /* IAMROOT-12:
  * -------------
  * num_parents 갯수만큼 문자열(부모클럭명)을 가리키는 포인터 배열을 할당한다.
+ * (num_parents = 4, 4개의 포인터(4/8 바이트)만큼 배열이 만들어진다.
  *
  * fixed-rate 타입 클럭은 부모가 없으므로 null이다.
+ * fixed-factor 타입 클럭은 num_parents=1이다.
+ * mux 타입 클럭은 num_parents > 1 이다.
  */
 	clk->parent_names = kcalloc(clk->num_parents, sizeof(char *),
 					GFP_KERNEL);
@@ -3255,17 +3273,52 @@ const char *of_clk_get_parent_name(struct device_node *np, int index)
 	if (index < 0)
 		return NULL;
 
+/* IAMROOT-12:
+ * -------------
+ * "clocks = <&c0 40>, <&c1 50>, ....;" <- phandle 값에서 index 번호의 클럭 
+ * 노드를 찾아 clkspec을 산출해온다.
+ *
+ * 예) index=0
+ *     clkspec = {np=&c0, args_count=1, args[]={40}}
+ */
 	rc = of_parse_phandle_with_args(np, "clocks", "#clock-cells", index,
 					&clkspec);
 	if (rc)
 		return NULL;
 
+
+/* IAMROOT-12:
+ * -------------
+ * 부모 클럭이 멀티 클럭인 경우 처음 클럭을 index 값으로 한다.
+ *
+ * #clock-cells = <1> 인 경우 멀티 클럭으로 클럭이 2개 이상이다.
+ *                따라서 clock-output-names = "aaa", "bbb", ... 와 같이 
+ *                2개 이상의 클럭명을 지정할 수 있다.
+ *
+ * "clock-indices = <0>, <1>, <3>, <5>, <8>, <12>, <13>, ...;"
+ *
+ * 부모 클럭 노드 {
+ *                   clock-indices = <10>, <20>, <30>, <40>;
+ *                   clock-output-names = "c1-10", "c1-20", "c1-30", "c1-40";
+ * }
+ *
+ * 이 경우 index = 10이 된다.
+ */
 	index = clkspec.args_count ? clkspec.args[0] : 0;
 	count = 0;
 
 	/* if there is an indices property, use it to transfer the index
 	 * specified into an array offset for the clock-output-names property.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 부모 클럭의 "clock-indices"에 있는 인덱스 값들에서 index와 동일한 경우의 
+ * count 값을 찾는다. 
+ *
+ * 예) 위의 예에서 index=10인 경우 count=0이고 이 값을 다시 index에 대입 
+ *     index <- 0
+ */
 	of_property_for_each_u32(clkspec.np, "clock-indices", prop, vp, pv) {
 		if (index == pv) {
 			index = count;
@@ -3274,6 +3327,10 @@ const char *of_clk_get_parent_name(struct device_node *np, int index)
 		count++;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 부모 클럭의 "clock-output-names" 속성 값에서 index 번째의 클럭명을 반환
+ */
 	if (of_property_read_string_index(clkspec.np, "clock-output-names",
 					  index,
 					  &clk_name) < 0)
