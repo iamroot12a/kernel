@@ -40,6 +40,15 @@ struct clk;
  *     completed.  Callbacks must always return NOTIFY_DONE or NOTIFY_OK.
  *
  */
+
+/* IAMROOT-12:
+ * -------------
+ * 클럭 통지 요청을 한 클럭들에 대해 rate 검토를 하는데 
+ * 정상인 경우 pre -> post를 보내고
+ * 실패인 경우 pre -> abort를 보낸다.
+ *
+ * 변경과 관련된 토플로지에 범위에 대해 통지를 한다.
+ */
 #define PRE_RATE_CHANGE			BIT(0)
 #define POST_RATE_CHANGE		BIT(1)
 #define ABORT_RATE_CHANGE		BIT(2)

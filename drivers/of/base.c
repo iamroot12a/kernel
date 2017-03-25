@@ -1599,6 +1599,11 @@ static int __of_parse_phandle_with_args(const struct device_node *np,
 	 * -EINVAL : parsing error on data
 	 * [1..n]  : Number of phandle (count mode; when index = -1)
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * index에 -1을 사용한 경우 파싱하여 인덱스(phandle 개수) 개수를 반환한다.
+ */
 	rc = index < 0 ? cur_index : -ENOENT;
  err:
 	if (node)
@@ -1741,6 +1746,14 @@ EXPORT_SYMBOL(of_parse_phandle_with_fixed_args);
 int of_count_phandle_with_args(const struct device_node *np, const char *list_name,
 				const char *cells_name)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * index에 -1을 사용하고, out_args에 null을 사용한 경우 
+ * 참조된 phandle 노드 수를 알아온다.
+ *
+ * (클럭에서 사용 시: 참조한 부모 클럭의 개수를 알아온다.)
+ */
 	return __of_parse_phandle_with_args(np, list_name, cells_name, 0, -1,
 					    NULL);
 }

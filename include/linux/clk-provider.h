@@ -26,11 +26,11 @@
 /* IAMROOT-12:
  * -------------
  * CLK_SET_RATE_GATE
- *      - 
+ *      - gate(clock disable)가 되어 있어야 rate를 설정할 수 있다.
  * CLK_SET_PARENT_GATE
- *
+ *      - 
  * CLK_SET_RATE_PARENT
- *      -
+ *      - rate 설정을 위해 부모 클럭도 진행한다.
  * CLK_IGNORE_UNUSED
  *      -
  * CLK_IS_ROOT

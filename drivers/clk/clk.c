@@ -900,9 +900,17 @@ static void clk_core_get_boundaries(struct clk_core *clk,
 	*min_rate = 0;
 	*max_rate = ULONG_MAX;
 
+/* IAMROOT-12:
+ * -------------
+ * core->clks에 등록된 clk들에서 가장 높은 min_rate를 구한다.
+ */
 	hlist_for_each_entry(clk_user, &clk->clks, child_node)
 		*min_rate = max(*min_rate, clk_user->min_rate);
 
+/* IAMROOT-12:
+ * -------------
+ * core->clks에 등록된 clk들에서 가장 낮은 max_rate를 구한다.
+ */
 	hlist_for_each_entry(clk_user, &clk->clks, child_node)
 		*max_rate = min(*max_rate, clk_user->max_rate);
 }
@@ -984,14 +992,27 @@ static int clk_core_prepare(struct clk_core *clk)
 {
 	int ret = 0;
 
+/* IAMROOT-12:
+ * -------------
+ * top 클럭인 경우 부모가 없으므로 상위 재귀 호출에서 빠져나올때 사용한다.
+ */
 	if (!clk)
 		return 0;
 
+/* IAMROOT-12:
+ * -------------
+ * 클럭이 준비되지 않은 경우 최상위 부모의 클럭을 준비시킨다.
+ */
 	if (clk->prepare_count == 0) {
 		ret = clk_core_prepare(clk->parent);
 		if (ret)
 			return ret;
 
+/* IAMROOT-12:
+ * -------------
+ * 최상위 클럭 소스부터 다음에 위치한 gate 클럭의 문을 모두 연다(prepare).
+ * 에러가 발생하지 않는한 계속 그 이하 gate를 열게된다.
+ */
 		if (clk->ops->prepare) {
 			ret = clk->ops->prepare(clk->hw);
 			if (ret) {
@@ -1090,6 +1111,11 @@ static int clk_core_enable(struct clk_core *clk)
 	if (!clk)
 		return 0;
 
+/* IAMROOT-12:
+ * -------------
+ * prepare 후 enable 가능하다.
+ * 나머지 코드는 clk_core_prepare()와 동일한 진행을 한다.
+ */
 	if (WARN_ON(clk->prepare_count == 0))
 		return -ESHUTDOWN;
 
@@ -1463,6 +1489,11 @@ static int clk_fetch_parent_index(struct clk_core *clk,
 {
 	int i;
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 클럭의 부모 클럭들에 대해 지정되지 않은 경우 부모 수 만큼 
+ * clk_core 포인터를 할당한다.
+ */
 	if (!clk->parents) {
 		clk->parents = kcalloc(clk->num_parents,
 					sizeof(struct clk *), GFP_KERNEL);
@@ -1475,6 +1506,12 @@ static int clk_fetch_parent_index(struct clk_core *clk,
 	 * or if not yet cached, use string name comparison and cache
 	 * them now to avoid future calls to clk_core_lookup.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 부모 클럭을 이름으로 검색하여 연결하고 인덱스 값을 반환한다. (0~)
+ * 못 찾은 경우 -ENOMEM을 반환한다.
+ */
 	for (i = 0; i < clk->num_parents; i++) {
 		if (clk->parents[i] == parent)
 			return i;
@@ -1550,6 +1587,11 @@ static struct clk_core *__clk_set_parent_before(struct clk_core *clk,
 	 *
 	 * See also: Comment for clk_set_parent() below.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 새 부모의 클럭이 준비된 경우 enable 시킨다.
+ */
 	if (clk->prepare_count) {
 		clk_core_prepare(parent);
 		flags = clk_enable_lock();
@@ -1559,6 +1601,11 @@ static struct clk_core *__clk_set_parent_before(struct clk_core *clk,
 	}
 
 	/* update the clk tree topology */
+
+/* IAMROOT-12:
+ * -------------
+ * new_child, new_parent가 현재 클럭의 토플로지에 반영된다.
+ */
 	flags = clk_enable_lock();
 	clk_reparent(clk, parent);
 	clk_enable_unlock(flags);
@@ -1576,6 +1623,11 @@ static void __clk_set_parent_after(struct clk_core *core,
 	 * Finish the migration of prepare state and undo the changes done
 	 * for preventing a race with clk_enable().
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 사용하지 않는 클럭은 disable -> unprepare 처리한다.
+ */
 	if (core->prepare_count) {
 		flags = clk_enable_lock();
 		clk_core_disable(core);
@@ -1673,9 +1725,22 @@ static void clk_calc_subtree(struct clk_core *clk, unsigned long new_rate,
 	clk->new_parent_index = p_index;
 	/* include clk in new parent's PRE_RATE_CHANGE notifications */
 	clk->new_child = NULL;
+
+/* IAMROOT-12:
+ * -------------
+ * 부모 클럭이 바뀐 경우 새 부모 클럭의 new_child에 현재 클럭이 등록될거라고 
+ * 준비한다. (propogate 과정에서 commit될 때 변경된다.)
+ */
 	if (new_parent && new_parent != clk->parent)
 		new_parent->new_child = clk;
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 클럭의 자식 클럭들의 rate를 재평가하여 new_rate에 잠시 기록해둔다.
+ * 역시 propogate 과정에서 commit되는 경우 rate <- new_rate 반영된다
+ * 자식 밑으로도 자식이 있는 경우 재귀호출하여 
+ * 평가(new_parent, new_child, new_rate) 한다.
+ */
 	hlist_for_each_entry(child, &clk->children, child_node) {
 		child->new_rate = clk_recalc(child, new_rate);
 		clk_calc_subtree(child, child->new_rate, NULL, 0);
@@ -1707,9 +1772,19 @@ static struct clk_core *clk_calc_new_rates(struct clk_core *clk,
 	if (parent)
 		best_parent_rate = parent->rate;
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 클럭이 설정할 수 있는 범위(min ~ max)를 알아온다.
+ */
 	clk_core_get_boundaries(clk, &min_rate, &max_rate);
 
 	/* find the closest rate and parent clk/rate */
+
+/* IAMROOT-12:
+ * -------------
+ * mux 기능이 구현된 클럭인 경우 해당 드라이버가 부모 클럭을 선택하여
+ * 결정한 rate 값을 가져온다.
+ */
 	if (clk->ops->determine_rate) {
 		parent_hw = parent ? parent->hw : NULL;
 		new_rate = clk->ops->determine_rate(clk->hw, rate,
@@ -1718,15 +1793,31 @@ static struct clk_core *clk_calc_new_rates(struct clk_core *clk,
 						    &best_parent_rate,
 						    &parent_hw);
 		parent = parent_hw ? parent_hw->core : NULL;
+
+/* IAMROOT-12:
+ * -------------
+ * divider류의 클럭인 경우 해당 드라이버가 설정할 수 있는 best rate를 알아온다.
+ */
 	} else if (clk->ops->round_rate) {
 		new_rate = clk->ops->round_rate(clk->hw, rate,
 						&best_parent_rate);
 		if (new_rate < min_rate || new_rate > max_rate)
 			return NULL;
+
+/* IAMROOT-12:
+ * -------------
+ * 루트 클럭이거나 부모 클럭을 설정하지 못하게 한 경우 현재 클럭 선에서 
+ * 결정하게 한다.
+ */
 	} else if (!parent || !(clk->flags & CLK_SET_RATE_PARENT)) {
 		/* pass-through clock without adjustable parent */
 		clk->new_rate = clk->rate;
 		return NULL;
+
+/* IAMROOT-12:
+ * -------------
+ * gate류의 클럭인 경우 부모 클럭 rate를 상속받는다.
+ */
 	} else {
 		/* pass-through clock with adjustable parent */
 		top = clk_calc_new_rates(parent, rate);
@@ -1735,6 +1826,13 @@ static struct clk_core *clk_calc_new_rates(struct clk_core *clk,
 	}
 
 	/* some clocks must be gated to change parent */
+
+/* IAMROOT-12:
+ * -------------
+ * mux 클럭 드라이버로 인해 부모 클럭이 변경되었는데 CLK_SET_PARENT_GATE 옵션
+ * 으로 인해 gate되지 않은 클럭에 대해 rate 변경을 요청하게 한 경우 
+ * 디버그 로그를 출력하고 더 이상 처리없이 함수를 빠져나간다.
+ */
 	if (parent != old_parent &&
 	    (clk->flags & CLK_SET_PARENT_GATE) && clk->prepare_count) {
 		pr_debug("%s: %s not gated but wants to reparent\n",
@@ -1743,6 +1841,11 @@ static struct clk_core *clk_calc_new_rates(struct clk_core *clk,
 	}
 
 	/* try finding the new parent index */
+
+/* IAMROOT-12:
+ * -------------
+ * mux 타입 클럭에서 부모 클럭 인덱스 값을 알아온다.
+ */
 	if (parent && clk->num_parents > 1) {
 		p_index = clk_fetch_parent_index(clk, parent);
 		if (p_index < 0) {
@@ -1752,11 +1855,22 @@ static struct clk_core *clk_calc_new_rates(struct clk_core *clk,
 		}
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * rate 설정을 위해 부모 클럭도 진행하라고 요청받은 경우 부모 클럭으로
+ * 이 함수를 상위 방향으로 재귀호출한다.
+ */
 	if ((clk->flags & CLK_SET_RATE_PARENT) && parent &&
 	    best_parent_rate != parent->rate)
 		top = clk_calc_new_rates(parent, best_parent_rate);
 
 out:
+
+/* IAMROOT-12:
+ * -------------
+ * 변경될 부모관계(new_parent, new_child) 및 rate(new_rate) 값들을 설정한다.
+ * 내부에서는 하위 방향으로 재귀호출한다.
+ */
 	clk_calc_subtree(clk, new_rate, parent, p_index);
 
 	return top;
@@ -1773,15 +1887,29 @@ static struct clk_core *clk_propagate_rate_change(struct clk_core *clk,
 	struct clk_core *child, *tmp_clk, *fail_clk = NULL;
 	int ret = NOTIFY_DONE;
 
+/* IAMROOT-12:
+ * -------------
+ * rate 변경이 발생한 경우가 아니면 성공(null)을 반환한다.
+ */
 	if (clk->rate == clk->new_rate)
 		return NULL;
 
+/* IAMROOT-12:
+ * -------------
+ * 이 클럭에 대해 notify 요청을 한 경우 결과를 확인한다. 0인 경우 성공
+ * 실패한 경우 fail_clk이 설정된다.
+ */
 	if (clk->notifier_count) {
 		ret = __clk_notify(clk, event, clk->rate, clk->new_rate);
 		if (ret & NOTIFY_STOP_MASK)
 			fail_clk = clk;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 자식들이 있는 경우 모든 자식 클럭 노드 밑으로 통지확인 한다. (재귀호출)
+ * (단 부모가 바뀐 child 노드 밑으로는 통지하지 않는다)
+ */
 	hlist_for_each_entry(child, &clk->children, child_node) {
 		/* Skip children who will be reparented to another clock */
 		if (child->new_parent && child->new_parent != clk)
@@ -1791,6 +1919,10 @@ static struct clk_core *clk_propagate_rate_change(struct clk_core *clk,
 			fail_clk = tmp_clk;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 새롭게 부모가 바뀐 child 노드들 밑으로도 통지한다. (재귀호출)
+ */
 	/* handle the new child who might not be in clk->children yet */
 	if (clk->new_child) {
 		tmp_clk = clk_propagate_rate_change(clk->new_child, event);
@@ -1816,31 +1948,68 @@ static void clk_change_rate(struct clk_core *clk)
 
 	old_rate = clk->rate;
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 mux 클럭의 부모가 바뀐 경우 새 부모 클럭의 rate를 best_parent_rate로
+ * 바꾸고 그렇지 않은 경우 원래 부모의 rate 값을 사용한다.
+ */
 	if (clk->new_parent)
 		best_parent_rate = clk->new_parent->rate;
 	else if (clk->parent)
 		best_parent_rate = clk->parent->rate;
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 mux 클럭의 부모가 바뀐 경우 new_child, new_parent를 반영한다.
+ * (이 과정에서 prepare 및 enable을 수행한다.)
+ */
 	if (clk->new_parent && clk->new_parent != clk->parent) {
 		old_parent = __clk_set_parent_before(clk, clk->new_parent);
 
+/* IAMROOT-12:
+ * -------------
+ * 부모와 rate 설정을 동시에 변경가능한 ops를 제공하는 경우 해당 함수를 
+ * 호출한다.
+ */
 		if (clk->ops->set_rate_and_parent) {
 			skip_set_rate = true;
 			clk->ops->set_rate_and_parent(clk->hw, clk->new_rate,
 					best_parent_rate,
 					clk->new_parent_index);
+
+/* IAMROOT-12:
+ * -------------
+ * 현재 클럭 드라이버에서 부모 클럭을 바꾸도록 설정 요청한다.
+ */
 		} else if (clk->ops->set_parent) {
 			clk->ops->set_parent(clk->hw, clk->new_parent_index);
 		}
 
+/* IAMROOT-12:
+ * -------------
+ * 사용하지 않는 부모 클럭은 disable -> unprepare 처리한다.
+ */
 		__clk_set_parent_after(clk, clk->new_parent, old_parent);
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * rate 변경 ops를 제공하는 경우 해당 드라이버의 함수를 호출한다.
+ */
 	if (!skip_set_rate && clk->ops->set_rate)
 		clk->ops->set_rate(clk->hw, clk->new_rate, best_parent_rate);
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 클럭 드라이버의 rate 재계산 ops를 수행하여 rate를 산출한다.
+ */
 	clk->rate = clk_recalc(clk, best_parent_rate);
 
+/* IAMROOT-12:
+ * -------------
+ * 통지 요청한 클럭이면서 rate가 변경된 경우 통지를 한다.
+ * (결과 여부는 무시한다.)
+ */
 	if (clk->notifier_count && old_rate != clk->rate)
 		__clk_notify(clk, POST_RATE_CHANGE, old_rate, clk->rate);
 
@@ -1848,6 +2017,12 @@ static void clk_change_rate(struct clk_core *clk)
 	 * Use safe iteration, as change_rate can actually swap parents
 	 * for certain clock types.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 하위 자식 노드들에 대해 rate 변경을 한다. (재귀 호출)
+ * 단 부모가 다른 부모로 바뀐 child 에 대해서는 통지할 필요 없다.
+ */
 	hlist_for_each_entry_safe(child, tmp, &clk->children, child_node) {
 		/* Skip children who will be reparented to another clock */
 		if (child->new_parent && child->new_parent != clk)
@@ -1856,6 +2031,11 @@ static void clk_change_rate(struct clk_core *clk)
 	}
 
 	/* handle the new child who might not be in clk->children yet */
+
+/* IAMROOT-12:
+ * -------------
+ * 새로 등록된 child 이하의 노드들에 대해 rate 변경을 수행한다.
+ */
 	if (clk->new_child)
 		clk_change_rate(clk->new_child);
 }
@@ -1871,18 +2051,39 @@ static int clk_core_set_rate_nolock(struct clk_core *clk,
 		return 0;
 
 	/* bail early if nothing to do */
+
+/* IAMROOT-12:
+ * -------------
+ * 요청한 rate와 동일한 상태면 빠져나간다.
+ */
 	if (rate == clk_core_get_rate_nolock(clk))
 		return 0;
 
+/* IAMROOT-12:
+ * -------------
+ * 클럭이 동작중(ungate)일 때에 rate 변경이 불가능
+ */
 	if ((clk->flags & CLK_SET_RATE_GATE) && clk->prepare_count)
 		return -EBUSY;
 
 	/* calculate new rates and get the topmost changed clock */
+
+/* IAMROOT-12:
+ * -------------
+ * 현재 클럭을 대상으로 영향을 끼치는 토플로지내에서 
+ * new_child, new_parent, new_rate를 산출한다.
+ */
 	top = clk_calc_new_rates(clk, rate);
 	if (!top)
 		return -EINVAL;
 
 	/* notify that we are about to change rates */
+
+/* IAMROOT-12:
+ * -------------
+ * PRE 단계 통지하여 문제가 되는 클럭이 있는지 확인한다.
+ * 문제가 발생한 경우 abort 통지한다.
+ */
 	fail_clk = clk_propagate_rate_change(top, PRE_RATE_CHANGE);
 	if (fail_clk) {
 		pr_debug("%s: failed to set %s rate\n", __func__,
@@ -1892,6 +2093,11 @@ static int clk_core_set_rate_nolock(struct clk_core *clk,
 	}
 
 	/* change the rates */
+
+/* IAMROOT-12:
+ * -------------
+ * 문제가 없으면 rate 변경을 시도한다. 이 과정에 post 통지한다.
+ */
 	clk_change_rate(top);
 
 	clk->req_rate = req_rate;
@@ -1928,6 +2134,12 @@ int clk_set_rate(struct clk *clk, unsigned long rate)
 		return 0;
 
 	/* prevent racing with updates to the clock topology */
+
+/* IAMROOT-12:
+ * -------------
+ * 이 클럭의 rate를 설정한다. 부모 관계 및 플래그 설정에 따라 주변 클럭들의
+ * rate 설정에 영향을 끼친다.
+ */
 	clk_prepare_lock();
 
 	ret = clk_core_set_rate_nolock(clk->core, rate);
@@ -3026,6 +3238,10 @@ int clk_notifier_register(struct clk *clk, struct notifier_block *nb)
 	struct clk_notifier *cn;
 	int ret = -ENOMEM;
 
+/* IAMROOT-12:
+ * -------------
+ * rate 변경 시 통지를 받아 확인을 해야 하는 경우 사용한다.
+ */
 	if (!clk || !nb)
 		return -EINVAL;
 
@@ -3115,6 +3331,12 @@ EXPORT_SYMBOL_GPL(clk_notifier_unregister);
  *       given clock specifier
  * @data: context pointer to be passed into @get callback
  */
+
+/* IAMROOT-12:
+ * -------------
+ * 클럭 프로바이더에 등록되는 구조체로 phandle 다음의 인수를 어떻게 parsing
+ * 해야 하는지 알아낼 수 있는 핸들러 함수가 지정되어 있다. (*get)
+ */
 struct of_clk_provider {
 	struct list_head link;
 
@@ -3140,6 +3362,10 @@ void of_clk_unlock(void)
 	mutex_unlock(&of_clk_mutex);
 }
 
+/* IAMROOT-12:
+ * -------------
+ * 클럭 프로바이더에서 사용하는 인수 해석용 함수 중 하나 (*get)
+ */
 struct clk *of_clk_src_simple_get(struct of_phandle_args *clkspec,
 				     void *data)
 {
@@ -3147,6 +3373,13 @@ struct clk *of_clk_src_simple_get(struct of_phandle_args *clkspec,
 }
 EXPORT_SYMBOL_GPL(of_clk_src_simple_get);
 
+/* IAMROOT-12:
+ * -------------
+ * phandle 값 다음의 정수를 클럭 배열의 인수로 사용하는 인수 해석용 함수 
+ * (멀티 클럭에서 사용된다. 예) gate 클럭 등)
+ *
+ * clocks = <&abc_clock 3>;     <- clk_data->clks[3]을 의미 
+ */
 struct clk *of_clk_src_onecell_get(struct of_phandle_args *clkspec, void *data)
 {
 	struct clk_onecell_data *clk_data = data;
@@ -3175,6 +3408,11 @@ int of_clk_add_provider(struct device_node *np,
 	struct of_clk_provider *cp;
 	int ret;
 
+/* IAMROOT-12:
+ * -------------
+ * of_clk_proivder 구조체를 할당 받고 인수들을 구조체에 설정하고 
+ * of_clk_providers 리스트에 등록한다.
+ */
 	cp = kzalloc(sizeof(struct of_clk_provider), GFP_KERNEL);
 	if (!cp)
 		return -ENOMEM;
@@ -3188,6 +3426,10 @@ int of_clk_add_provider(struct device_node *np,
 	mutex_unlock(&of_clk_mutex);
 	pr_debug("Added clock from %s\n", np->full_name);
 
+/* IAMROOT-12:
+ * -------------
+ * rate, accuracy 등을 기본 설정으로 구성한다.
+ */
 	ret = of_clk_set_defaults(np, true);
 	if (ret < 0)
 		of_clk_del_provider(np);

@@ -21,6 +21,28 @@ static int __set_clk_parents(struct device_node *node, bool clk_supplier)
 	int index, rc, num_parents;
 	struct clk *clk, *pclk;
 
+/* IAMROOT-12:
+ * -------------
+ * "assigned-clock-parents 속성에서 사용한 부모 클럭의 개수를 알아온다.
+ * 없는 경우 -ENOENT 값을 반환 받아오면 부모 인덱스를 0으로 반환한다.
+ *
+ *     uart@a000 {                                                                 
+ *             compatible = "fsl,imx-uart";                                            
+ *             reg = <0xa000 0x1000>;                                                  
+ *               ...                                                                     
+ *             clocks = <&osc 0>, <&pll 1>;                      <- a)                      
+ *             clock-names = "baud", "register";  
+ *
+ *             assigned-clocks = <&clkcon 0>, <&pll 2>;          <- b)                      
+ *             assigned-clock-parents = <&pll 2>;                                      
+ *             assigned-clock-rates = <0>, <460800>;
+ *
+ * -> a) uart에 연결된 클럭은 &osc 0와 pll 1으로 설정한다.
+ *
+ * -> b) 어딘가인지 모르지만 상위 클럭들 중 clkcon 0 과 pll 2에서 
+ *       clkcon 0의 부모를 pll 2로 설정하고,
+ *       pll 2의 rates를 460800으로 설정한다.
+ */
 	num_parents = of_count_phandle_with_args(node, "assigned-clock-parents",
 						 "#clock-cells");
 	if (num_parents == -EINVAL)
@@ -37,8 +59,18 @@ static int __set_clk_parents(struct device_node *node, bool clk_supplier)
 			else
 				return rc;
 		}
+
+/* IAMROOT-12:
+ * -------------
+ * 자신이 부모 클럭이고 clk_supplier가 false인 경우 성공(0)을 반환한다.
+ */
 		if (clkspec.np == node && !clk_supplier)
 			return 0;
+
+/* IAMROOT-12:
+ * -------------
+ * 클럭 프로바이더로부터 clkspec->np를 찾는다.
+ */
 		pclk = of_clk_get_by_clkspec(&clkspec);
 		if (IS_ERR(pclk)) {
 			pr_warn("clk: couldn't get parent clock %d for %s\n",
@@ -46,6 +78,10 @@ static int __set_clk_parents(struct device_node *node, bool clk_supplier)
 			return PTR_ERR(pclk);
 		}
 
+/* IAMROOT-12:
+ * -------------
+ * 찾은 부모 클럭에서 index 번호의 "assigned-clocks" 노드를 알아온다.
+ */
 		rc = of_parse_phandle_with_args(node, "assigned-clocks",
 					"#clock-cells", index, &clkspec);
 		if (rc < 0)
@@ -54,6 +90,11 @@ static int __set_clk_parents(struct device_node *node, bool clk_supplier)
 			rc = 0;
 			goto err;
 		}
+
+/* IAMROOT-12:
+ * -------------
+ * 클럭 프로바이더로부터 clkspec->np를 찾는다.
+ */
 		clk = of_clk_get_by_clkspec(&clkspec);
 		if (IS_ERR(clk)) {
 			pr_warn("clk: couldn't get parent clock %d for %s\n",
@@ -62,6 +103,10 @@ static int __set_clk_parents(struct device_node *node, bool clk_supplier)
 			goto err;
 		}
 
+/* IAMROOT-12:
+ * -------------
+ * clk의 부모클럭을 설정한다. (mux 설정)
+ */
 		rc = clk_set_parent(clk, pclk);
 		if (rc < 0)
 			pr_err("clk: failed to reparent %s to %s: %d\n",
@@ -135,10 +180,20 @@ int of_clk_set_defaults(struct device_node *node, bool clk_supplier)
 	if (!node)
 		return 0;
 
+/* IAMROOT-12:
+ * -------------
+ * "assigned-clocks" 및 "assigned-clock-parents" 속성을 읽어 해당 클럭들의 
+ * 부모 클럭을 선택하게 한다.
+ */
 	rc = __set_clk_parents(node, clk_supplier);
 	if (rc < 0)
 		return rc;
 
+/* IAMROOT-12:
+ * -------------
+ * "assigned-clocks" 및 "assigned-clock-rates" 속성을 읽어 해당 클럭들의 
+ * rates를 설정하게 한다.
+ */
 	return __set_clk_rates(node, clk_supplier);
 }
 EXPORT_SYMBOL_GPL(of_clk_set_defaults);
