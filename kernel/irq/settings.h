@@ -34,6 +34,11 @@ enum {
 static inline void
 irq_settings_clr_and_set(struct irq_desc *desc, u32 clr, u32 set)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * clr 비트를 제거하고 set 비트를 설정한다.
+ */
 	desc->status_use_accessors &= ~(clr & _IRQF_MODIFY_MASK);
 	desc->status_use_accessors |= (set & _IRQF_MODIFY_MASK);
 }
@@ -65,6 +70,11 @@ static inline bool irq_settings_has_no_balance_set(struct irq_desc *desc)
 
 static inline u32 irq_settings_get_trigger_mask(struct irq_desc *desc)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * irq 센스 마스크(0xf)를 제외하고 모든 플래그를 제거한다.
+ */
 	return desc->status_use_accessors & IRQ_TYPE_SENSE_MASK;
 }
 

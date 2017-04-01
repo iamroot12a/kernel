@@ -60,6 +60,10 @@ struct device_node *of_irq_find_parent(struct device_node *child)
 	if (!of_node_get(child))
 		return NULL;
 
+/* IAMROOT-12:
+ * -------------
+ * 상위 인터럽트 컨트롤러를 알아온다.
+ */
 	do {
 		parp = of_get_property(child, "interrupt-parent", NULL);
 		if (parp == NULL)
@@ -68,6 +72,11 @@ struct device_node *of_irq_find_parent(struct device_node *child)
 			if (of_irq_workarounds & OF_IMAP_NO_PHANDLE)
 				p = of_node_get(of_irq_dflt_pic);
 			else
+
+/* IAMROOT-12:
+ * -------------
+ * phandle 값으로 노드를 찾아온다. -> 부모 노드를 찾아온다.
+ */
 				p = of_find_node_by_phandle(be32_to_cpup(parp));
 		}
 		of_node_put(child);
@@ -482,6 +491,11 @@ struct intc_desc {
  * This function scans the device tree for matching interrupt controller nodes,
  * and calls their initialization functions in order with parents first.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * 디바이스 트리와 매치된 최상위 인터럽트 컨트롤러부터 초기화 함수를 호출한다.
+ */
 void __init of_irq_init(const struct of_device_id *matches)
 {
 	struct device_node *np, *parent = NULL;
@@ -491,6 +505,13 @@ void __init of_irq_init(const struct of_device_id *matches)
 	INIT_LIST_HEAD(&intc_desc_list);
 	INIT_LIST_HEAD(&intc_parent_list);
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 읽어온 디바이스 트리 노드들에서 matches와 같은 노드들을 대상으로 
+ * 루프를 돈다.
+ *
+ * matches: IRQCHIP_DECLARE()로 컴파일된 모든 인터럽트 컨트롤러 드라이버
+ */
 	for_each_matching_node(np, matches) {
 		if (!of_find_property(np, "interrupt-controller", NULL) ||
 				!of_device_is_available(np))
@@ -504,7 +525,17 @@ void __init of_irq_init(const struct of_device_id *matches)
 			goto err;
 
 		desc->dev = np;
+
+/* IAMROOT-12:
+ * -------------
+ * 상위 인터럽트 컨트롤러를 대입한다.
+ */
 		desc->interrupt_parent = of_irq_find_parent(np);
+
+/* IAMROOT-12:
+ * -------------
+ * 자기 자신이 부모로 등록된 경우 상위 인터럽트 컨트롤러가 없는 경우이다.
+ */
 		if (desc->interrupt_parent == np)
 			desc->interrupt_parent = NULL;
 		list_add_tail(&desc->list, &intc_desc_list);
@@ -526,6 +557,12 @@ void __init of_irq_init(const struct of_device_id *matches)
 			int ret;
 			of_irq_init_cb_t irq_init_cb;
 
+/* IAMROOT-12:
+ * -------------
+ * parent가 처음에는 null이므로 null인 디스크립터들만 처리한다.
+ *
+ * 두 번째 루프를 돌때에는 루트 노드 중 하나를 순서대로 처리한다.
+ */
 			if (desc->interrupt_parent != parent)
 				continue;
 
@@ -542,6 +579,14 @@ void __init of_irq_init(const struct of_device_id *matches)
 				 match->compatible,
 				 desc->dev, desc->interrupt_parent);
 			irq_init_cb = (of_irq_init_cb_t)match->data;
+
+/* IAMROOT-12:
+ * -------------
+ * 인터럽트 컨트롤러 초기화 함수를 호출한다.
+ * rpi2: 1) bcm2836_arm_irqchip_l1_intc_of_init()
+ *       2) bcm2836_armctrl_of_init()
+ * gic:  *) gic_of_init()
+ */
 			ret = irq_init_cb(desc->dev, desc->interrupt_parent);
 			if (ret) {
 				kfree(desc);

@@ -6,6 +6,11 @@
 #ifndef CONFIG_SPARSE_IRQ
 #include <mach/irqs.h>
 #else
+
+/* IAMROOT-12:
+ * -------------
+ * sparse인 경우 NR_IRQS는 16개
+ */
 #define NR_IRQS NR_IRQS_LEGACY
 #endif
 

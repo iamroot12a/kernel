@@ -102,6 +102,11 @@ void __init init_IRQ(void)
 {
 	int ret;
 
+/* IAMROOT-12:
+ * -------------
+ * 머신 디스크립터의(*init_irq)에 등록된 초기화 함수가 없으면 
+ * 디바이스 트리를 사용하여 인터럽트 컨트롤러를 초기화한다.
+ */
 	if (IS_ENABLED(CONFIG_OF) && !machine_desc->init_irq)
 		irqchip_init();
 	else
@@ -131,6 +136,13 @@ void __init set_handle_irq(void (*handle_irq)(struct pt_regs *))
 #ifdef CONFIG_SPARSE_IRQ
 int __init arch_probe_nr_irqs(void)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 머신 디스크립터에서 지정한 nr_irqs 또는 NR_IRQS를 사용한다.
+ * NR_IRQS: sparse 시스템에서는 16개로 고정되고 그 외의 경우 
+ *          시스템(머신)에서 정의된 수를 사용한다.
+ */
 	nr_irqs = machine_desc->nr_irqs ? machine_desc->nr_irqs : NR_IRQS;
 	return nr_irqs;
 }

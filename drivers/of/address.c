@@ -78,6 +78,10 @@ static u64 of_bus_default_map(__be32 *addr, const __be32 *range,
 
 static int of_bus_default_translate(__be32 *addr, u64 offset, int na)
 {
+/* IAMROOT-12:
+ * -------------
+ * addr[] + offset 하여 반환한다.
+ */
 	u64 a = of_read_number(addr, na);
 	memset(addr, 0, na * 4);
 	a += offset;
@@ -123,6 +127,12 @@ static unsigned int of_bus_pci_get_flags(const __be32 *addr)
 	unsigned int flags = 0;
 	u32 w = be32_to_cpup(addr);
 
+
+/* IAMROOT-12:
+ * -------------
+ * 0x0300_0000 
+ *    bit24=1, bit25=0인 경우만 IORESOURCE_IO, 그 외 IORESOURCE_MEM
+ */
 	switch((w >> 24) & 0x03) {
 	case 0x01:
 		flags |= IORESOURCE_IO;
@@ -132,6 +142,12 @@ static unsigned int of_bus_pci_get_flags(const __be32 *addr)
 		flags |= IORESOURCE_MEM;
 		break;
 	}
+
+/* IAMROOT-12:
+ * -------------
+ * 0x4000_0000 
+ *    bit30=1인 경우 IORESOURCE_PREFETCH 플래그 추가
+ */
 	if (w & 0x40000000)
 		flags |= IORESOURCE_PREFETCH;
 	return flags;
@@ -393,6 +409,10 @@ static unsigned int of_bus_isa_get_flags(const __be32 *addr)
 	unsigned int flags = 0;
 	u32 w = be32_to_cpup(addr);
 
+/* IAMROOT-12:
+ * -------------
+ * bit0가 1인 경우만 IORESOURCE_IO, 그 외 IORESOURCE_MEM
+ */
 	if (w & 1)
 		flags |= IORESOURCE_IO;
 	else
@@ -443,6 +463,18 @@ static struct of_bus *of_match_bus(struct device_node *np)
 {
 	int i;
 
+/* IAMROOT-12:
+ * -------------
+ * 버스 타입에 맞는 of_bus를 반환한다.
+ * 
+ * type 종류:
+ * 1) pci
+ *    np->type이 "pciex", "pci", "vci", "ht"인 경우
+ * 2) isa 
+ *    np->name이 "isa"인 경우
+ * 3) Default
+ *    그 외
+ */
 	for (i = 0; i < ARRAY_SIZE(of_busses); i++)
 		if (!of_busses[i].match || of_busses[i].match(np))
 			return &of_busses[i];
@@ -641,13 +673,30 @@ const __be32 *of_get_address(struct device_node *dev, int index, u64 *size,
 	parent = of_get_parent(dev);
 	if (parent == NULL)
 		return NULL;
+/* IAMROOT-12:
+ * -------------
+ * 버스 타입에 맞는 of_bus를 반환한다. (of_busses[])
+ */
 	bus = of_match_bus(parent);
+
+/* IAMROOT-12:
+ * -------------
+ * of_bus_pci_count_cells(),    <- addr-cells=3, size-cells=2로 고정
+ * of_bus_isa_count_cells(),    <- addr-cells=2, size-cells=1로 고정
+ * of_bus_default_count_cells() <- 디바이스트리에서 알아온다.
+ */
 	bus->count_cells(dev, &na, &ns);
 	of_node_put(parent);
 	if (!OF_CHECK_ADDR_COUNT(na))
 		return NULL;
 
 	/* Get "reg" or "assigned-addresses" property */
+
+/* IAMROOT-12:
+ * -------------
+ * pci 타입은 "assigned-addresses" 속성에서 베이스 주소를 얻어오고,
+ * 그 외 타입은 "reg" 속성에서 베이스 주소를 얻어온다.
+ */
 	prop = of_get_property(dev, bus->addresses, &psize);
 	if (prop == NULL)
 		return NULL;
@@ -658,6 +707,13 @@ const __be32 *of_get_address(struct device_node *dev, int index, u64 *size,
 		if (i == index) {
 			if (size)
 				*size = of_read_number(prop + na, ns);
+
+/* IAMROOT-12:
+ * -------------
+ * 각 타입에 따라 주소를 분석하여 IORESOURCE_IO, IORESOURCE_MEM, 
+ * IORESOURCE_PREFETCH 플래그 등이 추가될 수 있다.
+ * (default 타입에서는 항상 IORESOURCE_MEM)
+ */
 			if (flags)
 				*flags = bus->get_flags(prop);
 			return prop;
@@ -826,11 +882,20 @@ int of_address_to_resource(struct device_node *dev, int index,
 	unsigned int	flags;
 	const char	*name = NULL;
 
+/* IAMROOT-12:
+ * -------------
+ * 부모 노드에 속한 버스 타입에 따라 디바이스의 사이즈, 플래그를 
+ * 알아온다. (반환 값은 4바이트 주소)
+ */
 	addrp = of_get_address(dev, index, &size, &flags);
 	if (addrp == NULL)
 		return -EINVAL;
 
 	/* Get optional "reg-names" property to add a name to a resource */
+/* IAMROOT-12:
+ * -------------
+ * 예) reg-names = "ahci", "sata-ecc" -> index에 해당하는 문자열을 읽어온다.
+ */
 	of_property_read_string_index(dev, "reg-names",	index, &name);
 
 	return __of_address_to_resource(dev, addrp, size, flags, name, r);

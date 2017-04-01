@@ -9,8 +9,18 @@
 #include <linux/kernel_stat.h>
 
 #ifdef CONFIG_SPARSE_IRQ
+
+/* IAMROOT-12:
+ * -------------
+ * sparse인 경우: irq 비트맵에서 비트 수를 16 + 8196 으로 설정한다.
+ */
 # define IRQ_BITMAP_BITS	(NR_IRQS + 8196)
 #else
+
+/* IAMROOT-12:
+ * -------------
+ * sparse가 아닌 경우: 시스템(머신)이 설정한 irq 갯수만큼
+ */
 # define IRQ_BITMAP_BITS	NR_IRQS
 #endif
 

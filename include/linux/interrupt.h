@@ -223,6 +223,10 @@ struct irq_affinity_notify {
 
 #if defined(CONFIG_SMP)
 
+/* IAMROOT-12:
+ * -------------
+ * 
+ */
 extern cpumask_var_t irq_default_affinity;
 
 /* Internal implementation. Use the helpers below */

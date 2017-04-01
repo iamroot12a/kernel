@@ -18,6 +18,11 @@ static void ack_bad(struct irq_data *data)
 {
 	struct irq_desc *desc = irq_data_to_desc(data);
 
+/* IAMROOT-12:
+ * -------------
+ * 초기화되지 않은 인터럽트에 대해서 특정 인터럽트 핸들러에서 irq_ack()가 
+ * 호출되는 경우에 bad 메시지 출력
+ */
 	print_irq_desc(data->irq, desc);
 	ack_bad_irq(data->irq);
 }

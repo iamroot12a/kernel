@@ -26,6 +26,11 @@ static struct lock_class_key irq_desc_lock_class;
 #if defined(CONFIG_SMP)
 static void __init init_irq_default_affinity(void)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * default로 모든 cpu가 인터럽트를 받을 수 있도록 한다.
+ */
 	alloc_cpumask_var(&irq_default_affinity, GFP_NOWAIT);
 	cpumask_setall(irq_default_affinity);
 }
@@ -38,6 +43,11 @@ static void __init init_irq_default_affinity(void)
 #ifdef CONFIG_SMP
 static int alloc_masks(struct irq_desc *desc, gfp_t gfp, int node)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * SMP인 경우 irq별 affinity를 할당하고 pending_mask를 할당한다.
+ */
 	if (!zalloc_cpumask_var_node(&desc->irq_data.affinity, gfp, node))
 		return -ENOMEM;
 
@@ -76,12 +86,26 @@ static void desc_set_defaults(unsigned int irq, struct irq_desc *desc, int node,
 {
 	int cpu;
 
+/* IAMROOT-12:
+ * -------------
+ * chip 핸들러가 아직 없으므로 noop 핸들러를 대입한다.
+ */
 	desc->irq_data.irq = irq;
 	desc->irq_data.chip = &no_irq_chip;
 	desc->irq_data.chip_data = NULL;
 	desc->irq_data.handler_data = NULL;
 	desc->irq_data.msi_desc = NULL;
+
+/* IAMROOT-12:
+ * -------------
+ * 플래그를 모두 지우고 IRQ_NOREQUEST | IRQ_NOPROBE만 설정한다.
+ */
 	irq_settings_clr_and_set(desc, ~0, _IRQ_DEFAULT_INIT_FLAGS);
+
+/* IAMROOT-12:
+ * -------------
+ * IRQD의 플래그로 irq_disabled를 설정한다.
+ */
 	irqd_set(&desc->irq_data, IRQD_IRQ_DISABLED);
 	desc->handle_irq = handle_bad_irq;
 	desc->depth = 1;
@@ -98,10 +122,19 @@ int nr_irqs = NR_IRQS;
 EXPORT_SYMBOL_GPL(nr_irqs);
 
 static DEFINE_MUTEX(sparse_irq_lock);
+
+/* IAMROOT-12:
+ * -------------
+ * SPARSE_IRQ에서 할당된 irq 비트
+ */
 static DECLARE_BITMAP(allocated_irqs, IRQ_BITMAP_BITS);
 
 #ifdef CONFIG_SPARSE_IRQ
 
+/* IAMROOT-12:
+ * -------------
+ * sparse irq에서는 irq 디스크립터를 radix tree로 관리한다.
+ */
 static RADIX_TREE(irq_desc_tree, GFP_KERNEL);
 
 static void irq_insert_desc(unsigned int irq, struct irq_desc *desc)
@@ -151,6 +184,11 @@ static struct irq_desc *alloc_desc(int irq, int node, struct module *owner)
 	if (!desc)
 		return NULL;
 	/* allocate based on nr_cpu_ids */
+
+/* IAMROOT-12:
+ * -------------
+ * irq 통계용 per-cpu 생성
+ */
 	desc->kstat_irqs = alloc_percpu(unsigned int);
 	if (!desc->kstat_irqs)
 		goto err_desc;
@@ -235,9 +273,22 @@ int __init early_irq_init(void)
 	init_irq_default_affinity();
 
 	/* Let arch update nr_irqs and return the nr of preallocated irqs */
+
+/* IAMROOT-12:
+ * -------------
+ * NR_IRQS: arm에서는 sparse인 경우 16, x86의 경우 더 큰 수가 사용된다.
+ * nr_irqs: probe 순간 머신 값 또는 NR_IRQS로 변경된다.
+ *          (rpi2에서 처음 인식되는 값은 16이다)
+ * initcnt: nr_irqs와 동일
+ */
 	initcnt = arch_probe_nr_irqs();
 	printk(KERN_INFO "NR_IRQS:%d nr_irqs:%d %d\n", NR_IRQS, nr_irqs, initcnt);
 
+/* IAMROOT-12:
+ * -------------
+ * 지원되는 irq 최대 수가 컴파일 타임에 결정되는 IRQ_BITMAP_BITS 수를 
+ * 초과하지 못하도록 한다.
+ */
 	if (WARN_ON(nr_irqs > IRQ_BITMAP_BITS))
 		nr_irqs = IRQ_BITMAP_BITS;
 
@@ -247,6 +298,11 @@ int __init early_irq_init(void)
 	if (initcnt > nr_irqs)
 		nr_irqs = initcnt;
 
+/* IAMROOT-12:
+ * -------------
+ * sparse인 경우 16개의 legacy irq는 무조건 생성한다.
+ * 생성된 irq 디스크립터들은 radix tree에 추가된다.
+ */
 	for (i = 0; i < initcnt; i++) {
 		desc = alloc_desc(i, node, NULL);
 		set_bit(i, allocated_irqs);

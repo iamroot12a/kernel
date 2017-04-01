@@ -29,6 +29,11 @@
  */
 void handle_bad_irq(unsigned int irq, struct irq_desc *desc)
 {
+/* IAMROOT-12:
+ * -------------
+ * 등록(setup)되지 않은 인터럽트가 호출된 경우 irq 디스크립터 내용을 출력하고
+ * 인터럽트 호출 카운터를 1 증가시킨다.
+ */
 	print_irq_desc(irq, desc);
 	kstat_incr_irqs_this_cpu(irq, desc);
 	ack_bad_irq(irq);
