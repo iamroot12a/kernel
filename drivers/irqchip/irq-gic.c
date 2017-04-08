@@ -49,6 +49,14 @@
 #include "irqchip.h"
 
 union gic_base {
+
+/* IAMROOT-12:
+ * -------------
+ * *common_base: banked 레지스터들을 사용하는 경우 
+ *               non banked 레지스터들을 사용하는 경우 cpu 0번의 
+ *               base 주소를 담는다.
+ * *percpu_base: non banked 레지스터들을 사용하는 경우
+ */
 	void __iomem *common_base;
 	void __percpu * __iomem *percpu_base;
 };
@@ -66,6 +74,12 @@ struct gic_chip_data {
 	struct irq_domain *domain;
 	unsigned int gic_irqs;
 #ifdef CONFIG_GIC_NON_BANKED
+
+/* IAMROOT-12:
+ * -------------
+ * 뱅크되지 않은 레지스터들을 사용해야 하는 경우 (*get_base)를 
+ * 사용하여 base 주소를 알아올 수 있다.
+ */
 	void __iomem *(*get_base)(union gic_base *);
 #endif
 };
@@ -97,6 +111,11 @@ struct irq_chip gic_arch_extn = {
 #define MAX_GIC_NR	1
 #endif
 
+
+/* IAMROOT-12:
+ * -------------
+ * 최대 gic 갯수만큼 배열을 사용한다.
+ */
 static struct gic_chip_data gic_data[MAX_GIC_NR] __read_mostly;
 
 #ifdef CONFIG_GIC_NON_BANKED
@@ -939,6 +958,20 @@ void __init gic_init_bases(unsigned int gic_nr, int irq_start,
 
 	gic = &gic_data[gic_nr];
 #ifdef CONFIG_GIC_NON_BANKED
+
+/* IAMROOT-12:
+ * -------------
+ * percpu_offset가 주어진 경우는 non banked로 gic 레지스터들을 설정하여 
+ * 사용하라는 의미이다.
+ *
+ * 에) - percpu_offset: 0x4000, dist_base=0x2000_0000
+ *       gic_data.dist_base.percpu_base <- per-cpu 할당 후 percpu_offset 만큼 
+ *            간격으로 dist_base를 cpu 수 만큼 배치한다. 
+ *            (0x2000_0000, 0x2000_4000, 0x2000_8000, 0x2000_c000)
+ *     - percpu_offset: 0x0 
+ *       gic_data.dist_base.common_base <- dist_base를 그대로 사용한다.
+ *            (0x2000_000)
+ */
 	if (percpu_offset) { /* Frankein-GIC without banked registers... */
 		unsigned int cpu;
 
@@ -959,6 +992,11 @@ void __init gic_init_bases(unsigned int gic_nr, int irq_start,
 			*per_cpu_ptr(gic->cpu_base.percpu_base, cpu) = cpu_base + offset;
 		}
 
+/* IAMROOT-12:
+ * -------------
+ * get_base = gic_get_percpu_base() 
+ *            -> raw_cpu_read(*base->percpu_base);
+ */
 		gic_set_base_accessor(gic, gic_get_percpu_base);
 	} else
 #endif
@@ -968,6 +1006,12 @@ void __init gic_init_bases(unsigned int gic_nr, int irq_start,
 		     percpu_offset);
 		gic->dist_base.common_base = dist_base;
 		gic->cpu_base.common_base = cpu_base;
+
+/* IAMROOT-12:
+ * -------------
+ * get_base = gic_get_common_base() 
+ *            -> base->common_base;
+ */
 		gic_set_base_accessor(gic, gic_get_common_base);
 	}
 
@@ -982,6 +1026,12 @@ void __init gic_init_bases(unsigned int gic_nr, int irq_start,
 	 * Find out how many interrupts are supported.
 	 * The GIC only supports up to 1020 interrupt sources.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * Control Type Register의 5bit를 읽어온다. (32개 단위의 SPIs)
+ * *(5 bit값 + 1) * 32 = gic_irqs
+ */
 	gic_irqs = readl_relaxed(gic_data_dist_base(gic) + GIC_DIST_CTR) & 0x1f;
 	gic_irqs = (gic_irqs + 1) * 32;
 	if (gic_irqs > 1020)
@@ -1056,19 +1106,46 @@ gic_of_init(struct device_node *node, struct device_node *parent)
 	if (WARN_ON(!node))
 		return -ENODEV;
 
+/* IAMROOT-12:
+ * -------------
+ * 인터럽트 컨틀롤러 주소를 알아와서 IO 매핑한다.
+ * (디바이스 노드의 reg 속성에서 읽은 주소를 상위 버스의 ranges 
+ *  속성을 사용하여 변환한 주소, 
+ *  버스가 하이라키로 구성된 경우 최상위 까지 변환 필요)
+ *
+ * 예) arch/arm/boot/dts/omap4.dtsi
+ *
+ * gic: interrupt-controller@48241000 {
+ *         compatible = "arm,cortex-a9-gic"
+ *         reg = <0x48241000 0x1000>,     <- distributor 
+ *               <0x48240100 0x0100>;     <- cpu i/f
+ */
 	dist_base = of_iomap(node, 0);
 	WARN(!dist_base, "unable to map gic dist registers\n");
 
 	cpu_base = of_iomap(node, 1);
 	WARN(!cpu_base, "unable to map gic cpu registers\n");
 
+/* IAMROOT-12:
+ * -------------
+ * "cpu-offset" 속성이 없으면 0으로 한다.
+ */
 	if (of_property_read_u32(node, "cpu-offset", &percpu_offset))
 		percpu_offset = 0;
 
+/* IAMROOT-12:
+ * -------------
+ * gic_cnt는 처음에 0부터 시작하여 초기화될 때 마다 1씩 증가된다.
+ */
 	gic_init_bases(gic_cnt, -1, dist_base, cpu_base, percpu_offset, node);
 	if (!gic_cnt)
 		gic_init_physaddr(node);
 
+/* IAMROOT-12:
+ * -------------
+ * 부모 인터럽트 컨틀롤러가 있는 경우 irq를 상위 인터럽트 컨트롤러에 
+ * cascade하기 위해 매핑한다.
+ */
 	if (parent) {
 		irq = irq_of_parse_and_map(node, 0);
 		gic_cascade_irq(gic_cnt, irq);
