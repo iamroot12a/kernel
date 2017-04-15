@@ -47,6 +47,14 @@ struct irq_domain *__irq_domain_add(struct device_node *of_node, int size,
 {
 	struct irq_domain *domain;
 
+/* IAMROOT-12:
+ * -------------
+ * irq_domain 구조체 마지막 멤버 linear_revmap[]에서 사용하기 위해 
+ * size 만큼 unsigned int 할당을 한다.
+ *
+ * linear_revmap[]: 나중에 할당된 irq 디스크립터의 irq 번호가 들어간다.
+ *                  -> 매핑 시에 할당하여 연결된다.
+ */
 	domain = kzalloc_node(sizeof(*domain) + (sizeof(unsigned int) * size),
 			      GFP_KERNEL, of_node_to_nid(of_node));
 	if (WARN_ON(!domain))
@@ -58,11 +66,31 @@ struct irq_domain *__irq_domain_add(struct device_node *of_node, int size,
 	domain->host_data = host_data;
 	domain->of_node = of_node_get(of_node);
 	domain->hwirq_max = hwirq_max;
+
+/* IAMROOT-12:
+ * -------------
+ * 리니어 리버스 맵만 사이즈가 할당된다.
+ */
 	domain->revmap_size = size;
+
+/* IAMROOT-12:
+ * -------------
+ * 1:1 nomap에서 주어진다.
+ */
 	domain->revmap_direct_max_irq = direct_max;
+
+/* IAMROOT-12:
+ * -------------
+ * ops->alloc 후크가 준비된 경우 IRQ_DOMAIN_FLAG_HIERARCHY 플래그 추가
+ */
 	irq_domain_check_hierarchy(domain);
 
 	mutex_lock(&irq_domain_mutex);
+
+/* IAMROOT-12:
+ * -------------
+ * irq_domain_list에 도메인을 추가한다.
+ */
 	list_add(&domain->link, &irq_domain_list);
 	mutex_unlock(&irq_domain_mutex);
 
@@ -167,6 +195,12 @@ EXPORT_SYMBOL_GPL(irq_domain_add_simple);
  * Note: the map() callback will be called before this function returns
  * for all legacy interrupts except 0 (which is always the invalid irq for
  * a legacy controller).
+ */
+
+/* IAMROOT-12:
+ * -------------
+ * first_hwirq+size만큼 리니어 테이블을 만들고 first_irq를 1:1로 first_hwirq에 
+ * 매핑한다.
  */
 struct irq_domain *irq_domain_add_legacy(struct device_node *of_node,
 					 unsigned int size,

@@ -176,6 +176,11 @@ static inline struct irq_domain *irq_domain_add_linear(struct device_node *of_no
 					 const struct irq_domain_ops *ops,
 					 void *host_data)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 연속된 리니어 테이블을 size 만큼 만들어 도메인을 추가한다.
+ */
 	return __irq_domain_add(of_node, size, size, 0, ops, host_data);
 }
 static inline struct irq_domain *irq_domain_add_nomap(struct device_node *of_node,
@@ -183,6 +188,10 @@ static inline struct irq_domain *irq_domain_add_nomap(struct device_node *of_nod
 					 const struct irq_domain_ops *ops,
 					 void *host_data)
 {
+/* IAMROOT-12:
+ * -------------
+ * max_irq 만큼의 hwirq를 지정하고 매핑 공간은 만들지 않은채로 도메인에 추가
+ */
 	return __irq_domain_add(of_node, 0, max_irq, max_irq, ops, host_data);
 }
 static inline struct irq_domain *irq_domain_add_legacy_isa(
@@ -190,6 +199,11 @@ static inline struct irq_domain *irq_domain_add_legacy_isa(
 				const struct irq_domain_ops *ops,
 				void *host_data)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 16개의 hwirq와 irq를 0번부터 16개를 만들고 1:1로 매핑까지 수행한다.
+ */
 	return irq_domain_add_legacy(of_node, NUM_ISA_INTERRUPTS, 0, 0, ops,
 				     host_data);
 }
@@ -197,6 +211,11 @@ static inline struct irq_domain *irq_domain_add_tree(struct device_node *of_node
 					 const struct irq_domain_ops *ops,
 					 void *host_data)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * hwirq 번호 제한 없이 radix tree 형태로 관리할 수 있도록 한다.
+ */
 	return __irq_domain_add(of_node, 0, ~0, 0, ops, host_data);
 }
 

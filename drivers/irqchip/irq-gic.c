@@ -364,6 +364,12 @@ static u8 gic_get_cpumask(struct gic_chip_data *gic)
 	void __iomem *base = gic_data_dist_base(gic);
 	u32 mask, i;
 
+
+/* IAMROOT-12:
+ * -------------
+ * irq#0~irq#31에서 사용하는 cpu 마스크가 존재하는 경우 하위 8비트에 이동
+ * 시켜 반환한다.
+ */
 	for (i = mask = 0; i < 32; i += 4) {
 		mask = readl_relaxed(base + GIC_DIST_TARGET + i);
 		mask |= mask >> 16;
@@ -375,6 +381,10 @@ static u8 gic_get_cpumask(struct gic_chip_data *gic)
 	if (!mask)
 		pr_crit("GIC CPU mask not found - kernel will fail to boot.\n");
 
+/* IAMROOT-12:
+ * -------------
+ * 8bit만 반환
+ */
 	return mask;
 }
 
@@ -389,6 +399,10 @@ static void gic_cpu_if_up(void)
 	bypass = readl(cpu_base + GIC_CPU_CTRL);
 	bypass &= GICC_DIS_BYPASS_MASK;
 
+/* IAMROOT-12:
+ * -------------
+ * gic-v1에는 bypass 없음
+ */
 	writel_relaxed(bypass | GICC_ENABLE, cpu_base + GIC_CPU_CTRL);
 }
 
@@ -400,11 +414,21 @@ static void __init gic_dist_init(struct gic_chip_data *gic)
 	unsigned int gic_irqs = gic->gic_irqs;
 	void __iomem *base = gic_data_dist_base(gic);
 
+/* IAMROOT-12:
+ * -------------
+ * GIC distributor의 controler 레지스터를 disable 처리한다.
+ */
 	writel_relaxed(GICD_DISABLE, base + GIC_DIST_CTRL);
 
 	/*
 	 * Set all global interrupts to this CPU only.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * cpumask를 읽어와서 SPI에 해당하는 모든 인터럽트에 대해서 cpumask를 설정한다.
+ * (Distributor의 Target 레지스터 사용)
+ */
 	cpumask = gic_get_cpumask(gic);
 	cpumask |= cpumask << 8;
 	cpumask |= cpumask << 16;
@@ -413,6 +437,11 @@ static void __init gic_dist_init(struct gic_chip_data *gic)
 
 	gic_dist_config(base, gic_irqs, NULL);
 
+
+/* IAMROOT-12:
+ * -------------
+ * 다시 GIC distributor의 controler 레지스터를 enable 처리한다.
+ */
 	writel_relaxed(GICD_ENABLE, base + GIC_DIST_CTRL);
 }
 
@@ -426,6 +455,12 @@ static void gic_cpu_init(struct gic_chip_data *gic)
 	/*
 	 * Get what the GIC says our CPU mask is.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * gic의 cpu 마스크를 읽어와서 설정한다. (PPI에 해당하는 레지스터는 RO)
+ * (8bit로 bit0=cpu0의 forward/discard를 결정하고, bit1=cpu1, ...
+ */
 	BUG_ON(cpu >= NR_GIC_CPU_IF);
 	cpu_mask = gic_get_cpumask(gic);
 	gic_cpu_map[cpu] = cpu_mask;
@@ -434,13 +469,29 @@ static void gic_cpu_init(struct gic_chip_data *gic)
 	 * Clear our mask from the other map entries in case they're
 	 * still undefined.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 그 외의 cpu에서는 위에서 알아온 mask의 반대만 mask하여 사용한다.
+ * 즉, 위에서 사용한 cpu 마스크는 제외시킨다.
+ */
 	for (i = 0; i < NR_GIC_CPU_IF; i++)
 		if (i != cpu)
 			gic_cpu_map[i] &= ~cpu_mask;
 
 	gic_cpu_config(dist_base, NULL);
 
+/* IAMROOT-12:
+ * -------------
+ * 우선순위 스레졸드를 0xf0으로 설정한다. 
+ * priority 값이 낮을 수록 우선 순위가 높다. (0=highest, 255=lowest)
+ */
 	writel_relaxed(GICC_INT_PRI_THRESHOLD, base + GIC_CPU_PRIMASK);
+
+/* IAMROOT-12:
+ * -------------
+ * cpu_if 컨틀롤러를 enable 한다.
+ */
 	gic_cpu_if_up();
 }
 
@@ -627,14 +678,30 @@ static struct notifier_block gic_notifier_block = {
 
 static void __init gic_pm_init(struct gic_chip_data *gic)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 4 byte를 per-cpu로 할당한다.
+ */
 	gic->saved_ppi_enable = __alloc_percpu(DIV_ROUND_UP(32, 32) * 4,
 		sizeof(u32));
 	BUG_ON(!gic->saved_ppi_enable);
 
+
+/* IAMROOT-12:
+ * -------------
+ * 8 byte를 할당한다. (4 바이트 정렬)
+ */
 	gic->saved_ppi_conf = __alloc_percpu(DIV_ROUND_UP(32, 16) * 4,
 		sizeof(u32));
 	BUG_ON(!gic->saved_ppi_conf);
 
+
+/* IAMROOT-12:
+ * -------------
+ * 현재 컨트롤러가 gic의 첫번째 컨트롤러인 경우 cpu_pm notify 등록한다.
+ * (power monitor)
+ */
 	if (gic == &gic_data[0])
 		cpu_pm_register_notifier(&gic_notifier_block);
 }
@@ -839,15 +906,36 @@ static int gic_irq_domain_xlate(struct irq_domain *d,
 {
 	unsigned long ret = 0;
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 디바이스 노드가 요청한 디바이스인 경우가 아니면 -EINVAL 반환
+ */
 	if (d->of_node != controller)
 		return -EINVAL;
+
+/* IAMROOT-12:
+ * -------------
+ * 인수가 3개보다 적으면 -EINVAL 반환 
+ *    예) arch/arm/boot/dts/omap4.dtsi - gic를 사용하는 uart1 디바이스
+ *        interrupts = <GIC_SPI 72 IRQ_TYPE_LEVEL_HIGH>;
+ */
 	if (intsize < 3)
 		return -EINVAL;
 
 	/* Get the interrupt number and add 16 to skip over SGIs */
+
+/* IAMROOT-12:
+ * -------------
+ * hwirq <- 두번째 인수 값 + 16  (위의 uart1의 경우 72 + 16)
+ */
 	*out_hwirq = intspec[1] + 16;
 
 	/* For SPIs, we need to add 16 more to get the GIC irq ID number */
+
+/* IAMROOT-12:
+ * -------------
+ * 첫 번째 인수가 0인 경우 out_hwirq에 16을 더해서 산출한다.
+ */
 	if (!intspec[0]) {
 		ret = gic_routable_irq_domain_ops->xlate(d, controller,
 							 intspec,
@@ -859,6 +947,10 @@ static int gic_irq_domain_xlate(struct irq_domain *d,
 			return ret;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 세번째 인수는 irq 타입을 지정한다.
+ */
 	*out_type = intspec[2] & IRQ_TYPE_SENSE_MASK;
 
 	return ret;
@@ -902,6 +994,12 @@ static int gic_irq_domain_alloc(struct irq_domain *domain, unsigned int virq,
 	return 0;
 }
 
+
+/* IAMROOT-12:
+ * -------------
+ * 디바이스 트리 사용 시 gic의 기본 irq_domain의 ops이다.
+ * (irq_domain 하이라키를 지원하기 때문에 alloc과 free 후크가 준비되었다.
+ */
 static const struct irq_domain_ops gic_irq_domain_hierarchy_ops = {
 	.xlate = gic_irq_domain_xlate,
 	.alloc = gic_irq_domain_alloc,
@@ -1041,12 +1139,23 @@ void __init gic_init_bases(unsigned int gic_nr, int irq_start,
 	if (node) {		/* DT case */
 		const struct irq_domain_ops *ops = &gic_irq_domain_hierarchy_ops;
 
+/* IAMROOT-12:
+ * -------------
+ * dra7.dtsi 에서만 사용하는 속성이며 이 속성이 읽히는 경우 
+ * gic 인터럽트 수를 지정한다.
+ *	arm,routable-irqs = <192>;  <-- 192개가 라우터블 irq로 지정되는데 
+ *					추후 확인 필요
+ */
 		if (!of_property_read_u32(node, "arm,routable-irqs",
 					  &nr_routable_irqs)) {
 			ops = &gic_irq_domain_ops;
 			gic_irqs = nr_routable_irqs;
 		}
 
+/* IAMROOT-12:
+ * -------------
+ * gic가 지원하는 irq 수만큼 리니어 테이블을 만들고 도메인에 추가한다.
+ */
 		gic->domain = irq_domain_add_linear(node, gic_irqs, ops, gic);
 	} else {		/* Non-DT case */
 		/*
@@ -1087,8 +1196,18 @@ void __init gic_init_bases(unsigned int gic_nr, int irq_start,
 	}
 
 	gic_chip.flags |= gic_arch_extn.flags;
+
+/* IAMROOT-12:
+ * -------------
+ * distributor & cpu 인터럽트 컨트롤러를 초기화한다.
+ */
 	gic_dist_init(gic);
 	gic_cpu_init(gic);
+
+/* IAMROOT-12:
+ * -------------
+ * Power Monitor 관련 초기화를 수행한다.
+ */
 	gic_pm_init(gic);
 }
 

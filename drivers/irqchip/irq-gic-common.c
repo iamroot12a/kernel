@@ -80,12 +80,22 @@ void __init gic_dist_config(void __iomem *base, int gic_irqs,
 	 * Set all global interrupts to be level triggered, active low.
 	 */
 	for (i = 32; i < gic_irqs; i += 16)
+
+/* IAMROOT-12:
+ * -------------
+ * SPI의 모든 인터럽트를 레벨 트리거(low act)로 설정한다.
+ */
 		writel_relaxed(GICD_INT_ACTLOW_LVLTRIG,
 					base + GIC_DIST_CONFIG + i / 4);
 
 	/*
 	 * Set priority on all global interrupts.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * SPI의 모든 인터럽트에 대해 우선순위를 디폴트 0xa0으로 설정한다.
+ */
 	for (i = 32; i < gic_irqs; i += 4)
 		writel_relaxed(GICD_INT_DEF_PRI_X4, base + GIC_DIST_PRI + i);
 
@@ -93,10 +103,19 @@ void __init gic_dist_config(void __iomem *base, int gic_irqs,
 	 * Disable all interrupts.  Leave the PPI and SGIs alone
 	 * as they are enabled by redistributor registers.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * SPI의 모든 인터럽트를 mark(discard) 한다. 
+ */
 	for (i = 32; i < gic_irqs; i += 32)
 		writel_relaxed(GICD_INT_EN_CLR_X32,
 					base + GIC_DIST_ENABLE_CLEAR + i / 8);
 
+/* IAMROOT-12:
+ * -------------
+ * gic-v3에서 사용한다.
+ */
 	if (sync_access)
 		sync_access();
 }
@@ -109,16 +128,30 @@ void gic_cpu_config(void __iomem *base, void (*sync_access)(void))
 	 * Deal with the banked PPI and SGI interrupts - disable all
 	 * PPI interrupts, ensure all SGI interrupts are enabled.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * PPI중 16개 인터럽트를 mark(discard) 하고, SGI 16개 인터럽트를 unmark(forward)한다.
+ */
 	writel_relaxed(GICD_INT_EN_CLR_PPI, base + GIC_DIST_ENABLE_CLEAR);
 	writel_relaxed(GICD_INT_EN_SET_SGI, base + GIC_DIST_ENABLE_SET);
 
 	/*
 	 * Set priority on PPI and SGI interrupts
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * irq#0~irq#31번까지 우선순위를 0xa0(0b10100000)으로 설정한다.
+ */
 	for (i = 0; i < 32; i += 4)
 		writel_relaxed(GICD_INT_DEF_PRI_X4,
 					base + GIC_DIST_PRI + i * 4 / 4);
 
+/* IAMROOT-12:
+ * -------------
+ * gic-v3에서 사용한다.
+ */
 	if (sync_access)
 		sync_access();
 }
