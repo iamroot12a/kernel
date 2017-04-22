@@ -505,6 +505,10 @@ unsigned int irq_create_of_mapping(struct of_phandle_args *irq_data)
 	unsigned int type = IRQ_TYPE_NONE;
 	int virq;
 
+/* IAMROOT-12:
+ * -------------
+ * irq_data->np 인터럽트 컨트롤러에서 지정한 irq_domain을 찾아온다.
+ */
 	domain = irq_data->np ? irq_find_host(irq_data->np) : irq_default_domain;
 	if (!domain) {
 		pr_warn("no irq domain found for %s !\n",
@@ -513,6 +517,17 @@ unsigned int irq_create_of_mapping(struct of_phandle_args *irq_data)
 	}
 
 	/* If domain has no translation, then we assume interrupt line */
+
+/* IAMROOT-12:
+ * -------------
+ * irq 도메인에 (*xlate) 함수가 구현되어 있지 않으면 변환 없이 첫 번째 인수를 
+ * hwirq 번호로 사용한다.
+ *
+ * 구현되어 있는 경우 (*xlate) 후크에 연결된 함수를 호출하여 irq_data->args[]
+ * 인수값으로 매칭된 hwirq 번호를 알아온다.
+ *
+ * drivers/gic/irq-gic.c - gic_irq_domain_xlate()
+ */
 	if (domain->ops->xlate == NULL)
 		hwirq = irq_data->args[0];
 	else {
@@ -521,11 +536,22 @@ unsigned int irq_create_of_mapping(struct of_phandle_args *irq_data)
 			return 0;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 디바이스 트리를 사용하는 경우 하이라키를 지원한다.
+ */
 	if (irq_domain_is_hierarchy(domain)) {
 		/*
 		 * If we've already configured this interrupt,
 		 * don't do it again, or hell will break loose.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 이미 hwirq <--> virq 매핑이 된 경우 virq를 곧바로 반환한다.
+ * (virq: 리눅스의 irq 디스크립터로 유니크하다.
+ *  hwirq: irq 도메인내에서 유니크하다)
+ */
 		virq = irq_find_mapping(domain, hwirq);
 		if (virq)
 			return virq;
@@ -585,6 +611,11 @@ unsigned int irq_find_mapping(struct irq_domain *domain,
 	if (domain == NULL)
 		return 0;
 
+/* IAMROOT-12:
+ * -------------
+ * hwirq 번호가 nomapping 구간인 경우 
+ * irq 디스크립터를 찾아 hwirq 번호와 동일한지 체크한 후에 hwirq 번호를 반환.
+ */
 	if (hwirq < domain->revmap_direct_max_irq) {
 		data = irq_domain_get_irq_data(domain, hwirq);
 		if (data && data->hwirq == hwirq)
@@ -592,9 +623,20 @@ unsigned int irq_find_mapping(struct irq_domain *domain,
 	}
 
 	/* Check if the hwirq is in the linear revmap. */
+
+/* IAMROOT-12:
+ * -------------
+ * hwirq로 리니어 배열을 만든 구간인 경우 
+ * 해당 hwirq 인덱스에 해당하는 virq를 반환한다.
+ */
 	if (hwirq < domain->revmap_size)
 		return domain->linear_revmap[hwirq];
 
+/* IAMROOT-12:
+ * -------------
+ * tree로 구성한 경우 
+ * 해당 hwirq 번호에 해당하는 virq를 찾아 반환한다.
+ */
 	rcu_read_lock();
 	data = radix_tree_lookup(&domain->revmap_tree, hwirq);
 	rcu_read_unlock();
@@ -761,13 +803,34 @@ static int irq_domain_alloc_descs(int virq, unsigned int cnt,
 {
 	unsigned int hint;
 
+/* IAMROOT-12:
+ * -------------
+ * virq 번호가 지정되어 호출된 경우
+ */
 	if (virq >= 0) {
 		virq = irq_alloc_descs(virq, virq, cnt, node);
 	} else {
+
+/* IAMROOT-12:
+ * -------------
+ * 규칙에 의해 virq 번호를 할당해준다.
+ * hwirq가 0번인 경우 1번부터 시작하게 유도한다.
+ */
 		hint = hwirq % nr_irqs;
 		if (hint == 0)
 			hint++;
+
+/* IAMROOT-12:
+ * -------------
+ * hint 부터 검색을 하되 cnt 만큼 빈공간을 찾는 경우 그 번호부터 할당한다.
+ * 할당 받은 가장 첫 번째 번호를 virq 값으로 반환한다.
+ */
 		virq = irq_alloc_descs_from(hint, cnt, node);
+
+/* IAMROOT-12:
+ * -------------
+ * hint부터 할당을 시도하여 안된 경우 다시 처음(1)부터 시도한다.
+ */
 		if (virq <= 0 && hint > 1)
 			virq = irq_alloc_descs_from(1, cnt, node);
 	}
@@ -866,6 +929,13 @@ static struct irq_data *irq_domain_insert_irq_data(struct irq_domain *domain,
 
 	irq_data = kzalloc_node(sizeof(*irq_data), GFP_KERNEL, child->node);
 	if (irq_data) {
+
+/* IAMROOT-12:
+ * -------------
+ * irq 도메인이 하이라키로 구성될 때 도메인만 바뀌면서 상위 도메인 까지
+ * irq_data 구조가 만들어지고 irq 번호는 바뀌지 않는다.
+ * irq(virq)
+ */
 		child->parent_data = irq_data;
 		irq_data->irq = child->irq;
 		irq_data->node = child->node;
@@ -906,9 +976,23 @@ static int irq_domain_alloc_irq_data(struct irq_domain *domain,
 		irq_data = irq_get_irq_data(virq + i);
 		irq_data->domain = domain;
 
+/* IAMROOT-12:
+ * -------------
+ * 부모 도메인이 있는 구간까지 irq_data를 할당받는다.
+ *	내부에는 같은 irq 번호를 사용하고 domain만 다르게 계층구조로 사용된다.
+ *
+ * 하나의 irq는 하나의 irq_desc를 가지고 그 내부에 irq_data가 존재한다.
+ * 그리고 상위 부모 도메인이 있는 경우 irq_data를 추가로 할당하여 도메인 
+ * 정보를 기록해둔다.
+ */
 		for (parent = domain->parent; parent; parent = parent->parent) {
 			irq_data = irq_domain_insert_irq_data(parent, irq_data);
 			if (!irq_data) {
+
+/* IAMROOT-12:
+ * -------------
+ * 메모리 부족시 virq부터 지금까지 할당한 개수(i+1)만큼 할당해제 한다.
+ */
 				irq_domain_free_irq_data(virq, i + 1);
 				return -ENOMEM;
 			}
@@ -928,6 +1012,13 @@ struct irq_data *irq_domain_get_irq_data(struct irq_domain *domain,
 {
 	struct irq_data *irq_data;
 
+/* IAMROOT-12:
+ * -------------
+ * virq 번호로 irq 디스크립터의 irq_data를 가져온다.
+ * 만일 도메인이 다른 경우 최상위 부모까지 irq_data를 뒤져서 찾는다.
+ *
+ * (그래도 virq는 모든 irq_data가 동일하다.)
+ */
 	for (irq_data = irq_get_irq_data(virq); irq_data;
 	     irq_data = irq_data->parent_data)
 		if (irq_data->domain == domain)
@@ -948,6 +1039,11 @@ int irq_domain_set_hwirq_and_chip(struct irq_domain *domain, unsigned int virq,
 				  irq_hw_number_t hwirq, struct irq_chip *chip,
 				  void *chip_data)
 {
+/* IAMROOT-12:
+ * -------------
+ * virq 및 도메인으로 검색하여 가져온 irq_data에 hwirq 번호와 chip 정보를 
+ * 기록한다.
+ */
 	struct irq_data *irq_data = irq_domain_get_irq_data(domain, virq);
 
 	if (!irq_data)
@@ -976,6 +1072,11 @@ void irq_domain_set_info(struct irq_domain *domain, unsigned int virq,
 			 void *chip_data, irq_flow_handler_t handler,
 			 void *handler_data, const char *handler_name)
 {
+/* IAMROOT-12:
+ * -------------
+ * virq 및 도메인으로 검색하여 가져온 irq_data에 hwirq 번호와 chip 정보를 
+ * 기록한다.
+ */
 	irq_domain_set_hwirq_and_chip(domain, virq, hwirq, chip, chip_data);
 	__irq_set_handler(virq, handler, 0, handler_name);
 	irq_set_handler_data(virq, handler_data);
@@ -1055,6 +1156,13 @@ static int irq_domain_alloc_irqs_recursive(struct irq_domain *domain,
 	struct irq_domain *parent = domain->parent;
 	bool recursive = irq_domain_is_auto_recursive(domain);
 
+/* IAMROOT-12:
+ * -------------
+ * 도메인 리커시브를 지원하는 경우 도메인 계층 구조중 최상위 도메인부터 
+ * (*alloc)을 호출한다.
+ *
+ * gic-v1: gic_irq_domain_alloc()
+ */
 	BUG_ON(recursive && !parent);
 	if (recursive)
 		ret = irq_domain_alloc_irqs_recursive(parent, irq_base,
@@ -1100,6 +1208,10 @@ int __irq_domain_alloc_irqs(struct irq_domain *domain, int irq_base,
 			return -EINVAL;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 계층 구조를 가진 도메인인 경우가 아니면 -ENOSYS 결과를 반환한다.
+ */
 	if (!domain->ops->alloc) {
 		pr_debug("domain->ops->alloc() is NULL\n");
 		return -ENOSYS;
@@ -1108,6 +1220,12 @@ int __irq_domain_alloc_irqs(struct irq_domain *domain, int irq_base,
 	if (realloc && irq_base >= 0) {
 		virq = irq_base;
 	} else {
+
+/* IAMROOT-12:
+ * -------------
+ * irq_base가 -1로 진입한 경우 가장 처음(hwirq=0)부터 virq를 할당 요청한다.
+ * (virq는 1번부터 할당 가능하다)
+ */
 		virq = irq_domain_alloc_descs(irq_base, nr_irqs, 0, node);
 		if (virq < 0) {
 			pr_debug("cannot allocate IRQ(base %d, count %d)\n",
@@ -1116,6 +1234,10 @@ int __irq_domain_alloc_irqs(struct irq_domain *domain, int irq_base,
 		}
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 하이라키 도메인을 사용하는 경우 irq_data를 하이라키로 연결한다.
+ */
 	if (irq_domain_alloc_irq_data(domain, virq, nr_irqs)) {
 		pr_debug("cannot allocate memory for IRQ%d\n", virq);
 		ret = -ENOMEM;

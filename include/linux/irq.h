@@ -552,6 +552,11 @@ static inline void irq_set_nested_thread(unsigned int irq, bool nest)
 
 static inline void irq_set_percpu_devid_flags(unsigned int irq)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * cpu별로 동작하는 irq 디스크립터인 경우 IRQ_PER_CPU 설정이 필요하다.
+ */
 	irq_set_status_flags(irq,
 			     IRQ_NOAUTOEN | IRQ_PER_CPU | IRQ_NOTHREAD |
 			     IRQ_NOPROBE | IRQ_PER_CPU_DEVID);

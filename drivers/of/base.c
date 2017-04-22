@@ -1680,6 +1680,8 @@ int of_parse_phandle_with_args(const struct device_node *np, const char *list_na
  * -------------
  * list_name: 예) 클럭 디바이스를 취급 시 "clocks" 속성 사용
  * cells_name: 예)     "                  "#clock-cells" 속성 사용
+ *
+ * 결과값이 0인 경우 성공
  */
 
 	return __of_parse_phandle_with_args(np, list_name, cells_name, 0,

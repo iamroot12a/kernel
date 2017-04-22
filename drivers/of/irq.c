@@ -38,6 +38,11 @@ unsigned int irq_of_parse_and_map(struct device_node *dev, int index)
 {
 	struct of_phandle_args oirq;
 
+/* IAMROOT-12:
+ * -------------
+ * 사용할 인터럽트 정보를 파싱해온다.
+ * (pci인 경우 매핑 포함)
+ */
 	if (of_irq_parse_one(dev, index, &oirq))
 		return 0;
 
@@ -101,6 +106,11 @@ struct device_node *of_irq_find_parent(struct device_node *child)
  * input, walks the tree looking for any interrupt-map properties, translates
  * the specifier for each map, and then returns the translated map.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * pci 매핑도 계층형을 지원하여 매핑이 여러 번 될 수도 있다.
+ */
 int of_irq_parse_raw(const __be32 *addr, struct of_phandle_args *out_irq)
 {
 	struct device_node *ipar, *tnode, *old = NULL, *newpar = NULL;
@@ -114,12 +124,21 @@ int of_irq_parse_raw(const __be32 *addr, struct of_phandle_args *out_irq)
 	of_print_phandle_args("of_irq_parse_raw: ", out_irq);
 #endif
 
+/* IAMROOT-12:
+ * -------------
+ * 부모 컨트롤러 디바이스 노드
+ */
 	ipar = of_node_get(out_irq->np);
 
 	/* First get the #interrupt-cells property of the current cursor
 	 * that tells us how to interpret the passed-in intspec. If there
 	 * is none, we are nice and just walk up the tree
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * "#interrupt-cells"를 찾을 때까지 상위 인터럽트 컨트롤러를 찾는다.
+ */
 	do {
 		tmp = of_get_property(ipar, "#interrupt-cells", NULL);
 		if (tmp != NULL) {
@@ -143,6 +162,12 @@ int of_irq_parse_raw(const __be32 *addr, struct of_phandle_args *out_irq)
 	/* Look for this #address-cells. We have to implement the old linux
 	 * trick of looking for the parent here as some device-trees rely on it
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 부모 인터럽트 컨트롤러 노드에서 "#address-cells"를 찾아보고 없으면 
+ * 상위 노드로 이동하며 찾는다.
+ */
 	old = of_node_get(ipar);
 	do {
 		tmp = of_get_property(old, "#address-cells", NULL);
@@ -161,6 +186,15 @@ int of_irq_parse_raw(const __be32 *addr, struct of_phandle_args *out_irq)
 		goto fail;
 
 	/* Precalculate the match array - this simplifies match loop */
+
+/* IAMROOT-12:
+ * -------------
+ * "reg =" 속성 값을 "#address-cells" 만큼 읽어와서 initial_match_array[]에 
+ *	   저장한다.
+ * args[]로 받은 값에서 "#interrupt-cells" 만큼 읽어와서 그 다음에 저장한다.
+ *
+ * initial_match_array[] <- {reg 값, args[]...}
+ */
 	for (i = 0; i < addrsize; i++)
 		initial_match_array[i] = addr ? addr[i] : 0;
 	for (i = 0; i < intsize; i++)
@@ -171,6 +205,13 @@ int of_irq_parse_raw(const __be32 *addr, struct of_phandle_args *out_irq)
 		/* Now check if cursor is an interrupt-controller and if it is
 		 * then we are done
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * ipar(상위 인터럽트 컨트롤러라고 하는 곳) 노드에 "interrupt-controller"가 
+ * 존재하면 실제 인터럽트 컨트롤러 이므로 매핑할 필요 없이 그냥 그대로 
+ * out_irq를 수정하지 않고 사용하기 위해 함수를 빠져나간다.
+ */
 		if (of_get_property(ipar, "interrupt-controller", NULL) !=
 				NULL) {
 			pr_debug(" -> got it !\n");
@@ -187,6 +228,11 @@ int of_irq_parse_raw(const __be32 *addr, struct of_phandle_args *out_irq)
 		}
 
 		/* Now look for an interrupt-map */
+
+/* IAMROOT-12:
+ * -------------
+ * "interrupt-map" 속성을 읽어온다.
+ */
 		imap = of_get_property(ipar, "interrupt-map", &imaplen);
 		/* No interrupt map, check for an interrupt parent */
 		if (imap == NULL) {
@@ -197,6 +243,12 @@ int of_irq_parse_raw(const __be32 *addr, struct of_phandle_args *out_irq)
 		imaplen /= sizeof(u32);
 
 		/* Look for a mask */
+
+/* IAMROOT-12:
+ * -------------
+ * "interrupt-map-mask" 속성이 없는 경우 dummy_imask를 사용한다.
+ * (더미 마스크는 인수 16개 모두 0xffff_ffff로 구성되어 있다.)
+ */
 		imask = of_get_property(ipar, "interrupt-map-mask", NULL);
 		if (!imask)
 			imask = dummy_imask;
@@ -206,6 +258,12 @@ int of_irq_parse_raw(const __be32 *addr, struct of_phandle_args *out_irq)
 		while (imaplen > (addrsize + intsize + 1) && !match) {
 			/* Compare specifiers */
 			match = 1;
+
+/* IAMROOT-12:
+ * -------------
+ * initial_match_array[]에 읽어온 데이터가 "interrupt-map"과 동일한 경우 
+ * match가 0이 아니게 된다. 
+ */
 			for (i = 0; i < (addrsize + intsize); i++, imaplen--)
 				match &= !((match_array[i] ^ *imap++) & imask[i]);
 
@@ -261,6 +319,12 @@ int of_irq_parse_raw(const __be32 *addr, struct of_phandle_args *out_irq)
 		 * Successfully parsed an interrrupt-map translation; copy new
 		 * interrupt specifier into the out_irq structure
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * "interrupt-map"에서 지정한 인터럽트 컨트롤러와 인터럽트 argument를 out_irq에
+ * 설정한다.
+ */
 		out_irq->np = newpar;
 
 		match_array = imap - newaddrsize - newintsize;
@@ -304,6 +368,11 @@ int of_irq_parse_one(struct device_node *device, int index, struct of_phandle_ar
 	pr_debug("of_irq_parse_one: dev=%s, index=%d\n", of_node_full_name(device), index);
 
 	/* OldWorld mac stuff is "special", handle out of line */
+
+/* IAMROOT-12:
+ * -------------
+ * powermac 워크어라운드 적용
+ */
 	if (of_irq_workarounds & OF_IMAP_OLDWORLD_MAC)
 		return of_irq_parse_oldworld(device, index, out_irq);
 
@@ -311,12 +380,28 @@ int of_irq_parse_one(struct device_node *device, int index, struct of_phandle_ar
 	addr = of_get_property(device, "reg", NULL);
 
 	/* Try the new-style interrupts-extended first */
+
+/* IAMROOT-12:
+ * -------------
+ * 신형: "interrupts=" 대신 "interrupts-extended"로 새로운 스타일을 사용한다.
+ *       추가 인수로 컨트롤러를 지정한다. (첫 번째 인수=컨트롤러)
+ */
 	res = of_parse_phandle_with_args(device, "interrupts-extended",
 					"#interrupt-cells", index, out_irq);
+
+/* IAMROOT-12:
+ * -------------
+ * res 값이 0인 경우 성공하여 of_irq_parse_raw() 함수로 이동한다.
+ */
 	if (!res)
 		return of_irq_parse_raw(addr, out_irq);
 
 	/* Get the interrupts property */
+
+/* IAMROOT-12:
+ * -------------
+ * 구형: "interrupts =" 속성은 "interrupt-parent =" 속성과 같이 사용된다.
+ */
 	intspec = of_get_property(device, "interrupts", &intlen);
 	if (intspec == NULL)
 		return -EINVAL;

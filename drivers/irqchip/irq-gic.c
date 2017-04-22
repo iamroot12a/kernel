@@ -879,6 +879,11 @@ void __init gic_init_physaddr(struct device_node *node)
 static int gic_irq_domain_map(struct irq_domain *d, unsigned int irq,
 				irq_hw_number_t hw)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 32 미만의 hwirq에 대해서 percpu 디바이스로 플래그를 설정한다.
+ */
 	if (hw < 32) {
 		irq_set_percpu_devid(irq);
 		irq_domain_set_info(d, irq, hw, &gic_chip, d->host_data,
@@ -899,6 +904,11 @@ static void gic_irq_domain_unmap(struct irq_domain *d, unsigned int irq)
 	gic_routable_irq_domain_ops->unmap(d, irq);
 }
 
+
+/* IAMROOT-12:
+ * -------------
+ * 성공시 0을 반환한다.
+ */
 static int gic_irq_domain_xlate(struct irq_domain *d,
 				struct device_node *controller,
 				const u32 *intspec, unsigned int intsize,
@@ -1263,7 +1273,7 @@ gic_of_init(struct device_node *node, struct device_node *parent)
 /* IAMROOT-12:
  * -------------
  * 부모 인터럽트 컨틀롤러가 있는 경우 irq를 상위 인터럽트 컨트롤러에 
- * cascade하기 위해 매핑한다.
+ * cascade하기 위해 매핑한다. (2개 이상의 gic 사용)
  */
 	if (parent) {
 		irq = irq_of_parse_and_map(node, 0);

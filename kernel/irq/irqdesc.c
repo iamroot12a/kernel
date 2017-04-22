@@ -492,6 +492,15 @@ __irq_alloc_descs(int irq, unsigned int from, unsigned int cnt, int node,
 	if (!cnt)
 		return -EINVAL;
 
+/* IAMROOT-12:
+ * -------------
+ * 요청한 irq 번호가 있는 경우 그 번호가 from 이상인 경우 irq 번호부터 
+ * 검색을 시도할 계획이다.
+ *
+ * 그렇지 않은 경우 from 부터 검색을 시도한다.
+ *
+ * 검색 비트맵: allocated_irqs 
+ */
 	if (irq >= 0) {
 		if (from > irq)
 			return -EINVAL;
@@ -502,11 +511,20 @@ __irq_alloc_descs(int irq, unsigned int from, unsigned int cnt, int node,
 		 * architecture can force a lower bound to the @from
 		 * argument. x86 uses this to exclude the GSI space.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * arm 아키텍처는 그냥 from 값을 그대로 반환한다.
+ */
 		from = arch_dynirq_lower_bound(from);
 	}
 
 	mutex_lock(&sparse_irq_lock);
 
+/* IAMROOT-12:
+ * -------------
+ * from 비트부터 cnt 만큼의 0으로 된 비트의 시작 위치를 찾는다.
+ */
 	start = bitmap_find_next_zero_area(allocated_irqs, IRQ_BITMAP_BITS,
 					   from, cnt, 0);
 	ret = -EEXIST;
@@ -519,6 +537,10 @@ __irq_alloc_descs(int irq, unsigned int from, unsigned int cnt, int node,
 			goto err;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 할당 받을 virq에 대해 mask 한다.
+ */
 	bitmap_set(allocated_irqs, start, cnt);
 	mutex_unlock(&sparse_irq_lock);
 	return alloc_descs(start, cnt, node, owner);
@@ -629,14 +651,26 @@ int irq_set_percpu_devid(unsigned int irq)
 	if (!desc)
 		return -EINVAL;
 
+/* IAMROOT-12:
+ * -------------
+ * 포인터가 이미 할당된 경우(이미 per-cpu 설정이 구성된 경우)
+ */
 	if (desc->percpu_enabled)
 		return -EINVAL;
 
+/* IAMROOT-12:
+ * -------------
+ * 포인터를 할당하여 연결한다.
+ */
 	desc->percpu_enabled = kzalloc(sizeof(*desc->percpu_enabled), GFP_KERNEL);
 
 	if (!desc->percpu_enabled)
 		return -ENOMEM;
 
+/* IAMROOT-12:
+ * -------------
+ * irq 디스크립터에 PER-CPU용 디바이스 플래그 등을 설정한다.
+ */
 	irq_set_percpu_devid_flags(irq);
 	return 0;
 }

@@ -146,6 +146,10 @@ EXPORT_SYMBOL(irq_set_chip_data);
 
 struct irq_data *irq_get_irq_data(unsigned int irq)
 {
+/* IAMROOT-12:
+ * -------------
+ * irq(virq) 번호로 irq_desc.irq_data를 반환한다.
+ */
 	struct irq_desc *desc = irq_to_desc(irq);
 
 	return desc ? &desc->irq_data : NULL;
@@ -728,6 +732,10 @@ __irq_set_handler(unsigned int irq, irq_flow_handler_t handle, int is_chained,
 	if (!desc)
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * 처음에 핸들러가 지정되지 않은 경우 handle_bad_irq() 함수를 연결한다.
+ */
 	if (!handle) {
 		handle = handle_bad_irq;
 	} else {
@@ -754,11 +762,23 @@ __irq_set_handler(unsigned int irq, irq_flow_handler_t handle, int is_chained,
 			irq_data = irq_data->parent_data;
 		}
 #endif
+
+/* IAMROOT-12:
+ * -------------
+ * 칩 핸들러가 상위 계층에도 존재하지 않는 경우 경고 메시지를 출력하고 
+ * 함수를 빠져나간다.
+ */
 		if (WARN_ON(!irq_data || irq_data->chip == &no_irq_chip))
 			goto out;
 	}
 
 	/* Uninstall? */
+
+/* IAMROOT-12:
+ * -------------
+ * 핸들러가 지정되지 않은 상태인 경우 disable 상태를 기록한다. 
+ * 또한 chip 핸들러가 준비되어 있으면 곧바로 인터럽트를 mask한다. 
+ */
 	if (handle == handle_bad_irq) {
 		if (desc->irq_data.chip != &no_irq_chip)
 			mask_ack_irq(desc);

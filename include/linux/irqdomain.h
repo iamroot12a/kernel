@@ -108,6 +108,16 @@ struct irq_domain_chip_generic;
  * @linear_revmap: Linear table of hwirq->virq reverse mappings
  */
 struct irq_domain {
+
+/* IAMROOT-12:
+ * -------------
+ * revmap_direct_max_irq
+ *      매핑이 필요 없는 hwirq 구간으로 hwirq=virq (nomapping)
+ * linear_revmap[]
+ *      0 ~ hwirq 번호에 해당하는 virq 값으로 구성된다.
+ *      revmap_size이 최대 배열 수이다.
+ *  
+ */
 	struct list_head link;
 	const char *name;
 	const struct irq_domain_ops *ops;

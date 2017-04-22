@@ -81,6 +81,16 @@ struct device_node {
 
 #define MAX_PHANDLE_ARGS 16
 struct of_phandle_args {
+
+/* IAMROOT-12:
+ * -------------
+ * np:  
+ *      인터럽트 컨트롤러 디바이스 노드
+ * args_count:
+ *      인수 개수
+ * args[]
+ *      디바이스 트리 속성에서 읽은 최대 16개까지 인수 값
+ */
 	struct device_node *np;
 	int args_count;
 	uint32_t args[MAX_PHANDLE_ARGS];
