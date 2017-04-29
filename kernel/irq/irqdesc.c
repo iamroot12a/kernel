@@ -400,6 +400,11 @@ void irq_init_desc(unsigned int irq)
  */
 int generic_handle_irq(unsigned int irq)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 요청한 irq로 irq를 디스크립터를 찾는다.
+ */
 	struct irq_desc *desc = irq_to_desc(irq);
 
 	if (!desc)
@@ -429,6 +434,11 @@ int __handle_domain_irq(struct irq_domain *domain, unsigned int hwirq,
 	irq_enter();
 
 #ifdef CONFIG_IRQ_DOMAIN
+
+/* IAMROOT-12:
+ * -------------
+ * lookup을 하지 않는 경우는 hwirq = virq와 동일하게 사용하는 커널 구성
+ */
 	if (lookup)
 		irq = irq_find_mapping(domain, hwirq);
 #endif
@@ -441,6 +451,11 @@ int __handle_domain_irq(struct irq_domain *domain, unsigned int hwirq,
 		ack_bad_irq(irq);
 		ret = -EINVAL;
 	} else {
+
+/* IAMROOT-12:
+ * -------------
+ * 여기서 내장 핸들러 호출
+ */
 		generic_handle_irq(irq);
 	}
 

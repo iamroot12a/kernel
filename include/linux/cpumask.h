@@ -179,6 +179,12 @@ static inline int cpumask_set_cpu_local_first(int i, int numa_node, cpumask_t *d
  */
 static inline unsigned int cpumask_first(const struct cpumask *srcp)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * cpu 마스크들 중 가장 처음 설정된 cpu (based 0)
+ * 예) 0x00001010 -> 1 (가장 처음 cpu는 두 번째 cpu)
+ */
 	return find_first_bit(cpumask_bits(srcp), nr_cpumask_bits);
 }
 

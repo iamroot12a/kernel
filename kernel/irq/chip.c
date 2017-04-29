@@ -180,10 +180,26 @@ int irq_startup(struct irq_desc *desc, bool resend)
 {
 	int ret = 0;
 
+/* IAMROOT-12:
+ * -------------
+ * irq disable 상태를 클리어한다.
+ */
 	irq_state_clr_disabled(desc);
 	desc->depth = 0;
 
+/* IAMROOT-12:
+ * -------------
+ * 해당 irq에 대해 상위 도메인부터 하위 도메인까지 activation을 한다.
+ * (gic는 해당 사항 없음)
+ */
 	irq_domain_activate_irq(&desc->irq_data);
+
+/* IAMROOT-12:
+ * -------------
+ * chip 핸들러의 (*irq_start) 후크 함수를 동작시키고
+ *  (gic의 경우 해당 사항 없음)
+ * masked 상태로 바꾼다.
+ */
 	if (desc->irq_data.chip->irq_startup) {
 		ret = desc->irq_data.chip->irq_startup(&desc->irq_data);
 		irq_state_clr_masked(desc);
@@ -211,6 +227,13 @@ void irq_shutdown(struct irq_desc *desc)
 
 void irq_enable(struct irq_desc *desc)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * disable 상태를 클리어하고 chip 핸들러에 irq_enable()이 구현된 경우 
+ * 해당 후크 함수를 호출하고 없으면 irq_unmask() 후크 함수를 호출한다.
+ * 그런 후 irq 디스크립터의 masked 상태를 클리어한다.
+ */
 	irq_state_clr_disabled(desc);
 	if (desc->irq_data.chip->irq_enable)
 		desc->irq_data.chip->irq_enable(&desc->irq_data);
@@ -281,6 +304,11 @@ void mask_irq(struct irq_desc *desc)
 
 void unmask_irq(struct irq_desc *desc)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * gic: gic_unmask_irq()
+ */
 	if (desc->irq_data.chip->irq_unmask) {
 		desc->irq_data.chip->irq_unmask(&desc->irq_data);
 		irq_state_clr_masked(desc);
@@ -344,8 +372,18 @@ EXPORT_SYMBOL_GPL(handle_nested_irq);
 
 static bool irq_check_poll(struct irq_desc *desc)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * irq polling 진행중이 아니면 false를 반환한다.
+ */
 	if (!(desc->istate & IRQS_POLL_INPROGRESS))
 		return false;
+
+/* IAMROOT-12:
+ * -------------
+ * 누군가 irq polling 중이면 기다렸다가 irq enable 상태를 반환한다. 
+ */
 	return irq_wait_for_poll(desc);
 }
 
@@ -357,6 +395,12 @@ static bool irq_may_run(struct irq_desc *desc)
 	 * If the interrupt is not in progress and is not an armed
 	 * wakeup interrupt, proceed.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * irq가 처리중이 아니면서 wakeup armed 상태도 아닌 경우 true를 반환한다.
+ * (irq 처리 가능)
+ */
 	if (!irqd_has_set(&desc->irq_data, mask))
 		return true;
 
@@ -365,12 +409,31 @@ static bool irq_may_run(struct irq_desc *desc)
 	 * and suspended, disable it and notify the pm core about the
 	 * event.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * irq 처리중이거나 suspended된 경우 진입된다.
+ *
+ * wakeup armed 플래그가 설정된 경우 wakeup armed 플래그를 클리어하고 
+ * suspend 및 pending 상태를 추가한다. 그리고 irq를 disable 한다.
+ * (인터럽트 컨트롤러가 동작하지 못하는 상태가 됨)
+ *
+ * 즉, suspend 관련
+ */
 	if (irq_pm_check_wakeup(desc))
 		return false;
 
 	/*
 	 * Handle a potential concurrent poll on a different core.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 인터럽트가 처리중인 상태에서 여기에 진입했다.
+ *
+ * 폴링이 진행중이 아니면 false를 받아오지만 다른 코어로부터 폴링이 
+ * 진행중이면 완료시까지 기다린다.
+ */
 	return irq_check_poll(desc);
 }
 
@@ -474,11 +537,25 @@ static inline void preflow_handler(struct irq_desc *desc)
 		desc->preflow_handler(&desc->irq_data);
 }
 #else
+
+/* IAMROOT-12:
+ * -------------
+ * arm 및 arm64 아키텍처는 이 함수에서 아무런 동작도 하지 않는다.
+ */
 static inline void preflow_handler(struct irq_desc *desc) { }
 #endif
 
 static void cond_unmask_eoi_irq(struct irq_desc *desc, struct irq_chip *chip)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * oneshot 인터럽트가 아닌 경우에는 eoi 신호를 인터럽트 컨트롤러에게 보낸다.
+ *
+ * oneshot 인터럽트를 원하는 경우 인터럽트 컨트롤러에게 eoi를 보내지 않는다.
+ * 그러면 인터럽트 컨트롤러는 해당 인터럽트에 대해 계속 처리중인 것으로 
+ * 인식하여 인터럽트를 cpu에게 보내지 않는다.
+ */
 	if (!(desc->istate & IRQS_ONESHOT)) {
 		chip->irq_eoi(&desc->irq_data);
 		return;
@@ -489,6 +566,11 @@ static void cond_unmask_eoi_irq(struct irq_desc *desc, struct irq_chip *chip)
 	 *   spurious interrupt or a primary handler handling it
 	 *   completely).
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 예외적으로 아래의 케이스에서는 eoi를 인터럽트 컨트롤러에게 보낸다.
+ */
 	if (!irqd_irq_disabled(&desc->irq_data) &&
 	    irqd_irq_masked(&desc->irq_data) && !desc->threads_oneshot) {
 		chip->irq_eoi(&desc->irq_data);
@@ -511,10 +593,21 @@ static void cond_unmask_eoi_irq(struct irq_desc *desc, struct irq_chip *chip)
 void
 handle_fasteoi_irq(unsigned int irq, struct irq_desc *desc)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * gic 컨트롤러는 SPIs 들에 대해 이 함수를 사용한다.
+ */
 	struct irq_chip *chip = desc->irq_data.chip;
 
 	raw_spin_lock(&desc->lock);
 
+/* IAMROOT-12:
+ * -------------
+ * irq 핸들러를 처리할 수 없는 상황인 경우 out 레이블로 이동한다.
+ * (이미 irq 처리 진행 중인 경우 out 레이블로 이동한다. 
+ *  단 다른 코어에서 polling 중이면 기다렸다가 처리할 수 있다.)
+ */
 	if (!irq_may_run(desc))
 		goto out;
 
@@ -525,23 +618,52 @@ handle_fasteoi_irq(unsigned int irq, struct irq_desc *desc)
 	 * If its disabled or no action available
 	 * then mask it and get out of here:
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * action 핸들러가 지정되지 않았거나 disable 상태인 경우 
+ * 인터럽트를 마스크 시키고 out 레이블로 이동한다.
+ */
 	if (unlikely(!desc->action || irqd_irq_disabled(&desc->irq_data))) {
 		desc->istate |= IRQS_PENDING;
 		mask_irq(desc);
 		goto out;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * oneshot 요청된 경우 더 이상 인터럽트가 진입하지 못하도록 mask 한다.
+ */
 	if (desc->istate & IRQS_ONESHOT)
 		mask_irq(desc);
 
+/* IAMROOT-12:
+ * -------------
+ * arm 및 arm64 아키텍처는 이 함수에서 아무런 동작도 하지 않는다.
+ */
 	preflow_handler(desc);
+
+/* IAMROOT-12:
+ * -------------
+ * irq 이벤트 핸들링을 수행한다.
+ */
 	handle_irq_event(desc);
 
+/* IAMROOT-12:
+ * -------------
+ * oneshot 요구된 인터럽트는 eoi를 인터럽트 컨트롤러에게 보내지 않는다.
+ */
 	cond_unmask_eoi_irq(desc, chip);
 
 	raw_spin_unlock(&desc->lock);
 	return;
 out:
+
+/* IAMROOT-12:
+ * -------------
+ * IRQCHIP_EOI_IF_HANDLED 플래그가 설정되지 않은 경우에만 eoi 신호를 
+ * gic 컨트롤러에게 보낸다.
+ */
 	if (!(chip->flags & IRQCHIP_EOI_IF_HANDLED))
 		chip->irq_eoi(&desc->irq_data);
 	raw_spin_unlock(&desc->lock);
@@ -681,11 +803,23 @@ handle_percpu_irq(unsigned int irq, struct irq_desc *desc)
 
 	kstat_incr_irqs_this_cpu(irq, desc);
 
+/* IAMROOT-12:
+ * -------------
+ * gic의 경우 chip에 잇는 irq_ack 핸들러를 사용하지 않는다.
+ * (이미 irq 처리 어셈블리 루틴에서 hwirq 번호를 읽어올때 ack를 동시에 
+ *  보냄)
+ */
 	if (chip->irq_ack)
 		chip->irq_ack(&desc->irq_data);
 
 	handle_irq_event_percpu(desc, desc->action);
 
+
+/* IAMROOT-12:
+ * -------------
+ * gic의 경우 호출되는 함수: gic_eoi_irq()
+ * 인터럽트의 처리가 완료되었음을 gic에게 알린다.
+ */
 	if (chip->irq_eoi)
 		chip->irq_eoi(&desc->irq_data);
 }
@@ -711,6 +845,12 @@ void handle_percpu_devid_irq(unsigned int irq, struct irq_desc *desc)
 
 	kstat_incr_irqs_this_cpu(irq, desc);
 
+/* IAMROOT-12:
+ * -------------
+ * ack 레지스터를 읽는 것으로 gic 컨트롤러에게 ack 신호를 보낸다.
+ *
+ *
+ */
 	if (chip->irq_ack)
 		chip->irq_ack(&desc->irq_data);
 
@@ -788,6 +928,11 @@ __irq_set_handler(unsigned int irq, irq_flow_handler_t handle, int is_chained,
 	desc->handle_irq = handle;
 	desc->name = name;
 
+/* IAMROOT-12:
+ * -------------
+ * 하위 인터럽트 컨트롤러에서 핸들러가 설정된 경우 
+ * noprobe, norequest, nothread로 설정하고 
+ */
 	if (handle != handle_bad_irq && is_chained) {
 		irq_settings_set_noprobe(desc);
 		irq_settings_set_norequest(desc);

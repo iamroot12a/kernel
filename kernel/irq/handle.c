@@ -145,6 +145,12 @@ handle_irq_event_percpu(struct irq_desc *desc, struct irqaction *action)
 		irqreturn_t res;
 
 		trace_irq_handler_entry(irq, action);
+
+/* IAMROOT-12:
+ * -------------
+ * 2차 action 인터럽트 핸들러를 호출한다. 
+ * (스레드 타입인 경우 top-half 처리 로직만 호출한다)
+ */
 		res = action->handler(irq, action->dev_id);
 		trace_irq_handler_exit(irq, action, res);
 
@@ -158,11 +164,21 @@ handle_irq_event_percpu(struct irq_desc *desc, struct irqaction *action)
 			 * Catch drivers which return WAKE_THREAD but
 			 * did not set up a thread function
 			 */
+
+/* IAMROOT-12:
+ * -------------
+ * bottom-half 처리를 위한 스레드 함수가 없는 경우 경고 메시지와 함께
+ * 루프를 탈출한다.
+ */
 			if (unlikely(!action->thread_fn)) {
 				warn_no_thread(irq, action);
 				break;
 			}
 
+/* IAMROOT-12:
+ * -------------
+ * 스레드 타입인 경우 bottom-half 처리를 위해 해당 스레드를 깨운다.
+ */
 			__irq_wake_thread(desc, action);
 
 			/* Fall through to add to randomness */
@@ -175,9 +191,19 @@ handle_irq_event_percpu(struct irq_desc *desc, struct irqaction *action)
 		}
 
 		retval |= res;
+
+/* IAMROOT-12:
+ * -------------
+ * 2차 action 인터럽트 핸들러는 1개 이상의 핸들러를 가질 수 있다.
+ * (1개의 인터럽트에 대해 여러 개의 디바이스 핸들러가 동작할 수 있다.)
+ */
 		action = action->next;
 	} while (action);
 
+/* IAMROOT-12:
+ * -------------
+ * 인터럽트 latency를 이용해서 랜덤값을 더 랜덤답게 만들어준다. ^^;
+ */
 	add_interrupt_randomness(irq, flags);
 
 	if (!noirqdebug)
@@ -194,6 +220,10 @@ irqreturn_t handle_irq_event(struct irq_desc *desc)
 	irqd_set(&desc->irq_data, IRQD_IRQ_INPROGRESS);
 	raw_spin_unlock(&desc->lock);
 
+/* IAMROOT-12:
+ * -------------
+ * irq 처리중 inprogress 상태 플래그가 설정된다.
+ */
 	ret = handle_irq_event_percpu(desc, action);
 
 	raw_spin_lock(&desc->lock);

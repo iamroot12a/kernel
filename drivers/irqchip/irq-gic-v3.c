@@ -220,6 +220,7 @@ static void gic_mask_irq(struct irq_data *d)
 
 static void gic_unmask_irq(struct irq_data *d)
 {
+
 	gic_poke_irq(d, GICD_ISENABLER);
 }
 
@@ -679,11 +680,6 @@ static int gic_irq_domain_alloc(struct irq_domain *domain, unsigned int virq,
 	unsigned int type = IRQ_TYPE_NONE;
 	struct of_phandle_args *irq_data = arg;
 
-/* IAMROOT-12:
- * -------------
- * args를 분석하여 hwirq, type 정보를 알아온다. 변환이 실패하는 경우 
- * 에러를 반환한다.
- */
 	ret = gic_irq_domain_xlate(domain, irq_data->np, irq_data->args,
 				   irq_data->args_count, &hwirq, &type);
 	if (ret)

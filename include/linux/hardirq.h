@@ -32,6 +32,12 @@ extern void rcu_nmi_exit(void);
  * always balanced, so the interrupted value of ->hardirq_context
  * will always be restored.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * irq 진입에 대한 latency 측정
+ * hard irq 처리를 이유로 preempt disable 
+ */
 #define __irq_enter()					\
 	do {						\
 		account_irq_enter_time(current);	\
@@ -46,6 +52,12 @@ extern void irq_enter(void);
 
 /*
  * Exit irq context without processing softirqs:
+ */
+
+/* IAMROOT-12:
+ * -------------
+ * irq 처리 완료까지의 latency 측정
+ * hard irq 처리 완료 되었으므로 preempt enable
  */
 #define __irq_exit()					\
 	do {						\

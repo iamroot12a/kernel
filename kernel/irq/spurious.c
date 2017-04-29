@@ -45,11 +45,21 @@ bool irq_wait_for_poll(struct irq_desc *desc)
 #ifdef CONFIG_SMP
 	do {
 		raw_spin_unlock(&desc->lock);
+
+/* IAMROOT-12:
+ * -------------
+ * irq polling 중이면 busy wait spinning을 한다.
+ */
 		while (irqd_irq_inprogress(&desc->irq_data))
 			cpu_relax();
 		raw_spin_lock(&desc->lock);
 	} while (irqd_irq_inprogress(&desc->irq_data));
 	/* Might have been disabled in meantime */
+
+/* IAMROOT-12:
+ * -------------
+ * irq 디스크립터의 action 핸들러가 있고 irq enable 된 경우 true를 반환한다.
+ */
 	return !irqd_irq_disabled(&desc->irq_data) && desc->action;
 #else
 	return false;

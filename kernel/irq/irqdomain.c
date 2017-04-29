@@ -321,6 +321,14 @@ int irq_domain_associate(struct irq_domain *domain, unsigned int virq,
 	mutex_lock(&irq_domain_mutex);
 	irq_data->hwirq = hwirq;
 	irq_data->domain = domain;
+
+/* IAMROOT-12:
+ * -------------
+ * 요청한 인터럽트 수만큼 irq 디스크립터에 chip 핸들러와 내장 인터럽트 핸들러
+ * 및 플래그 등을 설정한다.
+ *
+ * ops->map(): gic_irq_domain_map()
+ */
 	if (domain->ops->map) {
 		ret = domain->ops->map(domain, virq, hwirq);
 		if (ret != 0) {
@@ -344,6 +352,12 @@ int irq_domain_associate(struct irq_domain *domain, unsigned int virq,
 			domain->name = irq_data->chip->name;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 리니어 매핑 또는 트리 매핑을 한다.
+ *	- 리니어 매핑: key=hwirq, result value=virq
+ *	- 트리 매핑:   key=hwirq, result value=irq_data 포인터
+ */
 	if (hwirq < domain->revmap_size) {
 		domain->linear_revmap[hwirq] = virq;
 	} else {
@@ -439,6 +453,11 @@ unsigned int irq_create_mapping(struct irq_domain *domain,
 	pr_debug("-> using domain @%p\n", domain);
 
 	/* Check if mapping already exists */
+
+/* IAMROOT-12:
+ * -------------
+ * 이미 매핑이 된 경우 매핑된 virq를 반환한다.
+ */
 	virq = irq_find_mapping(domain, hwirq);
 	if (virq) {
 		pr_debug("-> existing mapping on virq %d\n", virq);
@@ -446,6 +465,11 @@ unsigned int irq_create_mapping(struct irq_domain *domain,
 	}
 
 	/* Allocate a virtual interrupt number */
+
+/* IAMROOT-12:
+ * -------------
+ * irq 디스크립터를 할당하고 그에 해당하는 virq 번호를 가져온다.
+ */
 	virq = irq_domain_alloc_descs(-1, 1, hwirq,
 				      of_node_to_nid(domain->of_node));
 	if (virq <= 0) {
@@ -453,6 +477,12 @@ unsigned int irq_create_mapping(struct irq_domain *domain,
 		return 0;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 도메인내에서 hwirq에 해당하는 virq를 지정한다. (매핑)
+ *
+ * 도메인 하이라키 구조가 아닌 경우 사용한다.
+ */
 	if (irq_domain_associate(domain, virq, hwirq)) {
 		irq_free_desc(virq);
 		return 0;
@@ -567,6 +597,11 @@ unsigned int irq_create_of_mapping(struct of_phandle_args *irq_data)
 	}
 
 	/* Set type if specified and different than the current one */
+
+/* IAMROOT-12:
+ * -------------
+ * irq 디스크립터에 설정된 기존 타입과 다른 경우 타입을 설정한다. (none 제외)
+ */
 	if (type != IRQ_TYPE_NONE &&
 	    type != irq_get_trigger_type(virq))
 		irq_set_irq_type(virq, type);
@@ -879,10 +914,20 @@ static void irq_domain_insert_irq(int virq)
 {
 	struct irq_data *data;
 
+/* IAMROOT-12:
+ * -------------
+ * 요청한 virq에 대해 최상위 도메인까지 루프를 돈다.
+ */
 	for (data = irq_get_irq_data(virq); data; data = data->parent_data) {
 		struct irq_domain *domain = data->domain;
 		irq_hw_number_t hwirq = data->hwirq;
 
+/* IAMROOT-12:
+ * -------------
+ * 리니어 매핑 또는 트리 매핑을 한다.
+ *	- 리니어 매핑: key=hwirq, result value=virq
+ *	- 트리 매핑:   key=hwirq, result value=irq_data 포인터
+ */
 		if (hwirq < domain->revmap_size) {
 			domain->linear_revmap[hwirq] = virq;
 		} else {
@@ -896,6 +941,10 @@ static void irq_domain_insert_irq(int virq)
 			domain->name = data->chip->name;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 매핑 완료 시 IRQ_NOREQUEST 플래그를 클리어한다.
+ */
 	irq_clear_status_flags(virq, IRQ_NOREQUEST);
 }
 
@@ -1250,6 +1299,11 @@ int __irq_domain_alloc_irqs(struct irq_domain *domain, int irq_base,
 		mutex_unlock(&irq_domain_mutex);
 		goto out_free_irq_data;
 	}
+
+/* IAMROOT-12:
+ * -------------
+ * 요청 인터럽트 수만큼 리니어매핑 또는 트리매핑을 수행한다.
+ */
 	for (i = 0; i < nr_irqs; i++)
 		irq_domain_insert_irq(virq + i);
 	mutex_unlock(&irq_domain_mutex);
@@ -1338,6 +1392,13 @@ void irq_domain_free_irqs_parent(struct irq_domain *domain,
  */
 void irq_domain_activate_irq(struct irq_data *irq_data)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 해당 irq에 대해 루트 도메인부터 하위 도메인까지 activation 한다.
+ *
+ * gic의 경우 구현된 (*activate) 후크 함수가 없다.
+ */
 	if (irq_data && irq_data->domain) {
 		struct irq_domain *domain = irq_data->domain;
 

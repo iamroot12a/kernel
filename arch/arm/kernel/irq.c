@@ -66,6 +66,11 @@ int arch_show_interrupts(struct seq_file *p, int prec)
  */
 void handle_IRQ(unsigned int irq, struct pt_regs *regs)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * irq 번호는 hwirq, domain은 null인 상태, lookup=false(도메인 찾지 말것)
+ */
 	__handle_domain_irq(NULL, irq, false, regs);
 }
 

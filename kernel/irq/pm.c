@@ -16,6 +16,13 @@
 
 bool irq_pm_check_wakeup(struct irq_desc *desc)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * wakeup armed 플래그가 설정된 경우 wakeup armed 플래그를 클리어하고 
+ * suspend 및 pending 상태를 추가한다. 그리고 irq를 disable 한다.
+ * (인터럽트 컨트롤러가 동작하지 못하는 상태가 됨)
+ */
 	if (irqd_is_wakeup_armed(&desc->irq_data)) {
 		irqd_clear(&desc->irq_data, IRQD_WAKEUP_ARMED);
 		desc->istate |= IRQS_SUSPENDED | IRQS_PENDING;

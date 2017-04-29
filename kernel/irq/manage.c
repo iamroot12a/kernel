@@ -580,6 +580,11 @@ int __irq_set_trigger(struct irq_desc *desc, unsigned int irq,
 	struct irq_chip *chip = desc->irq_data.chip;
 	int ret, unmask = 0;
 
+/* IAMROOT-12:
+ * -------------
+ * chip이 없는 경우(컨트롤러 드라이버가 없는 경우) 처리할 수 없으므로 
+ * 빠져나간다.
+ */
 	if (!chip || !chip->irq_set_type) {
 		/*
 		 * IRQF_TRIGGER_* but the PIC does not support multiple
@@ -593,18 +598,42 @@ int __irq_set_trigger(struct irq_desc *desc, unsigned int irq,
 	flags &= IRQ_TYPE_SENSE_MASK;
 
 	if (chip->flags & IRQCHIP_SET_TYPE_MASKED) {
+
+/* IAMROOT-12:
+ * -------------
+ * irq 디스크립터에 mask 플래그를 설정한다.
+ */
 		if (!irqd_irq_masked(&desc->irq_data))
 			mask_irq(desc);
+
+/* IAMROOT-12:
+ * -------------
+ * enable 상태이면 unmask=1로 한다. 
+ * (트리거 처리 후에 이 비트를 확인하고 unmask 할 예정이다.)
+ */
 		if (!irqd_irq_disabled(&desc->irq_data))
 			unmask = 1;
 	}
 
 	/* caller masked out all except trigger mode flags */
+
+/* IAMROOT-12:
+ * -------------
+ * gic 레지스터를 설정하여 해당 인터럽트에 대한 트리거 타입을 변경한다.
+ *
+ * chip->irq_set_type() -> gic: gic_set_type()
+ * gic에서 설정 결과는 항상 IRQ_SET_MASK_OK 아니면 -EINVAL을 반환한다.
+ */
 	ret = chip->irq_set_type(&desc->irq_data, flags);
 
 	switch (ret) {
 	case IRQ_SET_MASK_OK:
 	case IRQ_SET_MASK_OK_DONE:
+
+/* IAMROOT-12:
+ * -------------
+ * 타입정보를 irq 디스크립터에 설정한다.
+ */
 		irqd_clear(&desc->irq_data, IRQD_TRIGGER_MASK);
 		irqd_set(&desc->irq_data, flags);
 

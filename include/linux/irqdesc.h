@@ -126,6 +126,11 @@ static inline struct msi_desc *irq_desc_get_msi_desc(struct irq_desc *desc)
  */
 static inline void generic_handle_irq_desc(unsigned int irq, struct irq_desc *desc)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * irq 디스크립터에 등록한 핸들러를 호출한다. (1차 내장 인터럽트 핸들러)
+ */
 	desc->handle_irq(irq, desc);
 }
 
@@ -144,6 +149,11 @@ int __handle_domain_irq(struct irq_domain *domain, unsigned int hwirq,
 static inline int handle_domain_irq(struct irq_domain *domain,
 				    unsigned int hwirq, struct pt_regs *regs)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * lookup=true를 하는 것은 hwirq가 virq와 다르므로 lookup을 하여야 한다는 의미
+ */
 	return __handle_domain_irq(domain, hwirq, true, regs);
 }
 #endif
@@ -159,6 +169,10 @@ static inline int irq_has_action(unsigned int irq)
 static inline void __irq_set_handler_locked(unsigned int irq,
 					    irq_flow_handler_t handler)
 {
+/* IAMROOT-12:
+ * -------------
+ * irq에 대해 핸들러를 설정한다.
+ */
 	struct irq_desc *desc;
 
 	desc = irq_to_desc(irq);
@@ -170,6 +184,11 @@ static inline void
 __irq_set_chip_handler_name_locked(unsigned int irq, struct irq_chip *chip,
 				   irq_flow_handler_t handler, const char *name)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * irq에 대해 chip과 irq 핸들러를 설정한다.
+ */
 	struct irq_desc *desc;
 
 	desc = irq_to_desc(irq);

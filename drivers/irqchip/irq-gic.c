@@ -92,6 +92,15 @@ static DEFINE_RAW_SPINLOCK(irq_controller_lock);
  * by the GIC itself.
  */
 #define NR_GIC_CPU_IF 8
+
+/* IAMROOT-12:
+ * -------------
+ * gic_cpu_map[0] = 0b00000001 <- gic로 읽은 값
+ * gic_cpu_map[1] = 0b00000010
+ * gic_cpu_map[2] = 0b00000100
+ * gic_cpu_map[3] = 0b00001000
+ */
+
 static u8 gic_cpu_map[NR_GIC_CPU_IF] __read_mostly;
 
 /*
@@ -172,6 +181,12 @@ static inline unsigned int gic_irq(struct irq_data *d)
  */
 static void gic_mask_irq(struct irq_data *d)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * GIC_DIST_ENABLE_CLEAR 레지스터들 중 해당 인터럽트에 해당하는 비트를 설정하여 
+ * mask 처리한다.
+ */
 	u32 mask = 1 << (gic_irq(d) % 32);
 	unsigned long flags;
 
@@ -184,6 +199,11 @@ static void gic_mask_irq(struct irq_data *d)
 
 static void gic_unmask_irq(struct irq_data *d)
 {
+/* IAMROOT-12:
+ * -------------
+ * GIC_DIST_ENABLE_SET 레지스터들 중 해당 인터럽트에 해당하는 비트를 설정하여 
+ * unmask 처리한다.
+ */
 	u32 mask = 1 << (gic_irq(d) % 32);
 	unsigned long flags;
 
@@ -196,6 +216,11 @@ static void gic_unmask_irq(struct irq_data *d)
 
 static void gic_eoi_irq(struct irq_data *d)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 해당 인터럽트의 처리가 완료되었음을 gic에게 알린다.
+ */
 	if (gic_arch_extn.irq_eoi) {
 		raw_spin_lock(&irq_controller_lock);
 		gic_arch_extn.irq_eoi(d);
@@ -213,6 +238,11 @@ static int gic_set_type(struct irq_data *d, unsigned int type)
 	int ret;
 
 	/* Interrupt configuration for SGIs can't be changed */
+
+/* IAMROOT-12:
+ * -------------
+ * 트리거 타입은 SGIs를 제외한 16번 부터 설정가능하다.
+ */
 	if (gicirq < 16)
 		return -EINVAL;
 
@@ -251,6 +281,13 @@ static int gic_set_affinity(struct irq_data *d, const struct cpumask *mask_val,
 	u32 val, mask, bit;
 	unsigned long flags;
 
+/* IAMROOT-12:
+ * -------------
+ * 해당 인터럽트를 지정한 cpu들에서 사용할 수 있도록 설정한다.
+ *
+ * force=0: online cpu & mask_val 들 중 랜덤으로 하나를 가져온다. (0= cpu#0)
+ * force=1: mask_val에서 가장 첫 cpu 
+ */
 	if (!force)
 		cpu = cpumask_any_and(mask_val, cpu_online_mask);
 	else
@@ -262,6 +299,12 @@ static int gic_set_affinity(struct irq_data *d, const struct cpumask *mask_val,
 	raw_spin_lock_irqsave(&irq_controller_lock, flags);
 	mask = 0xff << shift;
 	bit = gic_cpu_map[cpu] << shift;
+
+/* IAMROOT-12:
+ * -------------
+ * 레지스터를 읽은 후 해당 인터럽트에 대한 cpu 비트들을 모두 클리어하고 
+ * 다시 bit를 더해서 기록한다. (선택된 cpu의 gic_cpu_map[] cpumask로 설정)
+ */
 	val = readl_relaxed(reg) & ~mask;
 	writel_relaxed(val | bit, reg);
 	raw_spin_unlock_irqrestore(&irq_controller_lock, flags);
@@ -296,6 +339,11 @@ static void __exception_irq_entry gic_handle_irq(struct pt_regs *regs)
 		irqnr = irqstat & GICC_IAR_INT_ID_MASK;
 
 		if (likely(irqnr > 15 && irqnr < 1021)) {
+
+/* IAMROOT-12:
+ * -------------
+ * (*handle_arch_irq) -> gic_handle_irq() -> handle_domain_irq()
+ */
 			handle_domain_irq(gic->domain, irqnr, regs);
 			continue;
 		}
@@ -337,6 +385,12 @@ static void gic_handle_cascade_irq(unsigned int irq, struct irq_desc *desc)
 	chained_irq_exit(chip, desc);
 }
 
+
+/* IAMROOT-12:
+ * -------------
+ * gic 컨트롤러에는 irq_startup(), irq_enable() 등이 구현되어 있지 않고
+ * 그냥 irq_unmask()만 가지고도 인터럽트가 개통된다.
+ */
 static struct irq_chip gic_chip = {
 	.name			= "GIC",
 	.irq_mask		= gic_mask_irq,
@@ -882,18 +936,33 @@ static int gic_irq_domain_map(struct irq_domain *d, unsigned int irq,
 
 /* IAMROOT-12:
  * -------------
- * 32 미만의 hwirq에 대해서 percpu 디바이스로 플래그를 설정한다.
+ * PPIs: 32 미만의 hwirq에 대해서 percpu 디바이스로 플래그를 설정한다.
  */
 	if (hw < 32) {
 		irq_set_percpu_devid(irq);
+
+/* IAMROOT-12:
+ * -------------
+ * 내장 인터럽트 핸들러로 percpu_devid를 다루는 핸들러로 설정한다.
+ */
 		irq_domain_set_info(d, irq, hw, &gic_chip, d->host_data,
 				    handle_percpu_devid_irq, NULL, NULL);
 		set_irq_flags(irq, IRQF_VALID | IRQF_NOAUTOEN);
 	} else {
+
+/* IAMROOT-12:
+ * -------------
+ * SPIs: 32개를 제외한 나머지 hwirq에 대해서 내장 인터럽트 핸들러로 
+ * fasteoi 핸들러로 설정한다.
+ */
 		irq_domain_set_info(d, irq, hw, &gic_chip, d->host_data,
 				    handle_fasteoi_irq, NULL, NULL);
 		set_irq_flags(irq, IRQF_VALID | IRQF_PROBE);
 
+/* IAMROOT-12:
+ * -------------
+ * gic_routable_irq_domain_map() 함수를 호출한다. (gic는 0만 반환)
+ */
 		gic_routable_irq_domain_ops->map(d, irq, hw);
 	}
 	return 0;
@@ -993,11 +1062,21 @@ static int gic_irq_domain_alloc(struct irq_domain *domain, unsigned int virq,
 	unsigned int type = IRQ_TYPE_NONE;
 	struct of_phandle_args *irq_data = arg;
 
+/* IAMROOT-12:
+ * -------------
+ * args를 분석하여 hwirq, type 정보를 알아온다. 변환이 실패하는 경우 
+ * 에러를 반환한다.
+ */
 	ret = gic_irq_domain_xlate(domain, irq_data->np, irq_data->args,
 				   irq_data->args_count, &hwirq, &type);
 	if (ret)
 		return ret;
 
+/* IAMROOT-12:
+ * -------------
+ * 요청한 인터럽트 수만큼 irq 디스크립터에 chip 핸들러와 내장 인터럽트 핸들러
+ * 및 플래그 등을 설정한다.
+ */
 	for (i = 0; i < nr_irqs; i++)
 		gic_irq_domain_map(domain, virq + i, hwirq + i);
 
@@ -1276,6 +1355,13 @@ gic_of_init(struct device_node *node, struct device_node *parent)
  * cascade하기 위해 매핑한다. (2개 이상의 gic 사용)
  */
 	if (parent) {
+
+/* IAMROOT-12:
+ * -------------
+ * 디바이스 노드에서 표현된 인수를 도메인에서 hwirq로 변환하고 
+ * irq 디스크립터를 할당한 후에 이 값에 해당하는 virq를 매핑하고 
+ * 그 값을 가져온다.
+ */
 		irq = irq_of_parse_and_map(node, 0);
 		gic_cascade_irq(gic_cnt, irq);
 	}
