@@ -56,6 +56,11 @@ extern void kstat_incr_irq_this_cpu(unsigned int irq);
 
 static inline void kstat_incr_softirqs_this_cpu(unsigned int irq)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 요청 softirq가 수행될 때 마다 증가된다.
+ */
 	__this_cpu_inc(kstat.softirqs[irq]);
 }
 

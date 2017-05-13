@@ -49,10 +49,22 @@
  */
 
 #ifndef __ARCH_IRQ_STAT
+
+/* IAMROOT-12:
+ * -------------
+ * arm 아키텍처는 다음 두 필드를 갖는 irq_stat[]을 사용한다.
+ *	__softirq_pending
+ *	ipi_irqs[]
+ */
 irq_cpustat_t irq_stat[NR_CPUS] ____cacheline_aligned;
 EXPORT_SYMBOL(irq_stat);
 #endif
 
+/* IAMROOT-12:
+ * -------------
+ * softirq 벡터(커널 버전에 따라 softirq 개수가 다르다)
+ * 각 배열은 (*action) 포인터 하나만 사용된다.
+ */
 static struct softirq_action softirq_vec[NR_SOFTIRQS] __cacheline_aligned_in_smp;
 
 DEFINE_PER_CPU(struct task_struct *, ksoftirqd);
@@ -85,6 +97,13 @@ static void wakeup_softirqd(void)
  *   on local_bh_disable or local_bh_enable.
  * This lets us distinguish between whether we are currently processing
  * softirq and whether we just have bh disabled.
+ */
+
+/* IAMROOT-12:
+ * -------------
+ * SOFTIRQ_OFFSET 단위로 증가하는 경우 softirq 처리 중 여부를 가릴 수 있다.
+ * local_bh_disable() 함수를 사용하는 경우에는 SOFTIRQ_OFFSET*2 단위로 
+ * 증가하여 softirq 처리중 여부는 가릴 수 없다.
  */
 
 /*
@@ -229,6 +248,12 @@ static inline void lockdep_softirq_end(bool in_hardirq) { }
 
 asmlinkage __visible void __do_softirq(void)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 최대 2ms를 초과한 경우 추가 한 번에 다 처리하지 않도록한다.
+ */
+
 	unsigned long end = jiffies + MAX_SOFTIRQ_TIME;
 	unsigned long old_flags = current->flags;
 	int max_restart = MAX_SOFTIRQ_RESTART;
@@ -242,34 +267,79 @@ asmlinkage __visible void __do_softirq(void)
 	 * softirq. A softirq handled such as network RX might set PF_MEMALLOC
 	 * again if the socket is related to swap
 	 */
+/* IAMROOT-12:
+ * -------------
+ * 태스크에 PF_MEMALLOC 요청이 있는 경우 잠시 제거한다.
+ * 이 함수의 끝에서 다시 원복한다.
+ */
 	current->flags &= ~PF_MEMALLOC;
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 cpu에 대한 softirq 요청 비트들을 알아온다.
+ */
 	pending = local_softirq_pending();
 	account_irq_enter_time(current);
 
+/* IAMROOT-12:
+ * -------------
+ * softirq 처리 시작으로 인해 preemption 금지
+ * in_irq():                n/r:  top half(interrupt context)
+ * in_softirq():            true: bottom half(softirq, bh_disable시 true)
+ * in_interrupt():          true: 위 두 가지 포함 + NMI 
+ * in_serving_softirq():    true: softirq 처리 중 여부 (홀수에서만 true)
+ * in_nmi():                n/r:  nmi
+ */
 	__local_bh_disable_ip(_RET_IP_, SOFTIRQ_OFFSET);
 	in_hardirq = lockdep_softirq_start();
 
 restart:
 	/* Reset the pending bitmask before enabling irqs */
+
+/* IAMROOT-12:
+ * -------------
+ * softirq 요청 비트를 클리어(전역)
+ */
 	set_softirq_pending(0);
 
+/* IAMROOT-12:
+ * -------------
+ * local cpu에 대해 인터럽트 enable
+ */
 	local_irq_enable();
 
 	h = softirq_vec;
 
+/* IAMROOT-12:
+ * -------------
+ * 설정된 softirq 펜딩 비트를 검사하여 처리한다.
+ * (bit0이 최우선 처리)
+ */
 	while ((softirq_bit = ffs(pending))) {
 		unsigned int vec_nr;
 		int prev_count;
 
 		h += softirq_bit - 1;
 
+/* IAMROOT-12:
+ * -------------
+ * vec_nr: softirq 번호 (0 ~ 9)
+ */
 		vec_nr = h - softirq_vec;
 		prev_count = preempt_count();
 
+/* IAMROOT-12:
+ * -------------
+ * 요청 softirq가 수행될 때 마다 증가된다.
+ */
 		kstat_incr_softirqs_this_cpu(vec_nr);
 
 		trace_softirq_entry(vec_nr);
+
+/* IAMROOT-12:
+ * -------------
+ * 벡터에 등록된 softirq 핸들러 함수를 수행한다.
+ */
 		h->action(h);
 		trace_softirq_exit(vec_nr);
 		if (unlikely(prev_count != preempt_count())) {
@@ -283,21 +353,57 @@ restart:
 	}
 
 	rcu_bh_qs();
+
+/* IAMROOT-12:
+ * -------------
+ * 일단 추가적인 softirq 요청을 받지 않게 하기 위해 인터럽트를 막는다.
+ *
+ * softirq 처리중에 또 요청된 softirq를 처리하기 위해 다시 한 번
+ * softirq 펜딩값을 읽어온다.
+ */
 	local_irq_disable();
 
 	pending = local_softirq_pending();
 	if (pending) {
+
+/* IAMROOT-12:
+ * -------------
+ * 최장 2ms 이내이고 리스케줄 요청이 없는 경우 계속 처리한다.
+ * 최대 횟수: 10번 
+ *
+ * 위의 조건을 만족하지 못한 경우 softirqd를 다시 깨우도록 요청한다.
+ */
 		if (time_before(jiffies, end) && !need_resched() &&
 		    --max_restart)
 			goto restart;
 
+/* IAMROOT-12:
+ * -------------
+ * irq_exit() 즉, top half 이후 즉, interrupt context 처리 후에 ksoftirqd가 
+ * 아니고 계속 softirq 처리를 할 수 있는 상황(커널 옵션 및 커널 파라메터 설정 
+ * 필요)인 경우 남은 softirq 처리 작업을 위해 ksoftirqd를 깨워 계속 처리할 
+ * 수 있게 한다.
+ *
+ * 단, ksoftirqd에서 이곳에 진입한 경우 이미 깨어있기 때문에 아무일도 일어나지
+ * 않는다.
+ */
 		wakeup_softirqd();
 	}
 
 	lockdep_softirq_end(in_hardirq);
+
+/* IAMROOT-12:
+ * -------------
+ * irq 처리 시간을 기록한다.
+ */
 	account_irq_exit_time(current);
 	__local_bh_enable(SOFTIRQ_OFFSET);
 	WARN_ON_ONCE(in_interrupt());
+
+/* IAMROOT-12:
+ * -------------
+ * old 플래그를 복구한다.
+ */
 	tsk_restore_flags(current, old_flags, PF_MEMALLOC);
 }
 
@@ -341,12 +447,24 @@ void irq_enter(void)
 static inline void invoke_softirq(void)
 {
 	if (!force_irqthreads) {
+
+/* IAMROOT-12:
+ * -------------
+ * arm 아키텍처의 경우 ON_IRQ_STACK을 사용하지 않으므로 항상 
+ * __do_softirq()를 호출하게 된다.
+ */
 #ifdef CONFIG_HAVE_IRQ_EXIT_ON_IRQ_STACK
 		/*
 		 * We can safely execute softirq on the current stack if
 		 * it is the irq stack, because it should be near empty
 		 * at this stage.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 이미 irq 전용 스택을 사용하는 경우 곧바로 처리 루틴을 호출한다.
+ * (이 상태에서는 거의 irq 전용 스택이 비어 있을것이다)
+ */
 		__do_softirq();
 #else
 		/*
@@ -354,6 +472,14 @@ static inline void invoke_softirq(void)
 		 * be potentially deep already. So call softirq in its own stack
 		 * to prevent from any overrun.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 태스크용 커널 스택을 사용하는 경우 아래 함수를 통해서 아키텍처에 따라 
+ * 별도의 스택 처리 함수를 지원할 수 있다.
+ *
+ * 그러나 arm 커널은 지원하는 함수가 없이 곧바로 __do_softirq()를 호출한다.
+ */
 		do_softirq_own_stack();
 #endif
 	} else {
@@ -387,9 +513,30 @@ void irq_exit(void)
 
 	account_irq_exit_time(current);
 	preempt_count_sub(HARDIRQ_OFFSET);
+
+/* IAMROOT-12:
+ * -------------
+ *  다음 조건을 만족하는 경우 softirq 처리를 ksoftirqd 스레드에 처리를 
+ *  의뢰하지 않고 직접 호출한다.
+ *	- CONFIG_IRQ_FORCED_THREADING 커널 옵션
+ *	- "thredirqs=" 커널 파라메터를 사용 
+ *
+ * irq 처리 후 이 시점에서 더 이상의 irq 처리를 하는 것이 없으면 
+ * 빠른 처리를 위해 softirq를 계속하여 처리하게 한다.
+ * (최장 2ms 이내에서 수행한다. 수행 후 미완료 작업이 있는 경우 
+ * ksoftirqd에게 나머지를 맡긴다)
+ *
+ * local_bh_disable() 함수를 사용한 경우 아래 함수도 진입할 수 없다.
+ * 결국 top half에서의 softirq의 처리를 막을 수 있게 된다.
+ */
 	if (!in_interrupt() && local_softirq_pending())
 		invoke_softirq();
 
+
+/* IAMROOT-12:
+ * -------------
+ * nohz idle을 지원하는 경우에 호출된다.
+ */
 	tick_irq_exit();
 	rcu_irq_exit();
 	trace_hardirq_exit(); /* must be last! */
@@ -400,6 +547,11 @@ void irq_exit(void)
  */
 inline void raise_softirq_irqoff(unsigned int nr)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * softirq pending를 설정한다.
+ */
 	__raise_softirq_irqoff(nr);
 
 	/*
@@ -411,12 +563,23 @@ inline void raise_softirq_irqoff(unsigned int nr)
 	 * Otherwise we wake up ksoftirqd to make sure we
 	 * schedule the softirq soon.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * local_bh_disable() 및 인터럽트 처리중에는 softirqd를 깨우지 않는다.
+ */
 	if (!in_interrupt())
 		wakeup_softirqd();
 }
 
 void raise_softirq(unsigned int nr)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 요청 번호의 softirq를 호출한다.
+ */
+
 	unsigned long flags;
 
 	local_irq_save(flags);
@@ -432,6 +595,10 @@ void __raise_softirq_irqoff(unsigned int nr)
 
 void open_softirq(int nr, void (*action)(struct softirq_action *))
 {
+/* IAMROOT-12:
+ * -------------
+ * 해당 softirq를 사용할 수 있도록 벡터에 softirq 호출 함수를 지정한다.
+ */
 	softirq_vec[nr].action = action;
 }
 
@@ -635,6 +802,14 @@ void __init softirq_init(void)
 {
 	int cpu;
 
+/* IAMROOT-12:
+ * -------------
+ * 하드 코딩되어 있는 다른 softirq의 초기화는 각각의 코드에서 수행하고,
+ * 여기서는 사용자가 다이나믹하게 등록하여 사용할 수 있는 기존 legacy
+ * tasklet을 지원하기 위해 초기화를 수행한다.
+ *
+ * per-cpu tasklet용 두 개의 리스트를 초기화한다.
+ */
 	for_each_possible_cpu(cpu) {
 		per_cpu(tasklet_vec, cpu).tail =
 			&per_cpu(tasklet_vec, cpu).head;

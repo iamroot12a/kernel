@@ -376,6 +376,11 @@ extern bool force_irqthreads;
 
 #ifndef __ARCH_SET_SOFTIRQ_PENDING
 #define set_softirq_pending(x) (local_softirq_pending() = (x))
+
+/* IAMROOT-12:
+ * -------------
+ * x 번호의 softirq pending 비트를 설정한다.
+ */
 #define or_softirq_pending(x)  (local_softirq_pending() |= (x))
 #endif
 

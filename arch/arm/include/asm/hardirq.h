@@ -7,6 +7,12 @@
 
 #define NR_IPI	8
 
+/* IAMROOT-12:
+ * -------------
+ * softirq 처리 요청 비트가 기록된다.
+ * bit9...bit0: 해당 번호의 softirq가 요청되는 경우 설정된다.
+ * (현재 커널은 10개의 softirq를 사용한다)
+ */
 typedef struct {
 	unsigned int __softirq_pending;
 #ifdef CONFIG_SMP

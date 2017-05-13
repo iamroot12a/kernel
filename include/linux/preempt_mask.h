@@ -27,6 +27,14 @@
 #define HARDIRQ_BITS	4
 #define NMI_BITS	1
 
+/* IAMROOT-12:
+ * -------------
+ * PREEMPT_SHIFT:           0
+ * SOFTIRQ_SHIFT:           8
+ * HARDIRQ_SHIFT:           16
+ * NMI_SHIFT:               20
+ * PREEMPT_ACTIVE_SHIFT:    21
+ */
 #define PREEMPT_SHIFT	0
 #define SOFTIRQ_SHIFT	(PREEMPT_SHIFT + PREEMPT_BITS)
 #define HARDIRQ_SHIFT	(SOFTIRQ_SHIFT + SOFTIRQ_BITS)
@@ -34,16 +42,38 @@
 
 #define __IRQ_MASK(x)	((1UL << (x))-1)
 
+
+/* IAMROOT-12:
+ * -------------
+ * PREEMPT_MASK:	0x000000ff
+ * SOFTIRQ_MASK:	0x0000ff00
+ * HARDIRQ_MASK:	0x000f0000
+ *     NMI_MASK:	0x00100000
+ * PREEMPT_ACTIVE_MASK:	0x00200000
+ */
 #define PREEMPT_MASK	(__IRQ_MASK(PREEMPT_BITS) << PREEMPT_SHIFT)
 #define SOFTIRQ_MASK	(__IRQ_MASK(SOFTIRQ_BITS) << SOFTIRQ_SHIFT)
 #define HARDIRQ_MASK	(__IRQ_MASK(HARDIRQ_BITS) << HARDIRQ_SHIFT)
 #define NMI_MASK	(__IRQ_MASK(NMI_BITS)     << NMI_SHIFT)
+
+/* IAMROOT-12:
+ * -------------
+ * PREEMPT_OFFSET:      0x0000_0001
+ * SOFTIRQ_OFFSET:      0x0000_0100
+ * HARDIRQ_OFFSET:      0x0001_0000
+ * NMI_OFFSET:          0x0010_0000
+ */
 
 #define PREEMPT_OFFSET	(1UL << PREEMPT_SHIFT)
 #define SOFTIRQ_OFFSET	(1UL << SOFTIRQ_SHIFT)
 #define HARDIRQ_OFFSET	(1UL << HARDIRQ_SHIFT)
 #define NMI_OFFSET	(1UL << NMI_SHIFT)
 
+/* IAMROOT-12:
+ * -------------
+ * 아래 disable을 사용하는 경우 0x0000_0200과 같이 항상 짝수단위로 
+ * 증가된다.
+ */
 #define SOFTIRQ_DISABLE_OFFSET	(2 * SOFTIRQ_OFFSET)
 
 #define PREEMPT_ACTIVE_BITS	1
@@ -60,6 +90,15 @@
  * Are we in a softirq context? Interrupt context?
  * in_softirq - Are we currently processing softirq or have bh disabled?
  * in_serving_softirq - Are we currently processing softirq?
+ */
+
+/* IAMROOT-12:
+ * -------------
+ * in_irq():                top half(interrupt context)
+ * in_softirq():            bottom half(softirq, bh_disable시 true)
+ * in_interrupt():          위 두 가지 포함 + NMI 
+ * in_serving_softirq():    softirq 처리 중 여부 (홀수에서만 true)
+ * in_nmi():                nmi
  */
 #define in_irq()		(hardirq_count())
 #define in_softirq()		(softirq_count())

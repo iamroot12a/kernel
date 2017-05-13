@@ -17,11 +17,21 @@
  */
 
 #ifndef __ARCH_IRQ_STAT
+
+/* IAMROOT-12:
+ * -------------
+ * __IRQ_STAT(2, __softirq_pending) -> irq_stat[2].__softirq_pending
+ */
 extern irq_cpustat_t irq_stat[];		/* defined in asm/hardirq.h */
 #define __IRQ_STAT(cpu, member)	(irq_stat[cpu].member)
 #endif
 
   /* arch independent irq_stat fields */
+
+/* IAMROOT-12:
+ * -------------
+ * 현재 cpu에 대한 softirq 요청 비트들을 알아온다.
+ */
 #define local_softirq_pending() \
 	__IRQ_STAT(smp_processor_id(), __softirq_pending)
 
