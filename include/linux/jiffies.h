@@ -98,6 +98,21 @@ static inline u64 get_jiffies_64(void)
  * good compiler would generate better code (and a really good compiler
  * wouldn't care). Gcc is currently neither.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * 다음과 같이 jiffies가 overflow되는 순간에도 두 시각의 선후 차이를 정확히 
+ * 식별할 수 있게 매크로 함수를 제공한다.
+ * (절대 jiffies 값을 직접 비교하는 일이 없어야 한다)
+ *
+ * a: now jiffies=0x0000_0010 (기존 시각으로 부터 32 tick이 지난 시각)
+ * b: old jiffies=0xffff_fff0 (기존 시각)
+ *
+ * time_after(a, b) = true 
+ *
+ * 아래 매크로에서 long 값으로 형 변환하는 것이 overflow를 찾아낼 수 있는 
+ * 방법이다. (컴파일 타임에 unsigned long 타입으로 사용되는 것을 보장해야 한다)
+ */
 #define time_after(a,b)		\
 	(typecheck(unsigned long, a) && \
 	 typecheck(unsigned long, b) && \

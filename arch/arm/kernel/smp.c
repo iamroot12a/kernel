@@ -573,6 +573,13 @@ static void ipi_complete(unsigned int cpu)
  */
 asmlinkage void __exception_irq_entry do_IPI(int ipinr, struct pt_regs *regs)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * IPI를 수신하면 해당 IPI 핸들러를 호출한다.
+ *
+ * rpi2: 도어벨 인터페이스를 통해서 IPI를 사용한다.
+ */
 	handle_IPI(ipinr, regs);
 }
 
@@ -581,6 +588,10 @@ void handle_IPI(int ipinr, struct pt_regs *regs)
 	unsigned int cpu = smp_processor_id();
 	struct pt_regs *old_regs = set_irq_regs(regs);
 
+/* IAMROOT-12:
+ * -------------
+ * IPI 번호에 따른 통계 카운터를 1 증가 시킨다.
+ */
 	if ((unsigned)ipinr < NR_IPI) {
 		trace_ipi_entry(ipi_types[ipinr]);
 		__inc_irq_stat(cpu, ipi_irqs[ipinr]);
@@ -588,6 +599,12 @@ void handle_IPI(int ipinr, struct pt_regs *regs)
 
 	switch (ipinr) {
 	case IPI_WAKEUP:
+
+/* IAMROOT-12:
+ * -------------
+ * doorbell 하드웨어를 통해서 deep sleep된 cpu를 깨운다. 하드웨어를 통해서 
+ * 깨우는 것이 목적이므로 리눅스 커널에서는 그냥 아무것도 하지 않는다.
+ */
 		break;
 
 #ifdef CONFIG_GENERIC_CLOCKEVENTS_BROADCAST
@@ -604,6 +621,11 @@ void handle_IPI(int ipinr, struct pt_regs *regs)
 
 	case IPI_CALL_FUNC:
 		irq_enter();
+
+/* IAMROOT-12:
+ * -------------
+ * csd 구조체가 연결된 리스트를 읽어와서 해당 함수를 실행한다.
+ */
 		generic_smp_call_function_interrupt();
 		irq_exit();
 		break;

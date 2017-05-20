@@ -596,9 +596,22 @@ int get_nohz_timer_target(int pinned)
 	int i;
 	struct sched_domain *sd;
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 cpu를 사용하도록 반환한다.
+ *	- pinned=true 
+ *	- migration 못하게 한 경우 
+ *	- 현재 cpu가 idle 중이 아닌 경우 
+ */
 	if (pinned || !get_sysctl_timer_migration() || !idle_cpu(cpu))
 		return cpu;
 
+/* IAMROOT-12:
+ * -------------
+ * 가까운 스케줄 도메인부터 idle 하지 않은 cpu를 찾아온다.
+ * (nohz로 인해 idle cpu는 틱 인터럽트가 발생하지 않으므로 이러한 상황에서는
+ * 타이머를 사용하면 안된다.)
+ */
 	rcu_read_lock();
 	for_each_domain(cpu, sd) {
 		for_each_cpu(i, sched_domain_span(sd)) {
@@ -3182,16 +3195,34 @@ int task_prio(const struct task_struct *p)
  *
  * Return: 1 if the CPU is currently idle. 0 otherwise.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * 현재 cpu가 idle 중인 경우 1을 반환한다.
+ */
 int idle_cpu(int cpu)
 {
 	struct rq *rq = cpu_rq(cpu);
 
+/* IAMROOT-12:
+ * -------------
+ * 런큐에서 동작하는 태스크가 idle 태스크가 아닌 경우 0을 반환한다.
+ */
 	if (rq->curr != rq->idle)
 		return 0;
 
+/* IAMROOT-12:
+ * -------------
+ * 런큐에 동작중인 스케줄 엔티티가 있으면 0을 반환한다.
+ * (스케줄 엔티티는 태스크일 수도 있고, 태스크 그룹일 수도 있다.)
+ */
 	if (rq->nr_running)
 		return 0;
 
+/* IAMROOT-12:
+ * -------------
+ * wake_list에서 대기중인 태스크가 있는 경우 0을 반환한다.
+ */
 #ifdef CONFIG_SMP
 	if (!llist_empty(&rq->wake_list))
 		return 0;

@@ -23,6 +23,11 @@ enum {
 };
 
 struct call_function_data {
+
+/* IAMROOT-12:
+ * -------------
+ * 1개의 호출함수과 인수를 담은 csd 구조체와 cpu 마스크를 포함한다.
+ */
 	struct call_single_data	__percpu *csd;
 	cpumask_var_t		cpumask;
 };
@@ -241,11 +246,21 @@ static void flush_smp_call_function_queue(bool warn_cpu_offline)
 
 	WARN_ON(!irqs_disabled());
 
+/* IAMROOT-12:
+ * -------------
+ * call_single_queue 리스트를 일단 임시 변수 head에 옮기고 비운다.
+ * 그 후 연결된 리스트를 reverse 한다.
+ */
 	head = this_cpu_ptr(&call_single_queue);
 	entry = llist_del_all(head);
 	entry = llist_reverse_order(entry);
 
 	/* There shouldn't be any pending callbacks on an offline CPU. */
+
+/* IAMROOT-12:
+ * -------------
+ * 막 offline된 후 IPI가 호출되는 경우 경고 메시지를 출력한다.
+ */
 	if (unlikely(warn_cpu_offline && !cpu_online(smp_processor_id()) &&
 		     !warned && !llist_empty(head))) {
 		warned = true;
@@ -260,6 +275,10 @@ static void flush_smp_call_function_queue(bool warn_cpu_offline)
 				csd->func);
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 각 호출할 함수들을 꺼내서 실행한다.
+ */
 	llist_for_each_entry_safe(csd, csd_next, entry, llist) {
 		csd->func(csd->info);
 		csd_unlock(csd);
@@ -271,6 +290,11 @@ static void flush_smp_call_function_queue(bool warn_cpu_offline)
 	 * better run first since some other CPUs may be busy waiting
 	 * for them.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * IPI_IRQ_WORK 호출 시에 동작하였으나 csd에서도 호출되어 사용된다.
+ */
 	irq_work_run();
 }
 

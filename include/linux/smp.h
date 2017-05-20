@@ -15,6 +15,18 @@
 
 typedef void (*smp_call_func_t)(void *info);
 struct call_single_data {
+
+/* IAMROOT-12:
+ * -------------
+ * llist 
+ *      csd가 리스트에 연결될 때 사용하는 링크 
+ * func
+ *      호출될 함수 주소
+ * *info
+ *      호출될 때 사용할 인수 포인터
+ * *flags 
+ *      플래그
+ */
 	struct llist_node llist;
 	smp_call_func_t func;
 	void *info;

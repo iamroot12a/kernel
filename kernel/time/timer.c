@@ -59,6 +59,19 @@ EXPORT_SYMBOL(jiffies_64);
 /*
  * per-CPU timer vector definitions:
  */
+
+/* IAMROOT-12:
+ * -------------
+ * CONFIG_BASE_SMALL
+ *	소형 커널 이미지 footprint로 빌드할 때 사용한다.
+ *
+ * TVN_SIZE=64
+ * TVR_SIZE=256 
+ * TVN_MASK=0x3f 
+ * TVR_MASK=0xff
+ *
+ * MAX_TVAL=0xffff_ffff
+ */
 #define TVN_BITS (CONFIG_BASE_SMALL ? 4 : 6)
 #define TVR_BITS (CONFIG_BASE_SMALL ? 6 : 8)
 #define TVN_SIZE (1 << TVN_BITS)
@@ -67,14 +80,43 @@ EXPORT_SYMBOL(jiffies_64);
 #define TVR_MASK (TVR_SIZE - 1)
 #define MAX_TVAL ((unsigned long)((1ULL << (TVR_BITS + 4*TVN_BITS)) - 1))
 
+/* IAMROOT-12:
+ * -------------
+ * lowres timer 들이 등록되는 리스트 어레이
+ * (for tv2, tv3, tv4, tv5)
+ */
 struct tvec {
 	struct list_head vec[TVN_SIZE];
 };
 
+/* IAMROOT-12:
+ * -------------
+ * lowres timer 들이 등록되는 리스트 어레이들 중 가장 하위 tick에서 동작 
+ * (for tv1)
+ */
 struct tvec_root {
 	struct list_head vec[TVR_SIZE];
 };
 
+
+/* IAMROOT-12:
+ * -------------
+ * *running_timer
+ *	현재 만료되어 동작 중인 타이머 
+ * timer_jiffies 
+ *	현재 타이머 jiffies 
+ * next_timer 
+ *	다음 타이머의 만료 시각(jiffies)
+ *	타이머휠에 일반 타이머가 하나도 없는 경우 timer_jiffies와 동일한 시각
+ * active_timers 
+ *	타이머휠에 등록된 일반 타이머 수
+ * all_timers
+ *	타이머휠에 등록된 전체(일반 및 유예) 타이머 수
+ * cpu
+ *	타이머휠이 동작하는 cpu (타이머 휠은 cpu 마다 동작한다)
+ * tv1 ~ tv5 
+ *	타이머 리스트 어레이
+ */
 struct tvec_base {
 	spinlock_t lock;
 	struct timer_list *running_timer;
@@ -90,6 +132,10 @@ struct tvec_base {
 	struct tvec tv5;
 } ____cacheline_aligned;
 
+/* IAMROOT-12:
+ * -------------
+ * lowres 타이머 휠을 관리한다.
+ */
 struct tvec_base boot_tvec_bases;
 EXPORT_SYMBOL(boot_tvec_bases);
 static DEFINE_PER_CPU(struct tvec_base *, tvec_bases) = &boot_tvec_bases;
@@ -97,6 +143,17 @@ static DEFINE_PER_CPU(struct tvec_base *, tvec_bases) = &boot_tvec_bases;
 /* Functions below help us manage 'deferrable' flag */
 static inline unsigned int tbase_get_deferrable(struct tvec_base *base)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 타이머 휠을 가리키는 base 주소의 1비트를 사용하여 유예 가능한 
+ * 타이머 여부를 반환한다.
+ *
+ * 다음 함수로 생성된 타이머들
+ *	- init_timer_deferrable() 
+ *	- setup_deferrable_timer_on_stack() 
+ *	- TIMER_DEFERRED_INITIALIZER
+ */
 	return ((unsigned int)(unsigned long)base & TIMER_DEFERRABLE);
 }
 
@@ -346,6 +403,11 @@ EXPORT_SYMBOL_GPL(set_timer_slack);
  */
 static bool catchup_timer_jiffies(struct tvec_base *base)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 타이머휠이 빈 경우 timer_jiffies에 현재 시각을 대입하고 true를 반환한다.
+ */
 	if (!base->all_timers) {
 		base->timer_jiffies = jiffies;
 		return true;
@@ -434,6 +496,10 @@ void __timer_stats_timer_set_start_info(struct timer_list *timer, void *addr)
 	if (timer->start_site)
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * 디버그 정보로 주소, 태스크명, 태스크 pid 값을 지정한다.
+ */
 	timer->start_site = addr;
 	memcpy(timer->start_comm, current->comm, TASK_COMM_LEN);
 	timer->start_pid = current->pid;
@@ -693,6 +759,20 @@ static inline void detach_timer(struct timer_list *timer, bool clear_pending)
 
 	debug_deactivate(timer);
 
+/* IAMROOT-12:
+ * -------------
+ * __list_del을 하면 
+ *   A(head)  <------>   B(del)  <--->   C
+ *
+ * 다음과 같이 B 값은 변경을 하지 않는다.
+ *   A(head)  <---------------------->   C 
+ *   A(head)  <-------   B(del) ----->   C
+ * 
+ * 이 때 인수로 clear_pending이 1인 경우 B의 next를 null로 하여 뒤에 연결된 
+ * 타이머가 확실히 없게 만든다.
+ *
+ * B의 prev는 poison을 설치한다.
+ */
 	__list_del(entry->prev, entry->next);
 	if (clear_pending)
 		entry->next = NULL;
@@ -712,15 +792,41 @@ detach_expired_timer(struct timer_list *timer, struct tvec_base *base)
 static int detach_if_pending(struct timer_list *timer, struct tvec_base *base,
 			     bool clear_pending)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 타이머 휠에 등록되지 않은 타이머는 0을 반환한다.
+ * (detach = 타이머휠에서 타이머를 분리한다)
+ */
 	if (!timer_pending(timer))
 		return 0;
 
+/* IAMROOT-12:
+ * -------------
+ * 타이머 휠에서 분리하여 외톨이 상태로 둔다.
+ */
 	detach_timer(timer, clear_pending);
+
+/* IAMROOT-12:
+ * -------------
+ * 유예 가능한 타이머가 아닌 경우 active 타이머 수에서 1을 감소시키고 
+ * detach할 타이머가 다음에 만료 실행될 타이머인 경우 타이머휠이 
+ * 비게된다. 그러면 next_timer 만료 시각에 현재 timer_jiffies로 
+ * 동일하게 설정한다.
+ *
+ * (타이머 휠이 비어있을 때 next_timer는 언제나 timer_jiffies와 동일하다)
+ */
+
 	if (!tbase_get_deferrable(timer->base)) {
 		base->active_timers--;
 		if (timer->expires == base->next_timer)
 			base->next_timer = base->timer_jiffies;
 	}
+
+/* IAMROOT-12:
+ * -------------
+ * 일반 타이머나 유예 가능한 타이머인 모든 경우에 all_timers 수에서 1을 감소 
+ */
 	base->all_timers--;
 	(void)catchup_timer_jiffies(base);
 	return 1;
@@ -766,20 +872,44 @@ __mod_timer(struct timer_list *timer, unsigned long expires,
 	unsigned long flags;
 	int ret = 0 , cpu;
 
+/* IAMROOT-12:
+ * -------------
+ * "echo 1 > /proc/timer_stat" 한 후 부터 "cat" 명령으로 타이머 리스트의
+ *  stat 정보를 확인할 수 있다.
+ */
 	timer_stats_timer_set_start_info(timer);
 	BUG_ON(!timer->function);
 
 	base = lock_timer_base(timer, &flags);
 
+
+/* IAMROOT-12:
+ * -------------
+ * 타이머를 타이머휠에서 분리한다. 만일 실패하고 pending_only가 true인 경우 
+ * 더이상 처리하지 않는다.
+ *
+ * pending_only=true인 것은 타이머휠에 등록된 타이머에 대해서만 modify 작업을
+ * 하겠다는 의미이다.
+ */
 	ret = detach_if_pending(timer, base, false);
 	if (!ret && pending_only)
 		goto out_unlock;
 
 	debug_activate(timer, expires);
 
+/* IAMROOT-12:
+ * -------------
+ * nohz를 지원하지 않는 시스템은 현재 cpu를 그대로 사용해서 타이머를 등록하지만,
+ * nohz를 지원하는 경우에는 현재 cpu의 상태에 따라 다른 cpu를 사용해야 할 수 
+ * 있다. 이러한 경우 사용할 cpu를 알아온다.
+ */
 	cpu = get_nohz_timer_target(pinned);
 	new_base = per_cpu(tvec_bases, cpu);
 
+/* IAMROOT-12:
+ * -------------
+ * 만일 현재 cpu의 타이머휠이 아닌 다른 cpu의 타이머휠을 선택한 경우
+ */
 	if (base != new_base) {
 		/*
 		 * We are trying to schedule the timer on the local CPU.
@@ -788,6 +918,12 @@ __mod_timer(struct timer_list *timer, unsigned long expires,
 		 * handler yet has not finished. This also guarantees that
 		 * the timer is serialized wrt itself.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 요청한 타이머가 만료 처리 진행 중인 타이머가 아닌 경우 
+ * 새로운 타이머 휠을 가리키게한다.
+ */
 		if (likely(base->running_timer != timer)) {
 			/* See the comment in lock_timer_base() */
 			timer_set_base(timer, NULL);
@@ -798,7 +934,12 @@ __mod_timer(struct timer_list *timer, unsigned long expires,
 		}
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 만료 시각을 변경하고 타이머휠에 추가한다.
+ */
 	timer->expires = expires;
+
 	internal_add_timer(base, timer);
 
 out_unlock:
@@ -842,13 +983,29 @@ unsigned long apply_slack(struct timer_list *timer, unsigned long expires)
 	if (timer->slack >= 0) {
 		expires_limit = expires + timer->slack;
 	} else {
+
+/* IAMROOT-12:
+ * -------------
+ * slack의 초기 값은 -1 이다.
+ * 만료까지 남은 틱이 256보다 작은 경우 slack 적용하지 않는다. 
+ */
 		long delta = expires - jiffies;
 
 		if (delta < 256)
 			return expires;
 
+/* IAMROOT-12:
+ * -------------
+ * 만료까지 남은 틱을 256으로 나눈 값을 만료 시각에 더해 최대치를 둔다.
+ */
 		expires_limit = expires + delta / 256;
 	}
+
+/* IAMROOT-12:
+ * -------------
+ * expires_limit와 expires 비트들을 eor 하여 다른 최초 비트이하를 마스크한 
+ * 값을 반환한다.
+ */
 	mask = expires ^ expires_limit;
 	if (mask == 0)
 		return expires;
@@ -884,6 +1041,14 @@ unsigned long apply_slack(struct timer_list *timer, unsigned long expires)
  */
 int mod_timer(struct timer_list *timer, unsigned long expires)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * slack을 적용한 만료 시각을 산출한다.
+ * (slack 설정이 -1인 경우는 남은 만료 시간이 254 tick 이내이면 slack이 
+ * 적용되지 않고 큰 경우만 delta/256 범위내에서 적용된다.
+ * (delta 기간에 대한 1/256 비율이 최대 slack으로 자동 지정된다)
+ */
 	expires = apply_slack(timer, expires);
 
 	/*
@@ -891,6 +1056,12 @@ int mod_timer(struct timer_list *timer, unsigned long expires)
 	 * networking code - if the timer is re-modified
 	 * to be the same thing then just return:
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 타이머 휠에 등록되었고 동일 expires 설정인 경우 타이머를
+ * modify하지 않는다.
+ */
 	if (timer_pending(timer) && timer->expires == expires)
 		return 1;
 
@@ -942,7 +1113,17 @@ EXPORT_SYMBOL(mod_timer_pinned);
  */
 void add_timer(struct timer_list *timer)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * tvec 리스트에 이미 등록된 경우 버그
+ */
 	BUG_ON(timer_pending(timer));
+
+/* IAMROOT-12:
+ * -------------
+ * 요청한 타이머의 만료시각을 설정(변경)한다.
+ */
 	mod_timer(timer, timer->expires);
 }
 EXPORT_SYMBOL(add_timer);
@@ -1532,15 +1713,33 @@ signed long __sched schedule_timeout_uninterruptible(signed long timeout)
 }
 EXPORT_SYMBOL(schedule_timeout_uninterruptible);
 
+
+/* IAMROOT-12:
+ * -------------
+ * 요청한 cpu의 lowres 타이머를 초기화한다.
+ */
 static int init_timers_cpu(int cpu)
 {
 	int j;
 	struct tvec_base *base;
+
+/* IAMROOT-12:
+ * -------------
+ * static 변수로 tvec의 base 할당 여부를 설정한다.
+ */
 	static char tvec_base_done[NR_CPUS];
 
 	if (!tvec_base_done[cpu]) {
 		static char boot_done;
 
+/* IAMROOT-12:
+ * -------------
+ * 처음 cpu 초기화 시에는 tvec_bases 구조체를 기존 static 메모리를 사용하고
+ * 다음 cpu 초기화할 때에는 별도로 할당을 받은 후 대입하여 사용한다.
+ *
+ * 차후 커널에서는 첫 번째 cpu에 대한 lowres 타이머를 초기화할 때에도 
+ * per-cpu로 할당한다.
+ */
 		if (boot_done) {
 			/*
 			 * The APs use this path later in boot
@@ -1567,13 +1766,21 @@ static int init_timers_cpu(int cpu)
 			base = &boot_tvec_bases;
 		}
 		spin_lock_init(&base->lock);
+
+/* IAMROOT-12:
+ * -------------
+ * 해당 cpu에 대한 lowres 타이머를 초기화했음을 기록한다.
+ */
 		tvec_base_done[cpu] = 1;
 		base->cpu = cpu;
 	} else {
 		base = per_cpu(tvec_bases, cpu);
 	}
 
-
+/* IAMROOT-12:
+ * -------------
+ * 4+1개의 tvec의 리스트 어레이들을 초기화한다.
+ */
 	for (j = 0; j < TVN_SIZE; j++) {
 		INIT_LIST_HEAD(base->tv5.vec + j);
 		INIT_LIST_HEAD(base->tv4.vec + j);
@@ -1583,8 +1790,17 @@ static int init_timers_cpu(int cpu)
 	for (j = 0; j < TVR_SIZE; j++)
 		INIT_LIST_HEAD(base->tv1.vec + j);
 
+/* IAMROOT-12:
+ * -------------
+ * timer_jiffes 및 next_timer에 현재 시각(jiffies)을 대입하여 초기화한다.
+ */
 	base->timer_jiffies = jiffies;
 	base->next_timer = base->timer_jiffies;
+
+/* IAMROOT-12:
+ * -------------
+ * 현재 동작 중인 타이머는 하나도 없는 상태로 초기화한다.
+ */
 	base->active_timers = 0;
 	base->all_timers = 0;
 	return 0;
@@ -1646,6 +1862,10 @@ static int timer_cpu_notify(struct notifier_block *self,
 	switch(action) {
 	case CPU_UP_PREPARE:
 	case CPU_UP_PREPARE_FROZEN:
+/* IAMROOT-12:
+ * -------------
+ * cpu가 on되는 경우 해당 cpu의 lowres 타이머를 초기화한다.
+ */
 		err = init_timers_cpu(cpu);
 		if (err < 0)
 			return notifier_from_errno(err);
@@ -1653,6 +1873,11 @@ static int timer_cpu_notify(struct notifier_block *self,
 #ifdef CONFIG_HOTPLUG_CPU
 	case CPU_DEAD:
 	case CPU_DEAD_FROZEN:
+
+/* IAMROOT-12:
+ * -------------
+ * cpu가 off되는 경우 다른 cpu로 현재 lowres 타이머들을 옮긴다.
+ */
 		migrate_timers(cpu);
 		break;
 #endif
@@ -1666,7 +1891,10 @@ static struct notifier_block timers_nb = {
 	.notifier_call	= timer_cpu_notify,
 };
 
-
+/* IAMROOT-12:
+ * -------------
+ * lowres 타이머 초기화
+ */
 void __init init_timers(void)
 {
 	int err;
@@ -1674,12 +1902,29 @@ void __init init_timers(void)
 	/* ensure there are enough low bits for flags in timer->base pointer */
 	BUILD_BUG_ON(__alignof__(struct tvec_base) & TIMER_FLAG_MASK);
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 cpu에 대한 lowres 타이머 초기화 
+ * (현재 cpu만 곧장 notifier 함수를 직접 호출한다)
+ */
 	err = timer_cpu_notify(&timers_nb, (unsigned long)CPU_UP_PREPARE,
 			       (void *)(long)smp_processor_id());
 	BUG_ON(err != NOTIFY_OK);
 
 	init_timer_stats();
+
+/* IAMROOT-12:
+ * -------------
+ * cpu 상태가 바뀔 때마다 호출되는 notifier 함수 등록 
+ * (나머지 cpu가 on 될 때마다 해당 cpu의 lowres 타이머를 초기화한다)
+ */
 	register_cpu_notifier(&timers_nb);
+
+/* IAMROOT-12:
+ * -------------
+ * lowres 타이머에 bottom half 처리를 softirq에서 처리한다.
+ * (hires 타이머 동작 전까지는 사용)
+ */
 	open_softirq(TIMER_SOFTIRQ, run_timer_softirq);
 }
 

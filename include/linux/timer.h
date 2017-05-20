@@ -166,6 +166,11 @@ static inline void init_timer_on_stack_key(struct timer_list *timer,
  *
  * return value: 1 if the timer is pending, 0 if not.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * tvec 리스트에서 내 뒤로 타이머가 있는 경우 true를 반환한다.
+ */
 static inline int timer_pending(const struct timer_list * timer)
 {
 	return timer->entry.next != NULL;
