@@ -656,6 +656,11 @@ static bool wake_up_full_nohz_cpu(int cpu)
 	 * If needed we can still optimize that later with an
 	 * empty IRQ.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 현재 cpu가 nohz full로 동작하고 있는 경우 nohz에서 벗어나게 한다. true 반환
+ */
 	if (tick_nohz_full_cpu(cpu)) {
 		if (cpu != smp_processor_id() ||
 		    tick_nohz_tick_stopped())
@@ -663,6 +668,10 @@ static bool wake_up_full_nohz_cpu(int cpu)
 		return true;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * nohz idle이나 nohz 모드가 아닌 경우 false를 반환한다.
+ */
 	return false;
 }
 

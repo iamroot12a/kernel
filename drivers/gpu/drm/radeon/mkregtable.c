@@ -147,6 +147,11 @@ static inline void list_replace(struct list_head *old, struct list_head *new)
 static inline void list_replace_init(struct list_head *old,
 				     struct list_head *new)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * old -> new 리스트로 옮기고 old 리스트는 초기화한다.
+ */
 	list_replace(old, new);
 	INIT_LIST_HEAD(old);
 }

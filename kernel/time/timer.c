@@ -106,7 +106,7 @@ struct tvec_root {
  * timer_jiffies 
  *	현재 타이머 jiffies 
  * next_timer 
- *	다음 타이머의 만료 시각(jiffies)
+ *	타이머 휠내에서 가장 먼저 위치한 다음 타이머의 만료 시각(jiffies)
  *	타이머휠에 일반 타이머가 하나도 없는 경우 timer_jiffies와 동일한 시각
  * active_timers 
  *	타이머휠에 등록된 일반 타이머 수
@@ -419,12 +419,36 @@ static void
 __internal_add_timer(struct tvec_base *base, struct timer_list *timer)
 {
 	unsigned long expires = timer->expires;
+
+/* IAMROOT-12:
+ * -------------
+ * 만료 시각 - now jiffes(타이머휠에 마지막 접근한 시각) = idx
+ *
+ * idx: delta tick
+ */
 	unsigned long idx = expires - base->timer_jiffies;
 	struct list_head *vec;
 
+/* IAMROOT-12:
+ * -------------
+ * delta로 tv1 ~ tv5를 선택하고,
+ * 만료시각으로 리스트의 인덱스를 결정한다.
+ *
+ * delta가 256 tick 미만인 경우 tv1에 추가한다.
+ * tv1에 추가할 리스트 어레이의 인덱스는 만료시각 % 256으로 결정한다.
+ *                                       ---------------
+ *                                       tv1에 해당하는 8비트 
+ */
 	if (idx < TVR_SIZE) {
 		int i = expires & TVR_MASK;
 		vec = base->tv1.vec + i;
+
+/* IAMROOT-12:
+ * -------------
+ * delta가 256*64 tick 미만인 경우 tv2에 추가한다. 
+ * tv2에 추가할 리스트 어레이의 인덱스는 만료시각에서 tv2에 해당하는 6 비트만 
+ * 취한다. (tv3 ~ tv6까지 동일하다)
+ */
 	} else if (idx < 1 << (TVR_BITS + TVN_BITS)) {
 		int i = (expires >> TVR_BITS) & TVN_MASK;
 		vec = base->tv2.vec + i;
@@ -439,6 +463,12 @@ __internal_add_timer(struct tvec_base *base, struct timer_list *timer)
 		 * Can happen if you add a timer with expires == jiffies,
 		 * or you set a timer to go off in the past
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 만료 시각이 지난 경우 만료 시각 대신 현재 시각에 해당하는 tv1의 리스트를 
+ * 선택하게 한다.
+ */
 		vec = base->tv1.vec + (base->timer_jiffies & TVR_MASK);
 	} else {
 		int i;
@@ -456,16 +486,37 @@ __internal_add_timer(struct tvec_base *base, struct timer_list *timer)
 	/*
 	 * Timers are FIFO:
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 해당한 리스트를 찾으면 후미에 추가한다.
+ */
 	list_add_tail(&timer->entry, vec);
 }
 
 static void internal_add_timer(struct tvec_base *base, struct timer_list *timer)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 대기중인 타이머가 없는 타이머휠인 경우 타이머휠의 시각을 현재 시각으로 설정.
+ */
 	(void)catchup_timer_jiffies(base);
+
+/* IAMROOT-12:
+ * -------------
+ * 타이머 휠에 타이머를 추가한다.
+ */
 	__internal_add_timer(base, timer);
 	/*
 	 * Update base->active_timers and base->next_timer
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 유예 타이머가 아닌 경우 첫 등록이거나 타이머 휠내에서 가장 앞서는 타이머인 
+ * 경우 next_timer(jiffies)를 갱신한다.
+ */
 	if (!tbase_get_deferrable(timer->base)) {
 		if (!base->active_timers++ ||
 		    time_before(timer->expires, base->next_timer))
@@ -486,6 +537,15 @@ static void internal_add_timer(struct tvec_base *base, struct timer_list *timer)
 	 * require special care against races with idle_cpu(), lets deal
 	 * with that later.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * active 타이머이거나 타이머휠이 nohz로 동작하고 있는 cpu인 경우 
+ * nohz 모드에서 벗어나게 한다. (다른 cpu에서 처음 등록한 타이머가 
+ * 다른 cpu에 의해 만료 시각이 바뀌었는데 원래 처음 타이머를 설정한 cpu가 
+ * nohz full로 동작하고 있으면 tick이 발생하지 않아 만료 시각 체크를 할 수 
+ * 없다. 따라서 이러한 경우 tick을 발생하게 요청해야 한다.)
+ */
 	if (!tbase_get_deferrable(base) || tick_nohz_full_cpu(base->cpu))
 		wake_up_nohz_cpu(base->cpu);
 }
@@ -1273,24 +1333,44 @@ int del_timer_sync(struct timer_list *timer)
 EXPORT_SYMBOL(del_timer_sync);
 #endif
 
+
+/* IAMROOT-12:
+ * -------------
+ * cascade(base, tv5, INDEX(3))
+ *	- timer_jiffies에서 tv5에 해당하는 인덱스
+ */
 static int cascade(struct tvec_base *base, struct tvec *tv, int index)
 {
 	/* cascade all the timers from tv up one level */
 	struct timer_list *timer, *tmp;
 	struct list_head tv_list;
 
+/* IAMROOT-12:
+ * -------------
+ * tv->vec + index에 있는 리스트를 임시 tv_list로 옮긴다.
+ * 옮기고 난 후 기존 리스트는 초기화한다.
+ */
 	list_replace_init(tv->vec + index, &tv_list);
 
 	/*
 	 * We are removing _all_ timers from the list, so we
 	 * don't have to detach them individually.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 임시 tv_list에 있는 타이머들을 순회하며 다시 추가한다.
+ */
 	list_for_each_entry_safe(timer, tmp, &tv_list, entry) {
 		BUG_ON(tbase_get_base(timer->base) != base);
 		/* No accounting, while moving them */
 		__internal_add_timer(base, timer);
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 인덱스 값을 반환한다. ( ~ TVN_SIZE(64))
+ */
 	return index;
 }
 
@@ -1337,6 +1417,16 @@ static void call_timer_fn(struct timer_list *timer, void (*fn)(unsigned long),
 	}
 }
 
+
+/* IAMROOT-12:
+ * -------------
+ * timer_jiffies에서 아래 비트에 해당하는 값만 반환한다.
+ *
+ * INDEX(0) -> tv2에 해당하는 비트.
+ * INDEX(1) -> tv3 
+ * INDEX(2) -> tv4 
+ * INDEX(3) -> tv5
+ */
 #define INDEX(N) ((base->timer_jiffies >> (TVR_BITS + (N) * TVN_BITS)) & TVN_MASK)
 
 /**
@@ -1355,6 +1445,11 @@ static inline void __run_timers(struct tvec_base *base)
 		spin_unlock_irq(&base->lock);
 		return;
 	}
+
+/* IAMROOT-12:
+ * -------------
+ * 현재 시각이 타이머휠의 시각을 지나간 경우
+ */
 	while (time_after_eq(jiffies, base->timer_jiffies)) {
 		struct list_head work_list;
 		struct list_head *head = &work_list;
@@ -1363,13 +1458,37 @@ static inline void __run_timers(struct tvec_base *base)
 		/*
 		 * Cascade timers:
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * cascade 작업은 최소 256 tick 단위마다 수행한다.
+ *
+ * 가장 가까이 있는 tv2 벡터부터 조사한다.
+ * tv2의 timer_jiffes를 기준으로 인덱스를 찾아 타이머들을 re-add 한다.
+ *
+ * tv2 -> tv3 -> tv4 -> tv5 까지 cascade 한다.
+ */
 		if (!index &&
 			(!cascade(base, &base->tv2, INDEX(0))) &&
 				(!cascade(base, &base->tv3, INDEX(1))) &&
 					!cascade(base, &base->tv4, INDEX(2)))
 			cascade(base, &base->tv5, INDEX(3));
 		++base->timer_jiffies;
+
+/* IAMROOT-12:
+ * -------------
+ * tv1의 인덱스에 해당하는 타이머들을 임시 리스트인 work_list로 옮기고 
+ * 기존 리스트는 초기화한다.
+ *
+ * tv1에 있는 어레이 리스트들 중 timer_jiffes를 256으로 나눈 나머지에 해당하는
+ * 인덱스의 리스트들을 work_list로 옮겨서 여기에 있는 타이머들을 만료처리한다.
+ */
 		list_replace_init(base->tv1.vec + index, head);
+
+/* IAMROOT-12:
+ * -------------
+ * work_list에 있는 타이머들에 대해 순회를 한다.
+ */
 		while (!list_empty(head)) {
 			void (*fn)(unsigned long);
 			unsigned long data;
@@ -1378,13 +1497,30 @@ static inline void __run_timers(struct tvec_base *base)
 			timer = list_first_entry(head, struct timer_list,entry);
 			fn = timer->function;
 			data = timer->data;
+
+/* IAMROOT-12:
+ * -------------
+ * irq safe 여부를 알아온다.
+ */
 			irqsafe = tbase_get_irqsafe(timer->base);
 
+/* IAMROOT-12:
+ * -------------
+ * 타이머 통계 정보 ("/proc/timer_stat"에서 사용)
+ *
+ * 여기서 타이머에 등록된 함수를 호출한다.
+ */
 			timer_stats_account_timer(timer);
 
 			base->running_timer = timer;
 			detach_expired_timer(timer, base);
 
+/* IAMROOT-12:
+ * -------------
+ * 리스트내 2개 이상의 함수들에서 효과를 보기 위해 irqsafe 요청된 경우 
+ * irq disable -> func A, func B, ... -> irq enable 과 같이 
+ * irq disable/enable 횟수를 줄여준다.
+ */
 			if (irqsafe) {
 				spin_unlock(&base->lock);
 				call_timer_fn(timer, fn, data);
@@ -1578,8 +1714,19 @@ static void run_timer_softirq(struct softirq_action *h)
 {
 	struct tvec_base *base = __this_cpu_read(tvec_bases);
 
+/* IAMROOT-12:
+ * -------------
+ * 일반 lowres 타이머에 대한 bottom-half가 동작하는 부분이다. (softirq)
+ *
+ * lowres 타이머를 사용하다가 hrtimer가 다 준비되면 체제 이전을 하게된다.
+ * 그 때까지 이 루틴을 사용한다. 
+ */
 	hrtimer_run_pending();
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 시각이 타이머휠의 시각을 지나간 경우 호출한다.
+ */
 	if (time_after_eq(jiffies, base->timer_jiffies))
 		__run_timers(base);
 }

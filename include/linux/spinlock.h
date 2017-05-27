@@ -365,6 +365,12 @@ do {									\
 	raw_spin_lock_nest_lock(spinlock_check(lock), nest_lock);	\
 } while (0)
 
+/* IAMROOT-12:
+ * -------------
+ *  spin_lock_ 뒤에 irq가 붙은 함수에서는
+ * spinlock을 할 때 interrupt를 막는 것을 추가한다.
+ * 그런 후 preemption을 disable 한다.
+ */
 static inline void spin_lock_irq(spinlock_t *lock)
 {
 	raw_spin_lock_irq(&lock->rlock);

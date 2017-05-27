@@ -105,6 +105,17 @@ enum hrtimer_restart {
  *
  * The hrtimer structure must be initialized by hrtimer_init()
  */
+
+/* IAMROOT-12:
+ * -------------
+ * hrtimer에서 사용하는 타이머 구조체
+ * (1개의 타이머당 1개의 hrtimer를 할당하여 사용한다.)
+ *
+ * 이 hrtimer가 RB 트리로 구성된 hrtimer_clock_base에 등록되어 운영된다.
+ *
+ * hrtimer_clock_base는 cpu x 4개의 clock 만큼 사용된다.
+ * (예 rpi2: cpu가 4개이므로 총 16개의 hrtimer_clock_base가 사용된다.)
+ */
 struct hrtimer {
 	struct timerqueue_node		node;
 	ktime_t				_softexpires;
@@ -141,6 +152,17 @@ struct hrtimer_sleeper {
  * @get_time:		function to retrieve the current time of the clock
  * @softirq_time:	the time when running the hrtimer queue in the softirq
  * @offset:		offset of this clock to the monotonic base
+ */
+
+/* IAMROOT-12:
+ * -------------
+ * active 
+ *      타이머큐로 RB 트리로 구성된다.
+ * offset 
+ *      - monotic 타이머인 경우 항상 0
+ *      - realtime 타이머인 경우 현재 시각이 설정되면 
+ *        현재 시각 - 1970년 1월 1일을 나노초 단위로 대입한 offset 값이다.
+ *      - boottime 타이머인 경우 suspend된 시간 총합 
  */
 struct hrtimer_clock_base {
 	struct hrtimer_cpu_base	*cpu_base;
@@ -179,11 +201,24 @@ enum  hrtimer_base_type {
  * @max_hang_time:	Maximum time spent in hrtimer_interrupt
  * @clock_base:		array of clock bases for this cpu
  */
+
+/* IAMROOT-12:
+ * -------------
+ * active_bases
+ *      4개의 비트로 각 비트는 클럭종류를 가리키며 해당 클럭에 타이머가 등록
+ *      된 경우 1로 설정된다.
+ */
+
 struct hrtimer_cpu_base {
 	raw_spinlock_t			lock;
 	unsigned int			cpu;
 	unsigned int			active_bases;
 	unsigned int			clock_was_set;
+
+/* IAMROOT-12:
+ * -------------
+ * high-res 타이머가 지원되는 h/w 타이머를 사용하는 경우
+ */
 #ifdef CONFIG_HIGH_RES_TIMERS
 	ktime_t				expires_next;
 	int				in_hrtirq;
@@ -211,6 +246,11 @@ static inline void hrtimer_set_expires_range(struct hrtimer *timer, ktime_t time
 
 static inline void hrtimer_set_expires_range_ns(struct hrtimer *timer, ktime_t time, unsigned long delta)
 {
+/* IAMROOT-12:
+ * -------------
+ * _softexpires: 델타가 제외된 시각 
+ * node.expires: 델타가 포함된 시각
+ */
 	timer->_softexpires = time;
 	timer->node.expires = ktime_add_safe(time, ns_to_ktime(delta));
 }
@@ -402,6 +442,10 @@ static inline int hrtimer_active(const struct hrtimer *timer)
  */
 static inline int hrtimer_is_queued(struct hrtimer *timer)
 {
+/* IAMROOT-12:
+ * -------------
+ * state에 큐잉 여부를 본다.
+ */
 	return timer->state & HRTIMER_STATE_ENQUEUED;
 }
 

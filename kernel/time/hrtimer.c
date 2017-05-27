@@ -70,6 +70,12 @@ DEFINE_PER_CPU(struct hrtimer_cpu_base, hrtimer_bases) =
 	.lock = __RAW_SPIN_LOCK_UNLOCKED(hrtimer_bases.lock),
 	.clock_base =
 	{
+
+/* IAMROOT-12:
+ * -------------
+ * monotic 시계는 부팅 시 0부터 시작한다.
+ * suspend 기간은 클럭이 동작하지 않는다.
+ */
 		{
 			.index = HRTIMER_BASE_MONOTONIC,
 			.clockid = CLOCK_MONOTONIC,
@@ -77,17 +83,39 @@ DEFINE_PER_CPU(struct hrtimer_cpu_base, hrtimer_bases) =
 			.resolution = KTIME_LOW_RES,
 		},
 		{
+
+/* IAMROOT-12:
+ * -------------
+ * 현실 시계와 동일하다.
+ * (지정하지 않으면 1970년으로 동작한다. 그러나 커널 빌드업 타임이 설정되게 
+ * 할 수도 있다. 그리고 RTC 등의 배터리가 내장된 클럭 디바이스를 통해서 
+ * 시스템 종료 후에도 별도록 동작하는 클럭을 사용해서 설정된다.)
+ */
 			.index = HRTIMER_BASE_REALTIME,
 			.clockid = CLOCK_REALTIME,
 			.get_time = &ktime_get_real,
 			.resolution = KTIME_LOW_RES,
 		},
+
+/* IAMROOT-12:
+ * -------------
+ * monotinic 시계와 동일하게 부팅 시 0부터 시작한다.
+ * 단 suspend 한 후 restore 하면 그 동안 suspend 되었던 시간을 계산하여 
+ * 더해준다.
+ */
 		{
 			.index = HRTIMER_BASE_BOOTTIME,
 			.clockid = CLOCK_BOOTTIME,
 			.get_time = &ktime_get_boottime,
 			.resolution = KTIME_LOW_RES,
 		},
+
+/* IAMROOT-12:
+ * -------------
+ * 우주 천문 시로 2016년 12월 31일 기점으로 UTC(realtime clock)보다 
+ * 37초가 당겨진 시각
+ */
+
 		{
 			.index = HRTIMER_BASE_TAI,
 			.clockid = CLOCK_TAI,
@@ -97,6 +125,10 @@ DEFINE_PER_CPU(struct hrtimer_cpu_base, hrtimer_bases) =
 	}
 };
 
+/* IAMROOT-12:
+ * -------------
+ * hrtimer가 사용하는 시계는 4가지 이다.
+ */
 static const int hrtimer_clock_to_base_table[MAX_CLOCKS] = {
 	[CLOCK_REALTIME]	= HRTIMER_BASE_REALTIME,
 	[CLOCK_MONOTONIC]	= HRTIMER_BASE_MONOTONIC,
@@ -200,6 +232,12 @@ switch_hrtimer_base(struct hrtimer *timer, struct hrtimer_clock_base *base,
 	struct hrtimer_clock_base *new_base;
 	struct hrtimer_cpu_base *new_cpu_base;
 	int this_cpu = smp_processor_id();
+
+/* IAMROOT-12:
+ * -------------
+ * pinned 및 몇 가지 경우 현재 cpu를 사용하고, 
+ * 그렇지 않은 경우 도메인에서 idle하지 않는 cpu를 찾아온다.
+ */
 	int cpu = get_nohz_timer_target(pinned);
 	int basenum = base->index;
 
@@ -207,6 +245,10 @@ again:
 	new_cpu_base = &per_cpu(hrtimer_bases, cpu);
 	new_base = &new_cpu_base->clock_base[basenum];
 
+/* IAMROOT-12:
+ * -------------
+ * cpu가 바뀐 경우 
+ */
 	if (base != new_base) {
 		/*
 		 * We are trying to move timer to new_base.
@@ -626,7 +668,16 @@ static int hrtimer_reprogram(struct hrtimer *timer,
  */
 static inline void hrtimer_init_hres(struct hrtimer_cpu_base *base)
 {
+/* IAMROOT-12:
+ * -------------
+ * 다음 만료 시각을 무한대로 지정한다. (다음 타이머가 없으므로)
+ */
 	base->expires_next.tv64 = KTIME_MAX;
+
+/* IAMROOT-12:
+ * -------------
+ * hrtimer가 등록된 개수
+ */
 	base->hres_active = 0;
 }
 
@@ -947,6 +998,11 @@ int __hrtimer_start_range_ns(struct hrtimer *timer, ktime_t tim,
 	ret = remove_hrtimer(timer, base);
 
 	if (mode & HRTIMER_MODE_REL) {
+
+/* IAMROOT-12:
+ * -------------
+ * 상대 모드인 경우 요청한 현재 클럭시간에 time을 더한다.
+ */
 		tim = ktime_add_safe(tim, base->get_time());
 		/*
 		 * CONFIG_TIME_LOW_RES is a temporary way for architectures
@@ -960,6 +1016,11 @@ int __hrtimer_start_range_ns(struct hrtimer *timer, ktime_t tim,
 #endif
 	}
 
+
+/* IAMROOT-12:
+ * -------------
+ * hrtimer의 RB 트리 유지는 항상 expires로 절대시각으로 관리된다.
+ */
 	hrtimer_set_expires_range_ns(timer, tim, delta_ns);
 
 	/* Switch the timer base, if necessary: */
@@ -1041,6 +1102,12 @@ EXPORT_SYMBOL_GPL(hrtimer_start_range_ns);
 int
 hrtimer_start(struct hrtimer *timer, ktime_t tim, const enum hrtimer_mode mode)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * hrtimer를 큐에 등록하고 시작
+ */
+
 	return __hrtimer_start_range_ns(timer, tim, 0, mode, 1);
 }
 EXPORT_SYMBOL_GPL(hrtimer_start);
@@ -1148,10 +1215,25 @@ static void __hrtimer_init(struct hrtimer *timer, clockid_t clock_id,
 
 	cpu_base = raw_cpu_ptr(&hrtimer_bases);
 
+/* IAMROOT-12:
+ * -------------
+ * realtime 클럭이면서 상대 시각으로 타이머를 요청한 경우 monotic을 
+ * 사용한 방법과 동일하므로 monotic 클럭으로 처리하게 변경한다.
+ */
 	if (clock_id == CLOCK_REALTIME && mode != HRTIMER_MODE_ABS)
 		clock_id = CLOCK_MONOTONIC;
 
+/* IAMROOT-12:
+ * -------------
+ * hrtimer가 사용하지 않는 clockid를 요청하는 경우 배열에 지정된 것이 없어서 
+ * 그냥 0번으로 계산되어 monotonic 클럭을 사용한다.
+ */
 	base = hrtimer_clockid_to_base(clock_id);
+
+/* IAMROOT-12:
+ * -------------
+ * 사용하는 클럭에 대한 타이머의 base를 지정한다.
+ */
 	timer->base = &cpu_base->clock_base[base];
 	timerqueue_init(&timer->node);
 
@@ -1619,6 +1701,10 @@ static void init_hrtimers_cpu(int cpu)
 	struct hrtimer_cpu_base *cpu_base = &per_cpu(hrtimer_bases, cpu);
 	int i;
 
+/* IAMROOT-12:
+ * -------------
+ * hrtimer가 사용하는 4개의 클럭만큼 초기화한다.
+ */
 	for (i = 0; i < HRTIMER_MAX_CLOCK_BASES; i++) {
 		cpu_base->clock_base[i].cpu_base = cpu_base;
 		timerqueue_init_head(&cpu_base->clock_base[i].active);
@@ -1705,6 +1791,11 @@ static int hrtimer_cpu_notify(struct notifier_block *self,
 
 	case CPU_UP_PREPARE:
 	case CPU_UP_PREPARE_FROZEN:
+
+/* IAMROOT-12:
+ * -------------
+ * 요청 cpu에 대한 hrtimer 초기화
+ */
 		init_hrtimers_cpu(scpu);
 		break;
 
@@ -1716,6 +1807,12 @@ static int hrtimer_cpu_notify(struct notifier_block *self,
 	case CPU_DEAD:
 	case CPU_DEAD_FROZEN:
 	{
+
+/* IAMROOT-12:
+ * -------------
+ * hot-plug가 지원되는 시스템에서 cpu off되는 경우 기존 cpu의 hrtimer를 
+ * 다른 cpu의 hrtimer 관리체제로 옮긴다.
+ */
 		clockevents_notify(CLOCK_EVT_NOTIFY_CPU_DEAD, &scpu);
 		migrate_hrtimers(scpu);
 		break;
@@ -1735,10 +1832,26 @@ static struct notifier_block hrtimers_nb = {
 
 void __init hrtimers_init(void)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * boot-up cpu에 대한 hrtimer를 초기화한다.
+ */
 	hrtimer_cpu_notify(&hrtimers_nb, (unsigned long)CPU_UP_PREPARE,
 			  (void *)(long)smp_processor_id());
+
+/* IAMROOT-12:
+ * -------------
+ * 추후 online 상태가 되는 cpu들에 대해 hrtimer 초기화 루틴이 동작되도록 
+ * notifier_block에 함수를 지정하여 등록한다.
+ */
 	register_cpu_notifier(&hrtimers_nb);
 #ifdef CONFIG_HIGH_RES_TIMERS
+
+/* IAMROOT-12:
+ * -------------
+ * hrtimer에 대한 벡터 핸들러 함수를 등록한다.
+ */
 	open_softirq(HRTIMER_SOFTIRQ, run_hrtimer_softirq);
 #endif
 }
