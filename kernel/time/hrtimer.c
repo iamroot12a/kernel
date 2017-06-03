@@ -212,10 +212,25 @@ hrtimer_check_target(struct hrtimer *timer, struct hrtimer_clock_base *new_base)
 #ifdef CONFIG_HIGH_RES_TIMERS
 	ktime_t expires;
 
+/* IAMROOT-12:
+ * -------------
+ * hw high-resoulution timer가 있는 시스템인 경우 hrtimer가 hres_active가
+ * 안되어 있는 경우 false(0)를 반환한다.
+ */
 	if (!new_base->cpu_base->hres_active)
 		return 0;
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 클럭을 monotonic 클럭 기준의 만료시각으로 변경한다.
+ */
 	expires = ktime_sub(hrtimer_get_expires(timer), new_base->offset);
+
+/* IAMROOT-12:
+ * -------------
+ * 현재 타이머의 monotonic으로 변환한 만료 시각이 새 cpu base의 만료 시각보다 
+ * 더 이른 경우 true(1)를 반환한다. 이미 hw 타이머를 동작시켰다.
+ */
 	return expires.tv64 <= new_base->cpu_base->expires_next.tv64;
 #else
 	return 0;
@@ -242,12 +257,18 @@ switch_hrtimer_base(struct hrtimer *timer, struct hrtimer_clock_base *base,
 	int basenum = base->index;
 
 again:
+
+/* IAMROOT-12:
+ * -------------
+ * hrtimer를 사용해야 하는 cpu가 변경될 수 있다. 따라서 아래에서는 
+ * 해당하는 cpu base와 clock base를 다시 알아온다.
+ */
 	new_cpu_base = &per_cpu(hrtimer_bases, cpu);
 	new_base = &new_cpu_base->clock_base[basenum];
 
 /* IAMROOT-12:
  * -------------
- * cpu가 바뀐 경우 
+ * hrtimer의 cpu가 바뀐 경우 
  */
 	if (base != new_base) {
 		/*
@@ -259,6 +280,11 @@ again:
 		 * completed. There is no conflict as we hold the lock until
 		 * the timer is enqueued.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 이미 현재 처리가 되고 있는 중이므로 원래 base를 사용한다.
+ */
 		if (unlikely(hrtimer_callback_running(timer)))
 			return base;
 
@@ -267,6 +293,14 @@ again:
 		raw_spin_unlock(&base->cpu_base->lock);
 		raw_spin_lock(&new_base->cpu_base->lock);
 
+
+/* IAMROOT-12:
+ * -------------
+ * 현재 cpu가 아닌 다른 cpu를 결정할 때 그 cpu에서 동작시키는 만료시각보다 
+ * 현재 요청한 hrtimer의 만료시각이 더 이른 경우 다시 cpu를 판단하도록
+ * 루프를 돈다. (이미 h/w에 요청된 상황이라서 이를 cancel하고 재요청하지 
+ * 않는다. 이런 경우에는 그냥 현재 cpu로 new_base를 사용한다.)
+ */
 		if (cpu != this_cpu && hrtimer_check_target(timer, new_base)) {
 			cpu = this_cpu;
 			raw_spin_unlock(&new_base->cpu_base->lock);
@@ -276,6 +310,13 @@ again:
 		}
 		timer->base = new_base;
 	} else {
+
+/* IAMROOT-12:
+ * -------------
+ * hrtimer의 cpu가 변경되지 않았지만 현재 cpu는 아닌 경우이면서 new_base의 
+ * 가장 이른 만료 시각보다 timer의 만료시각이 더 이른 경우 역시 현재 cpu를
+ * 사용하도록 new_base를 변경하게 한다.
+ */
 		if (cpu != this_cpu && hrtimer_check_target(timer, new_base)) {
 			cpu = this_cpu;
 			goto again;
@@ -491,6 +532,10 @@ static ktime_t __hrtimer_get_next_event(struct hrtimer_cpu_base *cpu_base)
 	ktime_t expires, expires_next = { .tv64 = KTIME_MAX };
 	int i;
 
+/* IAMROOT-12:
+ * -------------
+ * 요청한 cpu_base에서 4개의 클럭을 검색하여 가장 이른 만료 시각을 알아온다.
+ */
 	for (i = 0; i < HRTIMER_MAX_CLOCK_BASES; i++, base++) {
 		struct timerqueue_node *next;
 		struct hrtimer *timer;
@@ -563,11 +608,24 @@ static inline int hrtimer_hres_active(void)
 static void
 hrtimer_force_reprogram(struct hrtimer_cpu_base *cpu_base, int skip_equal)
 {
+/* IAMROOT-12:
+ * -------------
+ * 요청한 cpu_base에서 4개의 클럭을 검색하여 가장 이른 만료 시각을 알아온다.
+ */
 	ktime_t expires_next = __hrtimer_get_next_event(cpu_base);
 
+/* IAMROOT-12:
+ * -------------
+ * cpu_base의 가장 이른 만료 시각과 조금 전에 구해 온 가장 이른 만료 시각이 
+ * 동일한 경우 skip_equal=1이면 리프로그램 없이 빠져나온다.
+ */
 	if (skip_equal && expires_next.tv64 == cpu_base->expires_next.tv64)
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * 다른 경우에라도 cpu_base에 갱신한다.
+ */
 	cpu_base->expires_next.tv64 = expires_next.tv64;
 
 	/*
@@ -587,6 +645,10 @@ hrtimer_force_reprogram(struct hrtimer_cpu_base *cpu_base, int skip_equal)
 	if (cpu_base->hang_detected)
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * 하드웨어 타이머를 프로그램한다.
+ */
 	if (cpu_base->expires_next.tv64 != KTIME_MAX)
 		tick_program_event(cpu_base->expires_next, 1);
 }
@@ -609,6 +671,11 @@ static int hrtimer_reprogram(struct hrtimer *timer,
 			     struct hrtimer_clock_base *base)
 {
 	struct hrtimer_cpu_base *cpu_base = this_cpu_ptr(&hrtimer_bases);
+
+/* IAMROOT-12:
+ * -------------
+ * monotonic 기준의 만료 시각
+ */
 	ktime_t expires = ktime_sub(hrtimer_get_expires(timer), base->offset);
 	int res;
 
@@ -621,6 +688,11 @@ static int hrtimer_reprogram(struct hrtimer *timer,
 	 * reprogramming is handled either by the softirq, which called the
 	 * callback or at the end of the hrtimer_interrupt.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 이미 hrtimer에 등록된 callback 함수가 실행되는 중이면 빠져나간다.
+ */
 	if (hrtimer_callback_running(timer))
 		return 0;
 
@@ -630,9 +702,20 @@ static int hrtimer_reprogram(struct hrtimer *timer,
 	 * about that, just avoid to call into the tick code, which
 	 * has now objections against negative expiry values.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * monotonic의 만료 시각 가장작은 수가 0(부팅하자 마자 시각이 0)인데 
+ * 음수로 나오는 경우는 오류!!!
+ */
 	if (expires.tv64 < 0)
 		return -ETIME;
 
+/* IAMROOT-12:
+ * -------------
+ * 만료 시각이 cpu에서 가장 이른 만료 시각보다 느리거나 같은 경우 
+ * 별도로 hw 타이머를 조작할 필요 없다.
+ */
 	if (expires.tv64 >= cpu_base->expires_next.tv64)
 		return 0;
 
@@ -642,6 +725,12 @@ static int hrtimer_reprogram(struct hrtimer *timer,
 	 * device. hrtimer_interrupt() will reevaluate all clock bases
 	 * before reprogramming the device.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * hrtimer 인터럽트 처리중인 경우 이미 만료된 타이머를 처리하는 중이므로 
+ * 함수를 빠져나간다.
+ */
 	if (cpu_base->in_hrtirq)
 		return 0;
 
@@ -651,12 +740,23 @@ static int hrtimer_reprogram(struct hrtimer *timer,
 	 * which we enforced in the hang detection. We want the system
 	 * to make progress.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 요청 cpu의 hrtimer의 인터럽트 처리에 문제가 있는 경우
+ */
 	if (cpu_base->hang_detected)
 		return 0;
 
 	/*
 	 * Clockevents returns -ETIME, when the event was in the past.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * high-res 타이머 장치에 oneshot 타이머 요청을 한다.
+ * (만료 시간에 timer에 대한 인터럽트가 도착한다)
+ */
 	res = tick_program_event(expires, 0);
 	if (!IS_ERR_VALUE(res))
 		cpu_base->expires_next = expires;
@@ -683,6 +783,11 @@ static inline void hrtimer_init_hres(struct hrtimer_cpu_base *base)
 
 static inline ktime_t hrtimer_update_base(struct hrtimer_cpu_base *base)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * monotonic을 제외한 나머지 클럭의 offset 주소를 인수로 담아간다.
+ */
 	ktime_t *offs_real = &base->clock_base[HRTIMER_BASE_REALTIME].offset;
 	ktime_t *offs_boot = &base->clock_base[HRTIMER_BASE_BOOTTIME].offset;
 	ktime_t *offs_tai = &base->clock_base[HRTIMER_BASE_TAI].offset;
@@ -900,15 +1005,36 @@ static int enqueue_hrtimer(struct hrtimer *timer,
 {
 	debug_activate(timer);
 
+/* IAMROOT-12:
+ * -------------
+ * RB 트리에 hrtimer를 추가한다.
+ */
 	timerqueue_add(&base->active, &timer->node);
+
+/* IAMROOT-12:
+ * -------------
+ * 요청한 hrtimer의 클럭 종류에 따른 bit를 설정하여 해당 클럭에 hrtimer가 
+ * 등록되었음을 나타낸다.
+ */
 	base->cpu_base->active_bases |= 1 << base->index;
 
 	/*
 	 * HRTIMER_STATE_ENQUEUED is or'ed to the current state to preserve the
 	 * state of a possibly running callback.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 타이머가 hrtimer 큐에 등록되었음을 나타낸다.
+ */
 	timer->state |= HRTIMER_STATE_ENQUEUED;
 
+
+/* IAMROOT-12:
+ * -------------
+ * 등록 시킨 hrtimer가 요청 클럭에서 가장 좌측(만료시각이 가장 빠른)인 경우 
+ * true를 반환한다.
+ */
 	return (&timer->node == base->active.next);
 }
 
@@ -927,11 +1053,27 @@ static void __remove_hrtimer(struct hrtimer *timer,
 			     unsigned long newstate, int reprogram)
 {
 	struct timerqueue_node *next_timer;
+
+/* IAMROOT-12:
+ * -------------
+ * 엔큐 플래그가 없으면 이미 RB 트리에 없는 상태이므로 빠져나간다.
+ */
 	if (!(timer->state & HRTIMER_STATE_ENQUEUED))
 		goto out;
 
 	next_timer = timerqueue_getnext(&base->active);
+
+/* IAMROOT-12:
+ * -------------
+ * 해당 클럭의 RB 트리에서 타이머를 제거하고 해당 클럭 내에서 가장 이른 
+ * 타이머도 업데이트한다.
+ */
 	timerqueue_del(&base->active, &timer->node);
+
+/* IAMROOT-12:
+ * -------------
+ * 제거한 타이머가 가장 이른 만료 시각인 경우
+ */
 	if (&timer->node == next_timer) {
 #ifdef CONFIG_HIGH_RES_TIMERS
 		/* Reprogram the clock event device. if enabled */
@@ -940,14 +1082,30 @@ static void __remove_hrtimer(struct hrtimer *timer,
 
 			expires = ktime_sub(hrtimer_get_expires(timer),
 					    base->offset);
+
+/* IAMROOT-12:
+ * -------------
+ * reprogram 요청이 있는 경우 삭제한 타이머가 cpu 내에서(4개의 클럭) 가장
+ *  이른 만료 시각인 경우 그 다음 순서의 타이머를 프로그램한다.
+ */
 			if (base->cpu_base->expires_next.tv64 == expires.tv64)
 				hrtimer_force_reprogram(base->cpu_base, 1);
 		}
 #endif
 	}
+
+/* IAMROOT-12:
+ * -------------
+ * RB 트리에 타이머가 없으면 4가지 클럭 중 해당 클럭의 비트를 클리어한다.
+ */
 	if (!timerqueue_getnext(&base->active))
 		base->cpu_base->active_bases &= ~(1 << base->index);
 out:
+
+/* IAMROOT-12:
+ * -------------
+ * 종료 전에 인수로 받은 state를 설정한다.
+ */
 	timer->state = newstate;
 }
 
@@ -1016,7 +1174,6 @@ int __hrtimer_start_range_ns(struct hrtimer *timer, ktime_t tim,
 #endif
 	}
 
-
 /* IAMROOT-12:
  * -------------
  * hrtimer의 RB 트리 유지는 항상 expires로 절대시각으로 관리된다.
@@ -1024,10 +1181,19 @@ int __hrtimer_start_range_ns(struct hrtimer *timer, ktime_t tim,
 	hrtimer_set_expires_range_ns(timer, tim, delta_ns);
 
 	/* Switch the timer base, if necessary: */
+
+/* IAMROOT-12:
+ * -------------
+ * 여러 조건으로 판단하여 new_base를 결정한다. (cpu가 바뀔 수 있다)
+ */
 	new_base = switch_hrtimer_base(timer, base, mode & HRTIMER_MODE_PINNED);
 
 	timer_stats_hrtimer_set_start_info(timer);
 
+/* IAMROOT-12:
+ * -------------
+ * 요청한 클럭 base에 hrtimer를 추가한다. 그 중 가장 빠른 것인 경우 1을 반환
+ */
 	leftmost = enqueue_hrtimer(timer, new_base);
 
 	if (!leftmost) {
@@ -1040,15 +1206,33 @@ int __hrtimer_start_range_ns(struct hrtimer *timer, ktime_t tim,
 		 * Kick to reschedule the next tick to handle the new timer
 		 * on dynticks target.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * nohz idle 상태의 cpu를 깨운다.
+ */
 		wake_up_nohz_cpu(new_base->cpu_base->cpu);
 	} else if (new_base->cpu_base == this_cpu_ptr(&hrtimer_bases) &&
 			hrtimer_reprogram(timer, new_base)) {
+
+/* IAMROOT-12:
+ * -------------
+ * 변경되었든 안되었든 new_base의 cpu가 현재 cpu인 경우 hrtimer에 대한 
+ * 프로그램 요청을 시도한다.
+ */
 		/*
 		 * Only allow reprogramming if the new base is on this CPU.
 		 * (it might still be on another CPU if the timer was pending)
 		 *
 		 * XXX send_remote_softirq() ?
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 이미 지나간걸로 추정하고 직접 hrtimer에 대한 softirq를 호출한다.
+ *
+ * softirqd를 wakeup=1일 때 시킨다.
+ */
 		if (wakeup) {
 			/*
 			 * We need to drop cpu_base->lock to avoid a
@@ -1288,8 +1472,15 @@ static void __run_hrtimer(struct hrtimer *timer, ktime_t *now)
 	WARN_ON(!irqs_disabled());
 
 	debug_deactivate(timer);
+
+/* IAMROOT-12:
+ * -------------
+ * 해당 클럭의 RB 트리에서 타이머를 제거한다.
+ * (인수를 0을 건네 차 순위 타이머는 프로그램하지 않는다.)
+ */
 	__remove_hrtimer(timer, base, HRTIMER_STATE_CALLBACK, 0);
 	timer_stats_account_hrtimer(timer);
+
 	fn = timer->function;
 
 	/*
@@ -1299,6 +1490,12 @@ static void __run_hrtimer(struct hrtimer *timer, ktime_t *now)
 	 */
 	raw_spin_unlock(&cpu_base->lock);
 	trace_hrtimer_expire_entry(timer, now);
+
+	/* IAMROOT-12:
+	 * -------------
+	 * 타이머 콜백 함수 호출하고 결과가 HRTIMER_RESTART(1)를 반환하는 
+	 * 경우 다시 똑같이 재프로그램한다.
+	 */
 	restart = fn(timer);
 	trace_hrtimer_expire_exit(timer);
 	raw_spin_lock(&cpu_base->lock);
@@ -1315,6 +1512,10 @@ static void __run_hrtimer(struct hrtimer *timer, ktime_t *now)
 
 	WARN_ON_ONCE(!(timer->state & HRTIMER_STATE_CALLBACK));
 
+/* IAMROOT-12:
+ * -------------
+ * 타이머 처리가 완료되면 콜백 함수 처리중 플래그를 제거한다.
+ */
 	timer->state &= ~HRTIMER_STATE_CALLBACK;
 }
 
@@ -1324,6 +1525,16 @@ static void __run_hrtimer(struct hrtimer *timer, ktime_t *now)
  * High resolution timer interrupt
  * Called with interrupts disabled
  */
+
+/* IAMROOT-12:
+ * -------------
+ * hrtimer의 softirq 처리 함수 순서
+ *
+ * run_hrtimer_softirq() -> 
+ *	hrtimer_pick_ahead_timers() ->
+ *		__hrtimer_pick_ahead_timers() ->
+ *			hrtimer_interrupt()
+ */
 void hrtimer_interrupt(struct clock_event_device *dev)
 {
 	struct hrtimer_cpu_base *cpu_base = this_cpu_ptr(&hrtimer_bases);
@@ -1331,12 +1542,27 @@ void hrtimer_interrupt(struct clock_event_device *dev)
 	int i, retries = 0;
 
 	BUG_ON(!cpu_base->hres_active);
+
+/* IAMROOT-12:
+ * -------------
+ * 해당 cpu에 hrtimer 인터럽트가 들어온 횟수
+ */
 	cpu_base->nr_events++;
 	dev->next_event.tv64 = KTIME_MAX;
 
 	raw_spin_lock(&cpu_base->lock);
+
+/* IAMROOT-12:
+ * -------------
+ * cpu_base의 3가지 offset를 갱신하고 tk의 monotonic 시각을 알아온다.
+ */
 	entry_time = now = hrtimer_update_base(cpu_base);
 retry:
+
+/* IAMROOT-12:
+ * -------------
+ * hrtimer 처리 시작
+ */
 	cpu_base->in_hrtirq = 1;
 	/*
 	 * We set expires_next to KTIME_MAX here with cpu_base->lock
@@ -1352,9 +1578,17 @@ retry:
 		struct timerqueue_node *node;
 		ktime_t basenow;
 
+/* IAMROOT-12:
+ * -------------
+ * hrtimer가 등록되지 않은 클럭은 skip 한다.
+ */
 		if (!(cpu_base->active_bases & (1 << i)))
 			continue;
 
+/* IAMROOT-12:
+ * -------------
+ * basenow: 해당 클럭의 현재 시각
+ */
 		base = cpu_base->clock_base + i;
 		basenow = ktime_add(now, base->offset);
 
@@ -1375,13 +1609,32 @@ retry:
 			 * are right-of a not yet expired timer, because that
 			 * timer will have to trigger a wakeup anyway.
 			 */
+
+/* IAMROOT-12:
+ * -------------
+ * 참고: Greedy hrtimer expiration - LWN.net
+ *       https://lwn.net/Articles/461592/
+ *
+ * 1 개의 hrtimer 처리 시 이미 지나간 soft expire hrtimer까지 한꺼번에 
+ * 처리하므로 결과적으로 처리할 타이머 프로그램 횟수를 줄인다.
+ */
 			if (basenow.tv64 < hrtimer_get_softexpires_tv64(timer))
 				break;
 
+/* IAMROOT-12:
+ * -------------
+ * RB 트리에서 타이머를 제거하고 그 타이머에 등록된 콜백 함수를 수행한다.
+ * 수행 결과가 HRTIMER_RESTART(1) 경우에 한해서 다시 RB 트리에 엔큐한다.
+ */
 			__run_hrtimer(timer, &basenow);
 		}
 	}
 	/* Reevaluate the clock bases for the next expiry */
+
+/* IAMROOT-12:
+ * -------------
+ * 요청한 cpu_base에서 4개의 클럭을 검색하여 가장 이른 만료 시각을 알아온다.
+ */
 	expires_next = __hrtimer_get_next_event(cpu_base);
 	/*
 	 * Store the new expiry value so the migration code can verify
@@ -1392,6 +1645,14 @@ retry:
 	raw_spin_unlock(&cpu_base->lock);
 
 	/* Reprogramming necessary ? */
+
+/* IAMROOT-12:
+ * -------------
+ * cpu에서(4개의 클럭 포함) 가장 이른 expires 타이머를 프로그램한다.
+ * 
+ * 프로그램할 타이머가 없거나 다음 타이머 프로그램을 성공한 경우 
+ * 함수를 빠져나간다.
+ */
 	if (expires_next.tv64 == KTIME_MAX ||
 	    !tick_program_event(expires_next, 0)) {
 		cpu_base->hang_detected = 0;
@@ -1411,6 +1672,12 @@ retry:
 	 * Acquire base lock for updating the offsets and retrieving
 	 * the current time.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 여러 이유로 타이머 프로그램이 실패한 경우 3회에 한해 다시 타이머를 
+ * 뒤져 expire 된 타이머들을 수행한다.
+ */
 	raw_spin_lock(&cpu_base->lock);
 	now = hrtimer_update_base(cpu_base);
 	cpu_base->nr_retries++;
@@ -1422,6 +1689,12 @@ retry:
 	 * we spent here. We schedule the next event this amount of
 	 * time away.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 여기에 도착했다는 것은 타이머 프로그램이 3회 이상 실패하는 경우이다.
+ * 이 때에는 hang 횟수를 증가시키고, 관련된 stat을 갱신한다.
+ */
 	cpu_base->nr_hangs++;
 	cpu_base->hang_detected = 1;
 	raw_spin_unlock(&cpu_base->lock);
@@ -1432,6 +1705,11 @@ retry:
 	 * Limit it to a sensible value as we enforce a longer
 	 * delay. Give the CPU at least 100ms to catch up.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 100ms의 여유 있는 만료 시각으로 프로그램해본다.
+ */
 	if (delta.tv64 > 100 * NSEC_PER_MSEC)
 		expires_next = ktime_add_ns(now, 100 * NSEC_PER_MSEC);
 	else
@@ -1449,6 +1727,10 @@ static void __hrtimer_peek_ahead_timers(void)
 {
 	struct tick_device *td;
 
+/* IAMROOT-12:
+ * -------------
+ * hrtimer 인터럽트가 들어왔는데 실제 high-res 모드가 준비되지 않은 경우 return
+ */
 	if (!hrtimer_hres_active())
 		return;
 
@@ -1475,6 +1757,11 @@ void hrtimer_peek_ahead_timers(void)
 	local_irq_restore(flags);
 }
 
+
+/* IAMROOT-12:
+ * -------------
+ * hrtimer의 softirq 핸들러 루틴
+ */
 static void run_hrtimer_softirq(struct softirq_action *h)
 {
 	hrtimer_peek_ahead_timers();

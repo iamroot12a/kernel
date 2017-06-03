@@ -11,6 +11,14 @@ struct timerqueue_node {
 };
 
 struct timerqueue_head {
+
+/* IAMROOT-12:
+ * -------------
+ * head 
+ *      RB 트리의 루트
+ * *next 
+ *      RB 트리의 leftmost
+ */
 	struct rb_root head;
 	struct timerqueue_node *next;
 };

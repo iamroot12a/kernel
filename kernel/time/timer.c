@@ -910,6 +910,12 @@ static struct tvec_base *lock_timer_base(struct timer_list *timer,
 {
 	struct tvec_base *base;
 
+
+/* IAMROOT-12:
+ * -------------
+ * 타이머의 base가 null로 되어 있는 경우 루프를 돌며 null이 아닌 값이 
+ * 올 때 까지 기다렸다가 lock을 얻은 후 base를 반환한다.
+ */
 	for (;;) {
 		struct tvec_base *prelock_base = timer->base;
 		base = tbase_get_base(prelock_base);

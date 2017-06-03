@@ -42,6 +42,14 @@ void timerqueue_add(struct timerqueue_head *head, struct timerqueue_node *node)
 	struct rb_node *parent = NULL;
 	struct timerqueue_node  *ptr;
 
+
+/* IAMROOT-12:
+ * -------------
+ * hrtimer.node.node: 
+ *	RB 트리에 연결되는 노드로 사용
+ * hrtimer.node.expires:
+ *	가장 이른 만료 시각을 RB 트리의 가장 좌측에 위치시킨다.
+ */
 	/* Make sure we don't add nodes that are already added */
 	WARN_ON_ONCE(!RB_EMPTY_NODE(&node->node));
 

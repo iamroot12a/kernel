@@ -28,6 +28,10 @@ int tick_program_event(ktime_t expires, int force)
 {
 	struct clock_event_device *dev = __this_cpu_read(tick_cpu_device.evtdev);
 
+/* IAMROOT-12:
+ * -------------
+ * 성공은 0, 에러는 -ETIME
+ */
 	return clockevents_program_event(dev, expires, force);
 }
 

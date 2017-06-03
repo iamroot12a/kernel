@@ -1816,9 +1816,22 @@ ktime_t ktime_get_update_offsets_now(ktime_t *offs_real, ktime_t *offs_boot,
 	do {
 		seq = read_seqcount_begin(&tk_core.seq);
 
+/* IAMROOT-12:
+ * -------------
+ * 부트후 0부터 시작하는 monotonic 시각(ktime_t 단위, 나노초)
+ */
 		base = tk->tkr.base_mono;
+
+/* IAMROOT-12:
+ * -------------
+ * timekeeping을 통해 현재 monotonic 시각을 나노초단위로 가져온다.
+ */
 		nsecs = timekeeping_get_ns(&tk->tkr);
 
+/* IAMROOT-12:
+ * -------------
+ * hrtimer의 클럭 base에 <- tk의 각 클럭 offset을 copy하여 갱신한다.
+ */
 		*offs_real = tk->offs_real;
 		*offs_boot = tk->offs_boot;
 		*offs_tai = tk->offs_tai;
