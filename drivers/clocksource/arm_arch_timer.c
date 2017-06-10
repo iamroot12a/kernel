@@ -54,6 +54,11 @@ struct arch_timer {
 
 static u32 arch_timer_rate;
 
+
+/* IAMROOT-12:
+ * -------------
+ * cpu 마다 4개의 h/w 타이머가 있다.
+ */
 enum ppi_nr {
 	PHYS_SECURE_PPI,
 	PHYS_NONSECURE_PPI,
@@ -66,7 +71,16 @@ static int arch_timer_ppi[MAX_TIMER_PPI];
 
 static struct clock_event_device __percpu *arch_timer_evt;
 
+/* IAMROOT-12:
+ * -------------
+ * 4개의 타이머중 디폴트로 virtual 타이머를 사용한다.
+ */
 static bool arch_timer_use_virtual = true;
+
+/* IAMROOT-12:
+ * -------------
+ * "always-on" 속성이 없을 때 true
+ */
 static bool arch_timer_c3stop;
 static bool arch_timer_mem_use_virtual;
 
@@ -187,6 +201,11 @@ static __always_inline void timer_set_mode(const int access, int mode,
 	switch (mode) {
 	case CLOCK_EVT_MODE_UNUSED:
 	case CLOCK_EVT_MODE_SHUTDOWN:
+
+/* IAMROOT-12:
+ * -------------
+ * 타이머 동작 정지 (CNTP_CTL.bits[0]을 제어한다.)
+ */
 		ctrl = arch_timer_reg_read(access, ARCH_TIMER_REG_CTRL, clk);
 		ctrl &= ~ARCH_TIMER_CTRL_ENABLE;
 		arch_timer_reg_write(access, ARCH_TIMER_REG_CTRL, ctrl, clk);
@@ -262,16 +281,30 @@ static int arch_timer_set_next_event_phys_mem(unsigned long evt,
 static void __arch_timer_setup(unsigned type,
 			       struct clock_event_device *clk)
 {
+/* IAMROOT-12:
+ * -------------
+ * arch 타이머는 oneshot 기능이 있음을 알린다.
+ */
 	clk->features = CLOCK_EVT_FEAT_ONESHOT;
 
 	if (type == ARCH_CP15_TIMER) {
 		if (arch_timer_c3stop)
 			clk->features |= CLOCK_EVT_FEAT_C3STOP;
 		clk->name = "arch_sys_timer";
+
+/* IAMROOT-12:
+ * -------------
+ * 클럭 rating이 450이다. (클럭을 여러 개 사용하는 경우 높은 클럭을 사용한다.)
+ */
 		clk->rating = 450;
 		clk->cpumask = cpumask_of(smp_processor_id());
 		if (arch_timer_use_virtual) {
 			clk->irq = arch_timer_ppi[VIRT_PPI];
+
+/* IAMROOT-12:
+ * -------------
+ * 모드 설정 및 다음 이벤트 프로그램 설정 핸들러 함수
+ */
 			clk->set_mode = arch_timer_set_mode_virt;
 			clk->set_next_event = arch_timer_set_next_event_virt;
 		} else {
@@ -295,6 +328,10 @@ static void __arch_timer_setup(unsigned type,
 		}
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * arch_timer_set_mode_virt() 함수 호출하여 타이머를 일단 정지 시킨다.
+ */
 	clk->set_mode(CLOCK_EVT_MODE_SHUTDOWN, clk);
 
 	clockevents_config_and_register(clk, arch_timer_rate, 0xf, 0x7fffffff);
@@ -349,6 +386,10 @@ static int arch_timer_setup(struct clock_event_device *clk)
 {
 	__arch_timer_setup(ARCH_CP15_TIMER, clk);
 
+/* IAMROOT-12:
+ * -------------
+ * arch 타이머에 대한 인터럽트를 enable한다.
+ */
 	if (arch_timer_use_virtual)
 		enable_percpu_irq(arch_timer_ppi[VIRT_PPI], 0);
 	else {
@@ -371,11 +412,21 @@ arch_timer_detect_rate(void __iomem *cntbase, struct device_node *np)
 	if (arch_timer_rate)
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * "clock-frequency" 속성 값을 &arch_timer_rate 변수에 저장한다.
+ */
+
 	/* Try to determine the frequency from the device tree or CNTFRQ */
 	if (of_property_read_u32(np, "clock-frequency", &arch_timer_rate)) {
 		if (cntbase)
 			arch_timer_rate = readl_relaxed(cntbase + CNTFRQ);
 		else
+/* IAMROOT-12:
+ * -------------
+ * 위의 속성 값을 못찾은 경우 CNTFRQ 레지스터에 설정된 클럭 주파수(19.2Mhz)를
+ * 알아온다.
+ */
 			arch_timer_rate = arch_timer_get_cntfrq();
 	}
 
@@ -462,6 +513,13 @@ static void __init arch_counter_register(unsigned type)
 	u64 start_count;
 
 	/* Register the CP15 based counter if we have one */
+
+/* IAMROOT-12:
+ * -------------
+ * arch 타이머의 64비트 카운터 값을 읽어오는 함수를 결정한다.
+ * (physical 및 virtual 카운터 중 하나를 선택하여 운용한다)
+ */
+
 	if (type & ARCH_CP15_TIMER) {
 		if (IS_ENABLED(CONFIG_ARM64) || arch_timer_use_virtual)
 			arch_timer_read_counter = arch_counter_get_cntvct;
@@ -513,6 +571,11 @@ static int arch_timer_cpu_notify(struct notifier_block *self,
 	 */
 	switch (action & ~CPU_TASKS_FROZEN) {
 	case CPU_STARTING:
+
+/* IAMROOT-12:
+ * -------------
+ * cpu가 on될 때 arch 타이머도 셋업한다.
+ */
 		arch_timer_setup(this_cpu_ptr(arch_timer_evt));
 		break;
 	case CPU_DYING:
@@ -559,6 +622,10 @@ static int __init arch_timer_register(void)
 	int err;
 	int ppi;
 
+/* IAMROOT-12:
+ * -------------
+ * armv7에 내장된 arch 타이머(로컬 타이머)를 클럭 이벤트 디바이스로도 사용한다.
+ */
 	arch_timer_evt = alloc_percpu(struct clock_event_device);
 	if (!arch_timer_evt) {
 		err = -ENOMEM;
@@ -566,13 +633,33 @@ static int __init arch_timer_register(void)
 	}
 
 	if (arch_timer_use_virtual) {
+/* IAMROOT-12:
+ * -------------
+ * rpi2는 virtual 타이머를 사용한다.
+ */
 		ppi = arch_timer_ppi[VIRT_PPI];
 		err = request_percpu_irq(ppi, arch_timer_handler_virt,
 					 "arch_timer", arch_timer_evt);
 	} else {
+/* IAMROOT-12:
+ * -------------
+ * rpi3는 physical 타이머를 선택한다. (virtual extension이 있고 
+ * 마스터 부팅된 경우)
+ */
 		ppi = arch_timer_ppi[PHYS_SECURE_PPI];
+
+/* IAMROOT-12:
+ * -------------
+ * per-cpu용 irq 핸들러를 등록한다.
+ */
 		err = request_percpu_irq(ppi, arch_timer_handler_phys,
 					 "arch_timer", arch_timer_evt);
+
+/* IAMROOT-12:
+ * -------------
+ * secure용 physical 타이머의 등록이 성공한 경우 non-secure용 physical 타이머를 
+ * 사용하여 시도한다.
+ */
 		if (!err && arch_timer_ppi[PHYS_NONSECURE_PPI]) {
 			ppi = arch_timer_ppi[PHYS_NONSECURE_PPI];
 			err = request_percpu_irq(ppi, arch_timer_handler_phys,
@@ -691,24 +778,49 @@ static void __init arch_timer_common_init(void)
 	arch_timer_arch_init();
 }
 
+/* IAMROOT-12:
+ * -------------
+ * armv7 내장 local 타이머 초기화
+ * (cpu당 4개의 h/w 타이머가 있고 리눅스 커널은 그 중 하나를 사용한다.)
+ */
 static void __init arch_timer_init(struct device_node *np)
 {
 	int i;
 
+/* IAMROOT-12:
+ * -------------
+ * 처음 진입 시 arch_timers_present에 설정된 플래그가 없다.
+ * (디바이스 트리의 이중 구현으로 인한 진입을 막는다.)
+ */
 	if (arch_timers_present & ARCH_CP15_TIMER) {
 		pr_warn("arch_timer: multiple nodes in dt, skipping\n");
 		return;
 	}
 
 	arch_timers_present |= ARCH_CP15_TIMER;
+
+/* IAMROOT-12:
+ * -------------
+ * 4개의 타이머에 대한 irq 디스크립터를 초기화하고 irq(virq) 번호를 알아온다.
+ */
 	for (i = PHYS_SECURE_PPI; i < MAX_TIMER_PPI; i++)
 		arch_timer_ppi[i] = irq_of_parse_and_map(np, i);
+
+/* IAMROOT-12:
+ * -------------
+ * 디바이스 트리 또는 카운터 레지스터를 통해 클럭 주파수(rpi2: 19.2Mhz)를 알아온다.
+ */
 	arch_timer_detect_rate(NULL, np);
 
 	/*
 	 * If we cannot rely on firmware initializing the timer registers then
 	 * we should use the physical timers instead.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 특정 시스템에서는 리눅스가 무조건 physical 타이머를 사용하여야 한다.
+ */
 	if (IS_ENABLED(CONFIG_ARM) &&
 	    of_property_read_bool(np, "arm,cpu-registers-not-fw-configured"))
 			arch_timer_use_virtual = false;
@@ -721,6 +833,13 @@ static void __init arch_timer_init(struct device_node *np)
 	 * If no interrupt provided for virtual timer, we'll have to
 	 * stick to the physical timer. It'd better be accessible...
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 현재 시스템이 virtual extension을 지원하는 경우에는 guest os에 virtual 
+ * 타이머를 사용하도록 현재 시스템은 physical 타이머를 사용한다.
+ * virtual 타이머 설정이 없는 경우 항상 physical 타이머를 사용한다.
+ */
 	if (is_hyp_mode_available() || !arch_timer_ppi[VIRT_PPI]) {
 		arch_timer_use_virtual = false;
 
@@ -731,6 +850,17 @@ static void __init arch_timer_init(struct device_node *np)
 		}
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 시스템이 c3stop 기능을 지원하지 않는 경우 "always-on" 속성을 사용한다.
+ * 코어(보통 클러스터 전체가)가 deep-sleep 상태로 전환되는 경우 타이머 및
+ * 인터럽트 컨트롤러의 전원도 다운시킬 수도 있다. 그런데 이렇게 전원을 
+ * 끄지 않고 항상 켜있는 경우 이러한 속성을 사용한다.
+ *
+ * 일반적인 arm 시스템에서 코어 1개가 sleep하는 경우 절전을 위해 wfi로
+ * 처리한다. 그런데 클러스터 내에 있는 코어들이 모두 sleep 하는 경우 
+ * deep-sleep 상태로 전환시킬 수 있다.
+ */
 	arch_timer_c3stop = !of_property_read_bool(np, "always-on");
 
 	arch_timer_register();

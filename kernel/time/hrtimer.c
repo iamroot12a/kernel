@@ -582,6 +582,11 @@ static int __init setup_hrtimer_hres(char *str)
 	return 1;
 }
 
+/* IAMROOT-12:
+ * -------------
+ * high-resolution 타이머가 지원되는 시스템에서 아래 커널 파라메터를 사용하여 
+ * 잠시 high-resolution 타이머의 운용을 정지시킬 수 있다.
+ */
 __setup("highres=", setup_hrtimer_hres);
 
 /*
@@ -597,6 +602,11 @@ static inline int hrtimer_is_hres_enabled(void)
  */
 static inline int hrtimer_hres_active(void)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * hrtimer에서 high-res 타이머가 준비되었는지 여부를 반환한다.
+ */
 	return __this_cpu_read(hrtimer_bases.hres_active);
 }
 
@@ -960,16 +970,35 @@ void unlock_hrtimer_base(const struct hrtimer *timer, unsigned long *flags)
  * Forward the timer expiry so it will expire in the future.
  * Returns the number of overruns.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * now: 절대 시각(나노초)
+ * interval: 시간(나노초 간격)
+ */
 u64 hrtimer_forward(struct hrtimer *timer, ktime_t now, ktime_t interval)
 {
 	u64 orun = 1;
 	ktime_t delta;
 
+/* IAMROOT-12:
+ * -------------
+ * slack이 적용된 시각으로 가져온다. (실제 h/w 타이머 만료시각)
+ */
 	delta = ktime_sub(now, hrtimer_get_expires(timer));
 
+/* IAMROOT-12:
+ * -------------
+ * 타이머가 만료되지 않은 경우 그냥 함수를 빠져나간다.
+ */
 	if (delta.tv64 < 0)
 		return 0;
 
+/* IAMROOT-12:
+ * -------------
+ * 인터벌이 타이머가 제공하는 해상도보다 작으면 타이머가 제공하는 해상도로 
+ * 변경한다.
+ */
 	if (interval.tv64 < timer->base->resolution.tv64)
 		interval.tv64 = timer->base->resolution.tv64;
 
@@ -978,6 +1007,12 @@ u64 hrtimer_forward(struct hrtimer *timer, ktime_t now, ktime_t interval)
 
 		orun = ktime_divns(delta, incr);
 		hrtimer_add_expires_ns(timer, incr * orun);
+
+/* IAMROOT-12:
+ * -------------
+ * 인자로 받은 now 시각을 기준으로 계산하여 만료 시각이 앞당겨질 수 있다.
+ * (slack으로 인해 발생 가능하다)
+ */
 		if (hrtimer_get_expires_tv64(timer) > now.tv64)
 			return orun;
 		/*
@@ -986,6 +1021,11 @@ u64 hrtimer_forward(struct hrtimer *timer, ktime_t now, ktime_t interval)
 		 */
 		orun++;
 	}
+
+/* IAMROOT-12:
+ * -------------
+ * 마지막 만료시각에 1 인터벌을 추가한다.
+ */
 	hrtimer_add_expires(timer, interval);
 
 	return orun;
@@ -1782,6 +1822,11 @@ static inline void __hrtimer_peek_ahead_timers(void) { }
  */
 void hrtimer_run_pending(void)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 고해상도가 준비되는 순간에 타이머 전환이 필요한지 체크를 하지 않는다.
+ */
 	if (hrtimer_hres_active())
 		return;
 
@@ -1793,6 +1838,12 @@ void hrtimer_run_pending(void)
 	 * check bit in the tick_oneshot code, otherwise we might
 	 * deadlock vs. xtime_lock.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 고해상도가 아직 준비가 안되어 있으면 이 루틴으로 와서 항상 고해상도 
+ * 타이머가 준비되었는지 체크를 한다. 체크하여 준비가 되면 전환을 시도한다.
+ */
 	if (tick_check_oneshot_change(!hrtimer_is_hres_enabled()))
 		hrtimer_switch_to_hres();
 }

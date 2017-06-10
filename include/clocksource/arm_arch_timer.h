@@ -19,6 +19,12 @@
 #include <linux/timecounter.h>
 #include <linux/types.h>
 
+
+/* IAMROOT-12:
+ * -------------
+ * arch 타이머 enable, mask, interrupt assert 제어 비트
+ *             1=enable, 1=mask되어 출력이 안나가는 상태, 1=interrupt on
+ */
 #define ARCH_TIMER_CTRL_ENABLE		(1 << 0)
 #define ARCH_TIMER_CTRL_IT_MASK		(1 << 1)
 #define ARCH_TIMER_CTRL_IT_STAT		(1 << 2)

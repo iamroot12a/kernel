@@ -255,8 +255,8 @@ static inline void hrtimer_set_expires_range_ns(struct hrtimer *timer, ktime_t t
 {
 /* IAMROOT-12:
  * -------------
- * _softexpires: 델타(slack)가 제외된 시각 
- * node.expires: 델타(slack)가 포함된 시각
+ * _softexpires: 델타(slack)가 제외된 시각 -> soft 만료 시각
+ * node.expires: 델타(slack)가 포함된 시각 -> hard 만료 시각(h/w 타이머)
  */
 	timer->_softexpires = time;
 	timer->node.expires = ktime_add_safe(time, ns_to_ktime(delta));
@@ -264,6 +264,10 @@ static inline void hrtimer_set_expires_range_ns(struct hrtimer *timer, ktime_t t
 
 static inline void hrtimer_set_expires_tv64(struct hrtimer *timer, s64 tv64)
 {
+/* IAMROOT-12:
+ * -------------
+ * soft와 hard 만료시각이 동일하게 설정한다.
+ */
 	timer->node.expires.tv64 = tv64;
 	timer->_softexpires.tv64 = tv64;
 }
@@ -285,6 +289,7 @@ static inline ktime_t hrtimer_get_expires(const struct hrtimer *timer)
 /* IAMROOT-12:
  * -------------
  * RB 트리에 연결될 노드로 slack이 적용된 실제 만료 시간을 가지고 있다
+ * (hard 만료 시각)
  */
 	return timer->node.expires;
 }
@@ -293,7 +298,8 @@ static inline ktime_t hrtimer_get_softexpires(const struct hrtimer *timer)
 {
 /* IAMROOT-12:
  * -------------
- * slack이 적용되지 않은 사용자 요청 만료 시각
+ * slack이 적용되지 않은 사용자 요청 만료 시각 
+ * (soft 만료 시각)
  */
 	return timer->_softexpires;
 }

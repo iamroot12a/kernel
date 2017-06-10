@@ -67,6 +67,14 @@ clocks_calc_mult_shift(u32 *mult, u32 *shift, u32 from, u32 to, u32 maxsec)
 	 * Calculate the shift factor which is limiting the conversion
 	 * range:
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * from=1G(10E9) -> to=19.2M, maxsec=111
+ *	tmp=0b0001_1001 (25)
+ *		 <----> (5번 shift해서 0을 만들 수 있다.)
+ *      sftacc=32-5=27
+ */
 	tmp = ((u64)maxsec * from) >> 32;
 	while (tmp) {
 		tmp >>=1;

@@ -55,6 +55,11 @@ enum tick_nohz_mode {
 struct tick_sched {
 	struct hrtimer			sched_timer;
 	unsigned long			check_clocks;
+
+/* IAMROOT-12:
+ * -------------
+ * nohz 모드(inactive, lowres, highres)
+ */
 	enum tick_nohz_mode		nohz_mode;
 	ktime_t				last_tick;
 	int				inidle;

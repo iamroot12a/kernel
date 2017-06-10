@@ -30,6 +30,10 @@ void __init clocksource_of_init(void)
 	of_init_fn_1 init_func;
 	unsigned clocksources = 0;
 
+/* IAMROOT-12:
+ * -------------
+ * time_init()에서 호출되었다.
+ */
 	for_each_matching_node_and_match(np, __clksrc_of_table, &match) {
 		if (!of_device_is_available(np))
 			continue;

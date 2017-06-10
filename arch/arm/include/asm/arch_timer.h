@@ -73,6 +73,11 @@ u32 arch_timer_reg_read_cp15(int access, enum arch_timer_reg reg)
 
 static inline u32 arch_timer_get_cntfrq(void)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * CNTFRQ 레지스터에 설정된 클럭 주파수(19.2Mhz)를 알아온다.
+ */
 	u32 val;
 	asm volatile("mrc p15, 0, %0, c14, c0, 0" : "=r" (val));
 	return val;
@@ -82,6 +87,10 @@ static inline u64 arch_counter_get_cntpct(void)
 {
 	u64 cval;
 
+/* IAMROOT-12:
+ * -------------
+ * 64비트 physical 타이머 카운터 값을 읽어온다.
+ */
 	isb();
 	asm volatile("mrrc p15, 0, %Q0, %R0, c14" : "=r" (cval));
 	return cval;
@@ -91,6 +100,10 @@ static inline u64 arch_counter_get_cntvct(void)
 {
 	u64 cval;
 
+/* IAMROOT-12:
+ * -------------
+ * 64비트 virtual 타이머 카운터 값을 읽어온다.
+ */
 	isb();
 	asm volatile("mrrc p15, 1, %Q0, %R0, c14" : "=r" (cval));
 	return cval;

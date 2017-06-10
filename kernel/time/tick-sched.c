@@ -34,6 +34,11 @@
 /*
  * Per cpu nohz control structure
  */
+
+/* IAMROOT-12:
+ * -------------
+ * 틱 스케줄 상태를 관리한다. (nohz 컨트롤 목적)
+ */
 DEFINE_PER_CPU(struct tick_sched, tick_cpu_sched);
 
 /*
@@ -1226,20 +1231,45 @@ void tick_oneshot_notify(void)
  */
 int tick_check_oneshot_change(int allow_nohz)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * nohz 상태를 관리하는 틱 스케드 구조체는 cpu 마다 관리된다.
+ */
 	struct tick_sched *ts = this_cpu_ptr(&tick_cpu_sched);
 
 	if (!test_and_clear_bit(0, &ts->check_clocks))
 		return 0;
 
+/* IAMROOT-12:
+ * -------------
+ * 이미 전환이 되고 있는 상태이면 0을 반환한다.
+ */
 	if (ts->nohz_mode != NOHZ_MODE_INACTIVE)
 		return 0;
 
+/* IAMROOT-12:
+ * -------------
+ * oneshot 지원되는 틱 디바이스가 준비된 경우가 아니면 0을 반환한다.
+ * 타임 키핑도 high-resolution 타이머를 사용하는 경우가 아니면 0을 반환한다.
+ */
 	if (!timekeeping_valid_for_hres() || !tick_is_oneshot_available())
 		return 0;
 
+/* IAMROOT-12:
+ * -------------
+ * 인수 allow_nohz가 0인 경우에만 이 루틴에서 1을 반환하고 고해상도 타이머
+ * 모드로 전환해야 함을 알린다.
+ */
 	if (!allow_nohz)
 		return 1;
 
+/* IAMROOT-12:
+ * -------------
+ * 인수 allow_nohz가 주어진 경우 이 함수에서 lowres timer를 이용하여 
+ * nohz 모드를 사용할 수 있도록 직접 전환한다.
+ * (high-resolution 타이머가 준비되지 않은 시스템인 경우)
+ */
 	tick_nohz_switch_to_nohz();
 	return 0;
 }

@@ -235,6 +235,10 @@ extern int clocksource_mmio_init(void __iomem *, const char *,
 
 extern int clocksource_i8253_init(void);
 
+/* IAMROOT-12:
+ * -------------
+ * 클럭 소스 정의
+ */
 #define CLOCKSOURCE_OF_DECLARE(name, compat, fn) \
 	OF_DECLARE_1(clksrc, name, compat, fn)
 

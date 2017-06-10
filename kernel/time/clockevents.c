@@ -401,6 +401,10 @@ void clockevents_config(struct clock_event_device *dev, u32 freq)
 {
 	u64 sec;
 
+/* IAMROOT-12:
+ * -------------
+ * oneshot 기능이 없으면 함수를 빠져나간다.
+ */
 	if (!(dev->features & CLOCK_EVT_FEAT_ONESHOT))
 		return;
 
@@ -409,8 +413,18 @@ void clockevents_config(struct clock_event_device *dev, u32 freq)
 	 * to 10 minutes for hardware which can program more than
 	 * 32bit ticks so we still get reasonable conversion values.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 0x7fff_ffff / 19.2Mhz 클럭 주파수 = 111
+ */
 	sec = dev->max_delta_ticks;
 	do_div(sec, freq);
+
+/* IAMROOT-12:
+ * -------------
+ * 1 ~ 600 범위를 벗어나면 그 범위내로 교정한다.
+ */
 	if (!sec)
 		sec = 1;
 	else if (sec > 600 && dev->max_delta_ticks > UINT_MAX)
@@ -434,6 +448,12 @@ void clockevents_config_and_register(struct clock_event_device *dev,
 				     u32 freq, unsigned long min_delta,
 				     unsigned long max_delta)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 0xf ~ 0x7fff_ffff 틱 까지의 delta를 클럭 이벤트 디바이스에 지정한다.
+ */
+
 	dev->min_delta_ticks = min_delta;
 	dev->max_delta_ticks = max_delta;
 	clockevents_config(dev, freq);
