@@ -111,6 +111,11 @@ static inline u64 arch_counter_get_cntvct(void)
 
 static inline u32 arch_timer_get_cntkctl(void)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * CNTKCTL(Timer PL1 Control register)의 값을 반환한다.
+ */
 	u32 cntkctl;
 	asm volatile("mrc p15, 0, %0, c14, c1, 0" : "=r" (cntkctl));
 	return cntkctl;

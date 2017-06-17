@@ -27,6 +27,13 @@
 /*
  * Tick devices
  */
+
+/* IAMROOT-12:
+ * -------------
+ * cpu별로 틱 디바이스를 관리한다.
+ *         (클럭이벤트 디바이스를 제어하여 프로그래밍한다.)
+ *         (가장 좋은 클럭이벤트 디바이스를 선택한다)
+ */
 DEFINE_PER_CPU(struct tick_device, tick_cpu_device);
 /*
  * Tick next event: keeps track of the tick time
@@ -254,8 +261,20 @@ static bool tick_check_preferred(struct clock_event_device *curdev,
 {
 	/* Prefer oneshot capable device */
 	if (!(newdev->features & CLOCK_EVT_FEAT_ONESHOT)) {
+
+/* IAMROOT-12:
+ * -------------
+ * 새 클럭이벤트 디바이스가 oneshot 기능이 없고 기존 클럭이벤트 디바이스는 
+ * 있는 경우 새 클럭이벤트 디바이스를 사용하지 않는다.
+ */
 		if (curdev && (curdev->features & CLOCK_EVT_FEAT_ONESHOT))
 			return false;
+
+/* IAMROOT-12:
+ * -------------
+ * 기존 틱 디바이스가 이미 oneshot 모드로 동작하는 경우 새 디바이스를 
+ * 선택하지 않는다.
+ */
 		if (tick_oneshot_mode_active())
 			return false;
 	}
@@ -264,6 +283,15 @@ static bool tick_check_preferred(struct clock_event_device *curdev,
 	 * Use the higher rated one, but prefer a CPU local device with a lower
 	 * rating than a non-CPU local device
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 다음 조건에서 새 디바이스를 채용할 수 있다.
+ * - 기존 디바이스가 없거나 
+ * - 기존 디바이스보다 rating이 더 좋거나 
+ * - 기존 디바이스는 범용(cpu와 관련 없는)이면서 
+ *   새 디바이스는 per-cpu인 경우
+ */
 	return !curdev ||
 		newdev->rating > curdev->rating ||
 	       !cpumask_equal(curdev->cpumask, newdev->cpumask);
@@ -292,21 +320,46 @@ void tick_check_new_device(struct clock_event_device *newdev)
 	struct tick_device *td;
 	int cpu;
 
+/* IAMROOT-12:
+ * -------------
+ * 클럭이 현재 cpu를 지원하지 않으면 빠져나간다.
+ * (아키텍처 타이머는 cpu별로 cpumask가 설정된다)
+ */
 	cpu = smp_processor_id();
 	if (!cpumask_test_cpu(cpu, newdev->cpumask))
 		goto out_bc;
 
+/* IAMROOT-12:
+ * -------------
+ * 이미 지정된 현재 스케줄 틱 디바이스를 알아온다.
+ */
 	td = &per_cpu(tick_cpu_device, cpu);
 	curdev = td->evtdev;
 
+/* IAMROOT-12:
+ * -------------
+ * cpu별로 구성된 타이머가 아니면 틱 브로드캐스트 디바이스를 설정하도록 
+ * out_bc 레이블로 이동한다.
+ * (armv7, armv8 타이머는 cpu별로 구성되어 있다)
+ */
 	/* cpu local device ? */
 	if (!tick_check_percpu(curdev, newdev, cpu))
 		goto out_bc;
 
 	/* Preference decision */
+
+/* IAMROOT-12:
+ * -------------
+ * 새 클럭이벤트 디바이스를 틱 디바이스로 선택받지 못한 경우 
+ * 틱 브로드캐스트 디바이스를 설정하도록 out_bc 레이블로 이동한다.
+ */
 	if (!tick_check_preferred(curdev, newdev))
 		goto out_bc;
 
+/* IAMROOT-12:
+ * -------------
+ * 모듈에 대한 레퍼런스 카운터를 증가시킨다.
+ */
 	if (!try_module_get(newdev->owner))
 		return;
 
@@ -315,10 +368,22 @@ void tick_check_new_device(struct clock_event_device *newdev)
 	 * device. If the current device is the broadcast device, do
 	 * not give it back to the clockevents layer !
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 기존 클럭 이벤트 디바이스가 틱 브로드캐스트용도로 사용되는 경우 
+ * 기존 클럭 디바이스를 셧다운 설정한다.
+ */
 	if (tick_is_broadcast_device(curdev)) {
 		clockevents_shutdown(curdev);
 		curdev = NULL;
 	}
+
+/* IAMROOT-12:
+ * -------------
+ * 틱 디바이스로 새 클럭 이벤트 디바이스를 선택한다.
+ * (shutdown으로 시작한다)
+ */
 	clockevents_exchange_device(curdev, newdev);
 	tick_setup_device(td, newdev, cpu, cpumask_of(cpu));
 	if (newdev->features & CLOCK_EVT_FEAT_ONESHOT)

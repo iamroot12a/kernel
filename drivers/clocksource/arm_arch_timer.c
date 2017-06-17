@@ -52,6 +52,10 @@ struct arch_timer {
 
 #define to_arch_timer(e) container_of(e, struct arch_timer, evt)
 
+/* IAMROOT-12:
+ * -------------
+ * arch 타이머에 사용하는 주파수(rpi2: 19.2Mhz)
+ */
 static u32 arch_timer_rate;
 
 
@@ -356,6 +360,11 @@ static void arch_timer_configure_evtstream(void)
 {
 	int evt_stream_div, pos;
 
+
+/* IAMROOT-12:
+ * -------------
+ * arch 타이머에서 이벤트 스트림이 발생되도록 설정한다.
+ */
 	/* Find the closest power of two to the divisor */
 	evt_stream_div = arch_timer_rate / ARCH_TIMER_EVT_STREAM_FREQ;
 	pos = fls(evt_stream_div);
@@ -367,10 +376,20 @@ static void arch_timer_configure_evtstream(void)
 
 static void arch_counter_set_user_access(void)
 {
+/* IAMROOT-12:
+ * -------------
+ * CNTKCTL(Timer PL1 Control register)의 값을 반환한다.
+ */
 	u32 cntkctl = arch_timer_get_cntkctl();
 
 	/* Disable user access to the timers and the physical counter */
 	/* Also disable virtual event stream */
+
+/* IAMROOT-12:
+ * -------------
+ * PL0(user 레벨)에서 이 arch 타이머에 접근할 수 있도록 허용한다.ㅁ
+ * (swi 등의 syscall 없이 즉, 커널 진입 없이 타이머 자원을 access 할 수 있다)
+ */
 	cntkctl &= ~(ARCH_TIMER_USR_PT_ACCESS_EN
 			| ARCH_TIMER_USR_VT_ACCESS_EN
 			| ARCH_TIMER_VIRT_EVT_EN
@@ -384,6 +403,12 @@ static void arch_counter_set_user_access(void)
 
 static int arch_timer_setup(struct clock_event_device *clk)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * arch 타이머를 클럭 이벤트 디바이스로 등록한다.
+ * (내부에서 이 타이머가 틱 디바이스로도 등록된다.)
+ */
 	__arch_timer_setup(ARCH_CP15_TIMER, clk);
 
 /* IAMROOT-12:
@@ -399,6 +424,14 @@ static int arch_timer_setup(struct clock_event_device *clk)
 	}
 
 	arch_counter_set_user_access();
+
+/* IAMROOT-12:
+ * -------------
+ * arm에서 유저 스페이스에서 lock을 구현 시 wfe 명령을 사용하였는데 
+ * 다른 cpu의 sev에 의해 이벤트가 fire되어야 하는데 동작하지 않는 경우가 
+ * 발생하여 arch 타이머에서 10khz 간격으로 이벤트를 주기적으로 발생하여 
+ * 혹시라도 모를 lock이 지속되는 것을 강제로 풀게하였다.
+ */
 	if (IS_ENABLED(CONFIG_ARM_ARCH_TIMER_EVTSTREAM))
 		arch_timer_configure_evtstream();
 
@@ -488,6 +521,10 @@ static cycle_t arch_counter_read_cc(const struct cyclecounter *cc)
 	return arch_timer_read_counter();
 }
 
+/* IAMROOT-12:
+ * -------------
+ * 56bit 카운터 소스이고 continue하게 동작한다.
+ */
 static struct clocksource clocksource_counter = {
 	.name	= "arch_sys_counter",
 	.rating	= 400,
@@ -519,7 +556,6 @@ static void __init arch_counter_register(unsigned type)
  * arch 타이머의 64비트 카운터 값을 읽어오는 함수를 결정한다.
  * (physical 및 virtual 카운터 중 하나를 선택하여 운용한다)
  */
-
 	if (type & ARCH_CP15_TIMER) {
 		if (IS_ENABLED(CONFIG_ARM64) || arch_timer_use_virtual)
 			arch_timer_read_counter = arch_counter_get_cntvct;
@@ -536,6 +572,10 @@ static void __init arch_counter_register(unsigned type)
 		clocksource_counter.name = "arch_mem_counter";
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 이 시점의 카운터를 읽어온다.
+ */
 	start_count = arch_timer_read_counter();
 	clocksource_register_hz(&clocksource_counter, arch_timer_rate);
 	cyclecounter.mult = clocksource_counter.mult;
@@ -595,9 +635,19 @@ static unsigned int saved_cntkctl;
 static int arch_timer_cpu_pm_notify(struct notifier_block *self,
 				    unsigned long action, void *hcpu)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * suspend 모드로 진입 시 타이머 컨트롤 레지스터 값을 잠시 저장해둔다.
+ */
 	if (action == CPU_PM_ENTER)
 		saved_cntkctl = arch_timer_get_cntkctl();
 	else if (action == CPU_PM_ENTER_FAILED || action == CPU_PM_EXIT)
+
+/* IAMROOT-12:
+ * -------------
+ * resume 진입 시 다시 복원한다.
+ */
 		arch_timer_set_cntkctl(saved_cntkctl);
 	return NOTIFY_OK;
 }
@@ -608,6 +658,12 @@ static struct notifier_block arch_timer_cpu_pm_notifier = {
 
 static int __init arch_timer_cpu_pm_init(void)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * suspend/resume 시 마다 arch_timer_cpu_pm_notifier() 함수를 호출하도록 
+ * 등록한다.
+ */
 	return cpu_pm_register_notifier(&arch_timer_cpu_pm_notifier);
 }
 #else
@@ -676,15 +732,30 @@ static int __init arch_timer_register(void)
 		goto out_free;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * arch 타이머를 등록한다. cpu가 on될 때마다 초기화 루틴이 동작한다.
+ */
 	err = register_cpu_notifier(&arch_timer_cpu_nb);
 	if (err)
 		goto out_free_irq;
 
+/* IAMROOT-12:
+ * -------------
+ * suspend 시 타이머 컨트롤 레지스터의 값을 잠시 저장해둔다.
+ * 이 값은 다시 resume 시에 복원할 수 있도록한다.
+ */
 	err = arch_timer_cpu_pm_init();
 	if (err)
 		goto out_unreg_notify;
 
 	/* Immediately configure the timer on the boot CPU */
+
+/* IAMROOT-12:
+ * -------------
+ * boot cpu에 대해서는 이미 up되어 있으므로 이 함수를 통해서 arch 타이머를 
+ * 설정한다.
+ */
 	arch_timer_setup(this_cpu_ptr(arch_timer_evt));
 
 	return 0;
@@ -763,6 +834,12 @@ arch_timer_probed(int type, const struct of_device_id *matches)
 
 static void __init arch_timer_common_init(void)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * cp15로 동작하는 arch 타이머나 메모리 맵드로 동작하는 arch 타이머 
+ * 둘 다 사용하는 common 코드 이다.
+ */
 	unsigned mask = ARCH_CP15_TIMER | ARCH_MEM_TIMER;
 
 	/* Wait until both nodes are probed if we have two timers */
@@ -863,6 +940,10 @@ static void __init arch_timer_init(struct device_node *np)
  */
 	arch_timer_c3stop = !of_property_read_bool(np, "always-on");
 
+/* IAMROOT-12:
+ * -------------
+ * arch 타이머를 등록한다.
+ */
 	arch_timer_register();
 	arch_timer_common_init();
 }

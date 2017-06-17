@@ -466,6 +466,11 @@ static u32 clocksource_max_adjustment(struct clocksource *cs)
 	/*
 	 * We won't try to correct for more than 11% adjustments (110,000 ppm),
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * mult의 11% 값을 반환한다.
+ */
 	ret = (u64)cs->mult * 11;
 	do_div(ret,100);
 	return (u32)ret;
@@ -496,6 +501,12 @@ u64 clocks_calc_max_nsecs(u32 mult, u32 shift, u32 maxadj, u64 mask)
 	 * any rounding errors, ensure the above inequality is satisfied and
 	 * no overflow will occur.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * mult=0x3415_5555 + maxadj 한 값이 사용하는 비트는 30bit이다.
+ * 따라서 아래는 63-30=33bit,    2^33 = 0x2_0000_0000
+ */
 	max_cycles = 1ULL << (63 - (ilog2(mult + maxadj) + 1));
 
 	/*
@@ -505,6 +516,12 @@ u64 clocks_calc_max_nsecs(u32 mult, u32 shift, u32 maxadj, u64 mask)
 	 * too long if there's a large negative adjustment.
 	 */
 	max_cycles = min(max_cycles, mask);
+
+/* IAMROOT-12:
+ * -------------
+ * 0x2_0000_0000 * (0x3415_5555에서 11% 뺀 수) >> 24 
+ */
+
 	max_nsecs = clocksource_cyc2ns(max_cycles, mult - maxadj, shift);
 
 	return max_nsecs;
@@ -527,6 +544,11 @@ static u64 clocksource_max_deferment(struct clocksource *cs)
 	 * note a margin of 12.5% is used because this can be computed with
 	 * a shift, versus say 10% which would require division.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 12.5% 마진을 빼서 반환한다.
+ */
 	return max_nsecs - (max_nsecs >> 3);
 }
 
@@ -679,6 +701,26 @@ void __clocksource_updatefreq_scale(struct clocksource *cs, u32 scale, u32 freq)
 	 * ~ 0.06ppm granularity for NTP. We apply the same 12.5%
 	 * margin as we do in clocksource_max_deferment()
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 타이머가 사용하는 카운터 최대 값에서 마진 12.5%를 빼고 주파수로 나눈 값이 
+ * 최대 사용할 수 있는 초라고 산출해낸다. 이 값이 10분 이상인 경우 그 이상의 
+ * 기간은 필요 없으므로 최대 10분으로 제한한다.
+ *
+ * 10분으로 제한을 시키면 그 만큼 여유가 되는 비트를 정밀도(shift)를 
+ * 올리는데 사용할 수 있다.
+ *
+ * arch 타이머: cs->mask=(2^56)-1
+ *              0x00ff_ffff_ffff_ffff 
+ *            - 0x001f_ffff_ffff_ffff
+ *            -----------------------
+ *              0x00e0_0000_0000_0000 (12.5 감소 값)
+ *            / 0x          0124_F800 (19.2Mhz)
+ *            /                     1 (scale=1)
+ *            -----------------------
+ *              0x          c3bb_f3a8 (seconds)
+ */
 	sec = (cs->mask - (cs->mask >> 3));
 	do_div(sec, freq);
 	do_div(sec, scale);
@@ -687,6 +729,11 @@ void __clocksource_updatefreq_scale(struct clocksource *cs, u32 scale, u32 freq)
 	else if (sec > 600 && cs->mask > UINT_MAX)
 		sec = 600;
 
+/* IAMROOT-12:
+ * -------------
+ * rpi2: from=19.2Mhz, to=1G, scale=1, sec=600
+ *       -> mult=0x3415_5555, shift=24 (실수=약 52)
+ */
 	clocks_calc_mult_shift(&cs->mult, &cs->shift, freq,
 			       NSEC_PER_SEC / scale, sec * scale);
 
@@ -695,7 +742,18 @@ void __clocksource_updatefreq_scale(struct clocksource *cs, u32 scale, u32 freq)
 	 * Since mult may be adjusted by ntp, add an safety extra margin
 	 *
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * mult의 11%에 해당하는 값을 maxadj에 저장한다.
+ */
 	cs->maxadj = clocksource_max_adjustment(cs);
+
+/* IAMROOT-12:
+ * -------------
+ * max_adj를 적용한 mult값이 overflow 또는 underflow가 발생하는 경우 
+ * 절반으로 줄여나간다. 정밀도(shift)도 줄여나간다.
+ */
 	while ((cs->mult + cs->maxadj < cs->mult)
 		|| (cs->mult - cs->maxadj > cs->mult)) {
 		cs->mult >>= 1;

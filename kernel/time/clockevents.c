@@ -21,7 +21,17 @@
 #include "tick-internal.h"
 
 /* The registered clock event devices */
+
+/* IAMROOT-12:
+ * -------------
+ * 클럭 이벤트 디바이스가 등록되는 리스트
+ */
 static LIST_HEAD(clockevent_devices);
+
+/* IAMROOT-12:
+ * -------------
+ * 클럭 이벤트 디바이스가 사용되지 않을 때 등록된다.
+ */
 static LIST_HEAD(clockevents_released);
 /* Protection for the above */
 static DEFINE_RAW_SPINLOCK(clockevents_lock);
@@ -39,6 +49,11 @@ static u64 cev_delta2ns(unsigned long latch, struct clock_event_device *evt,
 	u64 clc = (u64) latch << evt->shift;
 	u64 rnd;
 
+/* IAMROOT-12:
+ * -------------
+ * latch(펄스 수=타이머 카운터 값)에 해당하는 나노초를 산출한다.
+ * 단 결과 값이 1000ns 이하 값인 경우 1000ns로 반환한다.
+ */
 	if (unlikely(!evt->mult)) {
 		evt->mult = 1;
 		WARN_ON(1);
@@ -105,6 +120,13 @@ void clockevents_set_mode(struct clock_event_device *dev,
 				 enum clock_event_mode mode)
 {
 	if (dev->mode != mode) {
+
+/* IAMROOT-12:
+ * -------------
+ * 모드가 변경된 경우 요청 모드를 설정한다.
+ * arch 타이머의 경우 timer_set_mode() 함수를 호출하고 CNTP_CTL.bits[0]를 
+ * 제어한다.
+ */
 		dev->set_mode(mode, dev);
 		dev->mode = mode;
 
@@ -127,6 +149,11 @@ void clockevents_set_mode(struct clock_event_device *dev,
  */
 void clockevents_shutdown(struct clock_event_device *dev)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 클럭 이벤트 디바이스를 shutdown 처리한다.
+ */
 	clockevents_set_mode(dev, CLOCK_EVT_MODE_SHUTDOWN);
 	dev->next_event.tv64 = KTIME_MAX;
 }
@@ -280,6 +307,14 @@ static void clockevents_notify_released(void)
 {
 	struct clock_event_device *dev;
 
+/* IAMROOT-12:
+ * -------------
+ * clockevents_released 리스트에 등록된 모든 클럭이벤트 디바이스들에 대해
+ * 다시 한번 새 클럭이벤트 디바이스와 비굫여 틱 디바이스로의 등록을 시도한다.
+ * 최종적으로 모든 클럭이벤트 디바이스들은 모두 clockevent_devices에 있게된다.
+ *
+ * cpu off로부터 정리된 클럭 이벤트 디바이스들을 다시 경쟁시킨다.
+ */
 	while (!list_empty(&clockevents_released)) {
 		dev = list_entry(clockevents_released.next,
 				 struct clock_event_device, list);
@@ -389,8 +424,18 @@ void clockevents_register_device(struct clock_event_device *dev)
 
 	raw_spin_lock_irqsave(&clockevents_lock, flags);
 
+/* IAMROOT-12:
+ * -------------
+ * 클럭 이벤트 디바이스 리스트에 추가한다.
+ */
 	list_add(&dev->list, &clockevent_devices);
 	tick_check_new_device(dev);
+
+/* IAMROOT-12:
+ * -------------
+ * release 리스트로 남겨둔 클럭이벤트 디바이스들을 다시 새 디바이스와 
+ * 비교한다. release는 최종적으로 아무것도 남지 않는다.
+ */
 	clockevents_notify_released();
 
 	raw_spin_unlock_irqrestore(&clockevents_lock, flags);
@@ -430,7 +475,25 @@ void clockevents_config(struct clock_event_device *dev, u32 freq)
 	else if (sec > 600 && dev->max_delta_ticks > UINT_MAX)
 		sec = 600;
 
+
+/* IAMROOT-12:
+ * -------------
+ * freq x sec를 가지고 클럭의 mult와 shift를 구한다.
+ * 예) 19.2Mhz x 111 sec인 경우 mult=0x4ea_4a8c/shift=32 (배율: 약 1/52)
+ */
 	clockevents_calc_mult_shift(dev, freq, sec);
+
+/* IAMROOT-12:
+ * -------------
+ * 프로그래밍을 할 수 있는 최소 타이머 카운터 값에 해당하는 나노초와
+ * 최대 타이머 카운터 값에 해당하는 나노초를 산출해온다.
+ * 단 결과 값이 1000ns 이하 값인 경우 1000ns로 반환한다.
+ *
+ * 예) 19.2Mhz의 클럭을 사용하는 arch 타이머의 경우 
+ *     최소 타이머에 0xf를 사용하고, 최대 타이머 값에 0x7fff_ffff를 사용하면 
+ *     1000 ~ 0x1a_0aaa_aae8 나노초 까지 프로그래밍할 수 있다는 것을 알 수 있다.
+ *            (약 111초)
+ */
 	dev->min_delta_ns = cev_delta2ns(dev->min_delta_ticks, dev, false);
 	dev->max_delta_ns = cev_delta2ns(dev->max_delta_ticks, dev, true);
 }
@@ -452,11 +515,22 @@ void clockevents_config_and_register(struct clock_event_device *dev,
 /* IAMROOT-12:
  * -------------
  * 0xf ~ 0x7fff_ffff 틱 까지의 delta를 클럭 이벤트 디바이스에 지정한다.
+ * (ARMv7, ARMv8에서 사용하는 아키텍처 타이머의 프로그래밍 가능한 
+ *  카운터 값은 위의 범위로 제한된다.)
  */
-
 	dev->min_delta_ticks = min_delta;
 	dev->max_delta_ticks = max_delta;
+
+/* IAMROOT-12:
+ * -------------
+ * arch 타이머의 mult, shift, min, max 델타에 대한 값을 산출하여 설정한다.
+ */
 	clockevents_config(dev, freq);
+
+/* IAMROOT-12:
+ * -------------
+ * 클럭 이벤트 디바이스를 등록한다. 
+ */
 	clockevents_register_device(dev);
 }
 EXPORT_SYMBOL_GPL(clockevents_config_and_register);
@@ -524,14 +598,30 @@ void clockevents_exchange_device(struct clock_event_device *old,
 	 * released list and do a notify add later.
 	 */
 	if (old) {
+
+/* IAMROOT-12:
+ * -------------
+ * 기존 클럭 이벤트 디바이스 모듈 참조 카운터를 1 감소시킨다.
+ */
 		module_put(old->owner);
 		clockevents_set_mode(old, CLOCK_EVT_MODE_UNUSED);
+
+/* IAMROOT-12:
+ * -------------
+ * clockevent_devices 리스트에서 제거하고 
+ * clockevents_released 리스트에 추가한다.
+ */
 		list_del(&old->list);
 		list_add(&old->list, &clockevents_released);
 	}
 
 	if (new) {
 		BUG_ON(new->mode != CLOCK_EVT_MODE_UNUSED);
+
+/* IAMROOT-12:
+ * -------------
+ * 새 클럭 이벤트 디바이스는 shutdown 부터 시작한다.
+ */
 		clockevents_shutdown(new);
 	}
 	local_irq_restore(flags);
