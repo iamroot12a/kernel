@@ -483,6 +483,11 @@ static u32 clocksource_max_adjustment(struct clocksource *cs)
  * @maxadj:	maximum adjustment value to mult (~11%)
  * @mask:	bitmask for two's complement subtraction of non 64 bit counters
  */
+
+/* IAMROOT-12:
+ * -------------
+ * mult, shift, maxadj, mask를 사용해서 변환될 수 있는 최대 나노초
+ */
 u64 clocks_calc_max_nsecs(u32 mult, u32 shift, u32 maxadj, u64 mask)
 {
 	u64 max_nsecs, max_cycles;
@@ -554,10 +559,28 @@ static u64 clocksource_max_deferment(struct clocksource *cs)
 
 #ifndef CONFIG_ARCH_USES_GETTIMEOFFSET
 
+/* IAMROOT-12:
+ * -------------
+ * CONFIG_ARCH_USES_GETTIMEOFFSET: 예전 스타일에서 사용한다.
+ * (대부분의 arm은 이 커널 옵션을 사용하지 않는다)
+ *
+ * 현재 사용하는 틱모드가 oneshot 모드가 아닌 경우 rating이 가장 좋은 
+ * 클럭 소스를 선택한다. 단 oneshot 모드인 경우 high-resolution 클럭 리소스를
+ * 선택해야 한다.
+ */
 static struct clocksource *clocksource_find_best(bool oneshot, bool skipcur)
 {
 	struct clocksource *cs;
 
+
+/* IAMROOT-12:
+ * -------------
+ * 클럭 소스가 아직 결정되지 않은 경우 또는 클럭 소스 리스트가 비어 있는 경우
+ * 함수를 빠져나간다.
+ *
+ * fs_initcall(clocksource_done_booting)을 통해 finished_booting=1이 된다.
+ * 그 전까지는 0이므로 함수를 빠져나간다.
+ */
 	if (!finished_booting || list_empty(&clocksource_list))
 		return NULL;
 
@@ -567,6 +590,14 @@ static struct clocksource *clocksource_find_best(bool oneshot, bool skipcur)
 	 * the best rating.
 	 */
 	list_for_each_entry(cs, &clocksource_list, list) {
+
+/* IAMROOT-12:
+ * -------------
+ * rating 순으로 정렬된 클럭 소스 리스트에서 
+ *	skipcur가 지정된 경우 현재 클럭 소스를 제외하고
+ *	이미 oneshot 클럭소스를 선택한 경우 high-resolution만을 요청한다.
+ */
+
 		if (skipcur && cs == curr_clocksource)
 			continue;
 		if (oneshot && !(cs->flags & CLOCK_SOURCE_VALID_FOR_HRES))
@@ -578,6 +609,11 @@ static struct clocksource *clocksource_find_best(bool oneshot, bool skipcur)
 
 static void __clocksource_select(bool skipcur)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 틱 디바이스가 one shot으로 동작하는지 여부를 알아온다.
+ */
 	bool oneshot = tick_oneshot_mode_active();
 	struct clocksource *best, *cs;
 
@@ -625,6 +661,11 @@ static void __clocksource_select(bool skipcur)
  */
 static void clocksource_select(void)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 현재 이미 선택되어 있는 클럭을 제외하고 클럭 소스를 선택하게 한다.
+ */
 	return __clocksource_select(false);
 }
 
@@ -670,6 +711,11 @@ static void clocksource_enqueue(struct clocksource *cs)
 	struct list_head *entry = &clocksource_list;
 	struct clocksource *tmp;
 
+/* IAMROOT-12:
+ * -------------
+ * 클럭 소스 리스트에 요청한 클럭 소스를 추가한다.
+ * (선두가 rating이 높은 것)
+ */
 	list_for_each_entry(tmp, &clocksource_list, list)
 		/* Keep track of the place, where to insert */
 		if (tmp->rating >= cs->rating)
@@ -761,6 +807,12 @@ void __clocksource_updatefreq_scale(struct clocksource *cs, u32 scale, u32 freq)
 		cs->maxadj = clocksource_max_adjustment(cs);
 	}
 
+
+/* IAMROOT-12:
+ * -------------
+ * nohz full(idle)을 위해 프로그래밍을 너무 오랫동안 쉬게 할 수 없다.
+ * 최대 idle 범위로 제한하기 위해 이 값을 사용한다.
+ */
 	cs->max_idle_ns = clocksource_max_deferment(cs);
 }
 EXPORT_SYMBOL_GPL(__clocksource_updatefreq_scale);
@@ -780,12 +832,22 @@ int __clocksource_register_scale(struct clocksource *cs, u32 scale, u32 freq)
 {
 
 	/* Initialize mult/shift and max_idle_ns */
+
+/* IAMROOT-12:
+ * -------------
+ * 클럭소스에 대한 등록(mult/shift, max_idle_ns)을 수행한다.
+ */
 	__clocksource_updatefreq_scale(cs, scale, freq);
 
 	/* Add clocksource to the clocksource list */
 	mutex_lock(&clocksource_mutex);
 	clocksource_enqueue(cs);
 	clocksource_enqueue_watchdog(cs);
+
+/* IAMROOT-12:
+ * -------------
+ * 현재 이미 선택되어 있는 클럭을 제외하고 클럭 소스를 선택하게 한다.
+ */
 	clocksource_select();
 	mutex_unlock(&clocksource_mutex);
 	return 0;
@@ -808,11 +870,40 @@ int clocksource_register(struct clocksource *cs)
 		cs->name);
 
 	/* calculate max idle time permitted for this clocksource */
+
+/* IAMROOT-12:
+ * -------------
+ * nohz full을 위해 틱 프로그래밍 시 이 범위를 벗어나지 않도록 하기 위해 
+ * 제시 되는 시간이다.
+ * (rpi2: 348초로 제한된다)
+ *
+ * 클럭소스에 대해 준비된 값들:
+ *	- mult & shift
+ *	- min_delta_ns & max_delta_ns
+ *	- mode 
+ *	- rating
+ *	- max_idle_ns
+ */
 	cs->max_idle_ns = clocksource_max_deferment(cs);
 
 	mutex_lock(&clocksource_mutex);
+
+/* IAMROOT-12:
+ * -------------
+ * 클럭 소스를 클럭 소스 리스트에 추가할 때 rating 내림 차순으로 한다. 
+ */
 	clocksource_enqueue(cs);
+
+/* IAMROOT-12:
+ * -------------
+ * x86등에서 unstable한 클럭을 위한 워치독이다.
+ */
 	clocksource_enqueue_watchdog(cs);
+
+/* IAMROOT-12:
+ * -------------
+ * 가장 rating이 좋은 클럭 소스를 선택해온다.
+ */
 	clocksource_select();
 	mutex_unlock(&clocksource_mutex);
 	return 0;

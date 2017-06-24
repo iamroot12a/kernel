@@ -22,6 +22,16 @@ void timecounter_init(struct timecounter *tc,
 		      const struct cyclecounter *cc,
 		      u64 start_tstamp)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 타임 카운터는 사이클카운터 인터페이스를 통해 현재 시각(cycle)를 읽어온다.
+ *
+ * cycle_last: 현재 시각(cycle)
+ * nsec: 시작 시각(cycle)
+ * mask: 클럭카운터의 2^shift-1 
+ * frac: 0
+ */
 	tc->cc = cc;
 	tc->cycle_last = cc->read(cc);
 	tc->nsec = start_tstamp;

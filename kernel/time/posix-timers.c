@@ -277,6 +277,11 @@ static int posix_get_tai(clockid_t which_clock, struct timespec *tp)
  */
 static __init int init_posix_timers(void)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * posix 타이머 및 클럭을 제공하기 위해 준비한다.
+ */
 	struct k_clock clock_realtime = {
 		.clock_getres	= hrtimer_get_res,
 		.clock_get	= posix_clock_realtime_get,

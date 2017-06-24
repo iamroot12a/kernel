@@ -438,6 +438,16 @@ EXPORT_SYMBOL(ns_to_timeval);
  */
 void set_normalized_timespec64(struct timespec64 *ts, time64_t sec, s64 nsec)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * ts에 sec와 nsec를 설정한다.
+ * 단 nsec 1초 이상 또는 -1초 이하인 경우 1초 단위를 증/감하고
+ * nsec는 양수로 조정한다.
+ *
+ * 예) sec=100, nsec=-1,490,000,000
+ *  -> sec= 98, nsec=   510,000,000
+ */
 	while (nsec >= NSEC_PER_SEC) {
 		/*
 		 * The following asm() prevents the compiler from

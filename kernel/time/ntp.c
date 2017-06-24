@@ -340,11 +340,20 @@ static void ntp_update_offset(long offset)
  */
 void ntp_clear(void)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * NTP와 연동될 때 사용하는 상태들을 초기화한다.
+ */
 	time_adjust	= 0;		/* stop active adjtime() */
 	time_status	|= STA_UNSYNC;
 	time_maxerror	= NTP_PHASE_LIMIT;
 	time_esterror	= NTP_PHASE_LIMIT;
 
+/* IAMROOT-12:
+ * -------------
+ * ntp 주기 갱신
+ */
 	ntp_update_frequency();
 
 	tick_length	= tick_length_base;

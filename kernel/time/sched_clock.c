@@ -34,6 +34,11 @@ static int irqtime = -1;
 
 core_param(irqtime, irqtime, int, 0400);
 
+
+/* IAMROOT-12:
+ * -------------
+ * 1 jiffies 해당하는 나노초를 mult에 대입
+ */
 static struct clock_data cd = {
 	.mult	= NSEC_PER_SEC / HZ,
 };
@@ -66,6 +71,10 @@ unsigned long long notrace sched_clock(void)
 	if (cd.suspended)
 		return cd.epoch_ns;
 
+/* IAMROOT-12:
+ * -------------
+ * update 중에는 다시 읽어오도록 유도한다.
+ */
 	do {
 		seq = raw_read_seqcount_begin(&cd.seq);
 		epoch_cyc = cd.epoch_cyc;
@@ -115,18 +124,38 @@ void __init sched_clock_register(u64 (*read)(void), int bits,
 	unsigned long r;
 	char r_unit;
 
+/* IAMROOT-12:
+ * -------------
+ * 현재보다 낮은 rate가 진입되면 함수를 빠져나간다.
+ */
 	if (cd.rate > rate)
 		return;
 
 	WARN_ON(!irqs_disabled());
 
 	/* calculate the mult/shift to convert counter ticks to ns. */
+
+/* IAMROOT-12:
+ * -------------
+ * 1시간에 해당하는 cycle을 제외하고 나머지는 shift(정확도)에 투자하도록
+ * mult & shift를 구한다.
+ */
 	clocks_calc_mult_shift(&new_mult, &new_shift, rate, NSEC_PER_SEC, 3600);
 
 	new_mask = CLOCKSOURCE_MASK(bits);
 
 	/* calculate how many ns until we wrap */
+
+/* IAMROOT-12:
+ * -------------
+ * wrap는 3600초 근처
+ */
 	wrap = clocks_calc_max_nsecs(new_mult, new_shift, 0, new_mask);
+
+/* IAMROOT-12:
+ * -------------
+ * wrap_kt는 wrap에서 12.5% 감소시킨 값
+ */
 	new_wrap_kt = ns_to_ktime(wrap - (wrap >> 3));
 
 	/* update epoch for new counter and update epoch_ns from old counter*/
@@ -135,6 +164,18 @@ void __init sched_clock_register(u64 (*read)(void), int bits,
 	ns = cd.epoch_ns + cyc_to_ns((cyc - cd.epoch_cyc) & sched_clock_mask,
 			  cd.mult, cd.shift);
 
+
+/* IAMROOT-12:
+ * -------------
+ * 단순히 카운터를 증가시키면서 홀/짝으로 구분하여 update 중 여부를 
+ * 알게하여 동기화를 구현한다. 
+ *
+ * update 루틴에서 이렇게 카운터를 락으로 사용하고,
+ * read 루틴에서 이를 식별하여 사용한다.
+ *
+ * sched_clock() 함수에서 이 값들을 읽어올 때 갱신이 끝난 경우에만 
+ * 읽어갈 수 있도록 동기화 처리된다.
+ */
 	raw_write_seqcount_begin(&cd.seq);
 	read_sched_clock = read;
 	sched_clock_mask = new_mask;
@@ -166,6 +207,10 @@ void __init sched_clock_register(u64 (*read)(void), int bits,
 	if (irqtime > 0 || (irqtime == -1 && rate >= 1000000))
 		enable_sched_clock_irqtime();
 
+/* IAMROOT-12:
+ * -------------
+ * sched 클럭으로 등록 완료
+ */
 	pr_debug("Registered %pF as sched_clock source\n", read);
 }
 

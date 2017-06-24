@@ -37,6 +37,11 @@
  * requested HZ value. It is also not recommended
  * for "tick-less" systems.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * 1 jiffies에 해당하는 나노초
+ */
 #define NSEC_PER_JIFFY	((NSEC_PER_SEC+HZ/2)/HZ)
 
 /* Since jiffies uses a simple NSEC_PER_JIFFY multiplier
@@ -64,6 +69,12 @@ static cycle_t jiffies_read(struct clocksource *cs)
 	return (cycle_t) jiffies;
 }
 
+
+/* IAMROOT-12:
+ * -------------
+ * 배율이 1 jiffies 나노초 (1 cycle = 1 jiffies 나노초)
+ * rpi2: 100HZ, mult = 10,000,000 << 8 (1 cycle = 10ms)
+ */
 static struct clocksource clocksource_jiffies = {
 	.name		= "jiffies",
 	.rating		= 1, /* lowest valid rating*/

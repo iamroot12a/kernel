@@ -44,6 +44,12 @@ ENTRY(__loop_const_udelay)			@ 0 <= r0 <= 0x7fffff06
 
 @ Delay routine
 ENTRY(__loop_delay)
+
+/* IAMROOT-12:
+ * -------------
+ * 인수 r0에 delay 값을 가지고 와서 0이되는 순간 나간다.
+ */
+
 		subs	r0, r0, #1
 #if 0
 		retls	lr

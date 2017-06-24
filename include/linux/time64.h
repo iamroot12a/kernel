@@ -143,6 +143,10 @@ static inline bool timespec64_valid(const struct timespec64 *ts)
 
 static inline bool timespec64_valid_strict(const struct timespec64 *ts)
 {
+/* IAMROOT-12:
+ * -------------
+ * 초나 나노초의 형태가 정확한 경우 true
+ */
 	if (!timespec64_valid(ts))
 		return false;
 	/* Disallow values that could overflow ktime_t */

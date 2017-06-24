@@ -78,6 +78,10 @@ static inline struct timespec64 tk_xtime(struct timekeeper *tk)
 {
 	struct timespec64 ts;
 
+/* IAMROOT-12:
+ * -------------
+ * xtime_nsec는 정밀도를 위해 shift하여 사용한다.
+ */
 	ts.tv_sec = tk->xtime_sec;
 	ts.tv_nsec = (long)(tk->tkr.xtime_nsec >> tk->tkr.shift);
 	return ts;
@@ -104,11 +108,27 @@ static void tk_set_wall_to_mono(struct timekeeper *tk, struct timespec64 wtm)
 	 * Verify consistency of: offset_real = -wall_to_monotonic
 	 * before modifying anything
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 나노초만 음수 허용을 하지 않는다.
+ */
 	set_normalized_timespec64(&tmp, -tk->wall_to_monotonic.tv_sec,
 					-tk->wall_to_monotonic.tv_nsec);
 	WARN_ON_ONCE(tk->offs_real.tv64 != timespec64_to_ktime(tmp).tv64);
+
+
+/* IAMROOT-12:
+ * -------------
+ * 마이너스 값으로 진입된 wtm을 wall_to_monotonic에 대입한다.
+ */
 	tk->wall_to_monotonic = wtm;
 	set_normalized_timespec64(&tmp, -wtm.tv_sec, -wtm.tv_nsec);
+
+/* IAMROOT-12:
+ * -------------
+ * offs_real <- 마이너스 값으로 들어온 wtm을 다시 양수로 만들어 저장한다.
+ */
 	tk->offs_real = timespec64_to_ktime(tmp);
 	tk->offs_tai = ktime_add(tk->offs_real, ktime_set(tk->tai_offset, 0));
 }
@@ -135,6 +155,10 @@ static void tk_setup_internals(struct timekeeper *tk, struct clocksource *clock)
 	u64 tmp, ntpinterval;
 	struct clocksource *old_clock;
 
+/* IAMROOT-12:
+ * -------------
+ * tk->tkr <- clock (rpi2: clocksource_jiffies)를 대입한다.
+ */
 	old_clock = tk->tkr.clock;
 	tk->tkr.clock = clock;
 	tk->tkr.read = clock->read;
@@ -142,6 +166,14 @@ static void tk_setup_internals(struct timekeeper *tk, struct clocksource *clock)
 	tk->tkr.cycle_last = tk->tkr.read(clock);
 
 	/* Do the ns -> cycle conversion first, using original mult */
+
+/* IAMROOT-12:
+ * -------------
+ * 1 jiffies 나노초 인터벌
+ * (rpi2: CONFIG_HZ=100hz, freq=19.2Mhz, interval=1)
+ *        -> 1 jiffies를 만드는데 필요한 interval은 1이다.  (clocksource_jiffies)
+ *                                       interval은 192,000 (arch_timer)
+ */
 	tmp = NTP_INTERVAL_LENGTH;
 	tmp <<= clock->shift;
 	ntpinterval = tmp;
@@ -154,6 +186,27 @@ static void tk_setup_internals(struct timekeeper *tk, struct clocksource *clock)
 	tk->cycle_interval = interval;
 
 	/* Go back from cycles -> shifted ns */
+
+/* IAMROOT-12:
+ * -------------
+ * xtime_interval (clocksource_jiffies: 10,000,000 << 8)
+ *                (arch_timer:          192,000 * 0x3415_5555)
+ * xtimer_remainder (clocksource_jiffies: 0)
+ *                  (arch_timer:  (10,000,000 << 24) - (192,000 * 0x3415_5555)
+ *                                 0x9896_8000_0000) - (0x9896_7fff_0600) 
+ *                                 = 0xfa00
+ * raw_interval     (clocksource_jiffies: 10,000,000)
+ *                  (arch_timer: 192,000 * 0x3415_5555 >> 24 = 0x98_967f)
+ *                               = 9,999,999
+ *
+ * xtimer_interval: 
+ *	1 jiffies를 만들때 필요한 나노초 << shift 
+ * xtimer_remainder:
+ *	위에꺼 하다가 남은 오차 보정용 나머지
+ *	(192,000 * 0x3415_5555 + 0xfa00 = 0x98_9680 (10,000,000)
+ * raw_interval:
+ *	1 jiffies가 실제 사용하는 나노초
+ */
 	tk->xtime_interval = (u64) interval * clock->mult;
 	tk->xtime_remainder = ntpinterval - tk->xtime_interval;
 	tk->raw_interval =
@@ -169,6 +222,10 @@ static void tk_setup_internals(struct timekeeper *tk, struct clocksource *clock)
 	}
 	tk->tkr.shift = clock->shift;
 
+/* IAMROOT-12:
+ * -------------
+ * ntp 관련 생략
+ */
 	tk->ntp_error = 0;
 	tk->ntp_error_shift = NTP_SCALE_SHIFT - clock->shift;
 	tk->ntp_tick = ntpinterval << tk->ntp_error_shift;
@@ -271,15 +328,31 @@ static void update_fast_timekeeper(struct tk_read_base *tkr)
 {
 	struct tk_read_base *base = tk_fast_mono.base;
 
+/* IAMROOT-12:
+ * -------------
+ * 홀수를 만든다. tk API는 base[1]를 읽을 수 있는 상태가된다.
+ */
 	/* Force readers off to base[1] */
 	raw_write_seqcount_latch(&tk_fast_mono.seq);
 
+/* IAMROOT-12:
+ * -------------
+ * 외부 노출용 tk base[0] <- tk 오리지날을 복사한다.
+ */
 	/* Update base[0] */
 	memcpy(base, tkr, sizeof(*base));
 
+/* IAMROOT-12:
+ * -------------
+ * 짝수를 만든다. tk API는 base[0]를 읽을 수 있는 상태가된다.
+ */
 	/* Force readers back to base[0] */
 	raw_write_seqcount_latch(&tk_fast_mono.seq);
 
+/* IAMROOT-12:
+ * -------------
+ * 외부 노출용 tk base[1] <- tk 오리지날을 복사한다.
+ */
 	/* Update base[1] */
 	memcpy(base + 1, base, sizeof(*base));
 }
@@ -454,6 +527,11 @@ static inline void tk_update_ktime_data(struct timekeeper *tk)
 	 *	nsec = base_mono + now();
 	 * ==> base_mono = (xtime_sec + wtm_sec) * 1e9 + wtm_nsec
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * xtime과 wall_to_monotonic을 더해 base_mono를 산출한다.
+ */
 	seconds = (u64)(tk->xtime_sec + tk->wall_to_monotonic.tv_sec);
 	nsec = (u32) tk->wall_to_monotonic.tv_nsec;
 	tk->tkr.base_mono = ns_to_ktime(seconds * NSEC_PER_SEC + nsec);
@@ -475,6 +553,12 @@ static inline void tk_update_ktime_data(struct timekeeper *tk)
 /* must hold timekeeper_lock */
 static void timekeeping_update(struct timekeeper *tk, unsigned int action)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 타임키핑 값들을 즉, 시간을 외부 인터페이스에 노출시킨다.
+ */
+
 	if (action & TK_CLEAR_NTP) {
 		tk->ntp_error = 0;
 		ntp_clear();
@@ -482,13 +566,30 @@ static void timekeeping_update(struct timekeeper *tk, unsigned int action)
 
 	tk_update_ktime_data(tk);
 
+/* IAMROOT-12:
+ * -------------
+ * vsyscall 생략
+ */
 	update_vsyscall(tk);
+
+/* IAMROOT-12:
+ * -------------
+ * x86 시스템에서 가상화 지원을 위해 사용한다.
+ */
 	update_pvclock_gtod(tk, action & TK_CLOCK_WAS_SET);
 
+/* IAMROOT-12:
+ * -------------
+ * shadow tk에 복사해둔다.
+ */
 	if (action & TK_MIRROR)
 		memcpy(&shadow_timekeeper, &tk_core.timekeeper,
 		       sizeof(tk_core.timekeeper));
 
+/* IAMROOT-12:
+ * -------------
+ * fast tk를 제공한다. (2개의 base를 홀/짝으로 카운터를 바꿔가며 갱신한다)
+ */
 	update_fast_timekeeper(&tk->tkr);
 }
 
@@ -533,6 +634,10 @@ int __getnstimeofday64(struct timespec64 *ts)
 	unsigned long seq;
 	s64 nsecs = 0;
 
+/* IAMROOT-12:
+ * -------------
+ * tk가 update되는 순간에 read를 하게되면 다시 시도한다. (seq lock)
+ */
 	do {
 		seq = read_seqcount_begin(&tk_core.seq);
 
@@ -1083,8 +1188,24 @@ void __init timekeeping_init(void)
 	struct timespec64 now, boot, tmp;
 	struct timespec ts;
 
+/* IAMROOT-12:
+ * -------------
+ * RTC 등의 realtime을 알아온다.
+ */
 	read_persistent_clock(&ts);
+
+/* IAMROOT-12:
+ * -------------
+ * timespec -> timespec64로 컨버팅
+ */
+
 	now = timespec_to_timespec64(ts);
+
+/* IAMROOT-12:
+ * -------------
+ * timespec64 규격을 벗어난 시각을 Persistent 클럭에서 읽어온 경우 
+ * 경고 메시지를 출력하고 0으로 초기화한다. (0: 1970년)
+ */
 	if (!timespec64_valid_strict(&now)) {
 		pr_warn("WARNING: Persistent clock returned invalid value!\n"
 			"         Check your CMOS/BIOS settings.\n");
@@ -1093,6 +1214,10 @@ void __init timekeeping_init(void)
 	} else if (now.tv_sec || now.tv_nsec)
 		persistent_clock_exist = true;
 
+/* IAMROOT-12:
+ * -------------
+ * 시스템에 따라 부트 클럭을 제공하는 경우 읽어온다.
+ */
 	read_boot_clock(&ts);
 	boot = timespec_to_timespec64(ts);
 	if (!timespec64_valid_strict(&boot)) {
@@ -1106,11 +1231,26 @@ void __init timekeeping_init(void)
 	write_seqcount_begin(&tk_core.seq);
 	ntp_init();
 
+/* IAMROOT-12:
+ * -------------
+ * tk를 위해 사용하는 클럭소스
+ * (rpi2: clocksource_jiffies를 사용한다.)
+ */
 	clock = clocksource_default_clock();
 	if (clock->enable)
 		clock->enable(clock);
+
+/* IAMROOT-12:
+ * -------------
+ * tk에 새로운 클럭소스를 대입한다.
+ * (cycle_interval, xtime_interval, xtime_remainder, raw_interval 등을 설정한다)
+ */
 	tk_setup_internals(tk, clock);
 
+/* IAMROOT-12:
+ * -------------
+ * now -> tk(xtime)에 저장. (현재 시각 설정)
+ */
 	tk_set_xtime(tk, &now);
 	tk->raw_time.tv_sec = 0;
 	tk->raw_time.tv_nsec = 0;
@@ -1118,6 +1258,11 @@ void __init timekeeping_init(void)
 	if (boot.tv_sec == 0 && boot.tv_nsec == 0)
 		boot = tk_xtime(tk);
 
+/* IAMROOT-12:
+ * -------------
+ * -boot에는 처음 RTC 등에 의해 기억된 시각이 들어있다. 그 값을 
+ *  마이너스로 tmp에 대입한 후 wall_to_mono에 저장하게 한다.
+ */
 	set_normalized_timespec64(&tmp, -boot.tv_sec, -boot.tv_nsec);
 	tk_set_wall_to_mono(tk, tmp);
 

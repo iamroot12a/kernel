@@ -89,7 +89,7 @@ static inline u64 arch_counter_get_cntpct(void)
 
 /* IAMROOT-12:
  * -------------
- * 64비트 physical 타이머 카운터 값을 읽어온다.
+ * 64비트 physical 카운터 값을 읽어온다.
  */
 	isb();
 	asm volatile("mrrc p15, 0, %Q0, %R0, c14" : "=r" (cval));
@@ -102,7 +102,7 @@ static inline u64 arch_counter_get_cntvct(void)
 
 /* IAMROOT-12:
  * -------------
- * 64비트 virtual 타이머 카운터 값을 읽어온다.
+ * 64비트 virtual 카운터 값을 읽어온다.
  */
 	isb();
 	asm volatile("mrrc p15, 1, %Q0, %R0, c14" : "=r" (cval));

@@ -10,6 +10,11 @@
 #include <asm/param.h>	/* HZ */
 
 #define MAX_UDELAY_MS	2
+
+/* IAMROOT-12:
+ * -------------
+ * UDELAY_MULT=1073(0x431) jiffies * HZ(1000)=1073000(0x105f68)
+ */
 #define UDELAY_MULT	((UL(2199023) * HZ) >> 11)
 #define UDELAY_SHIFT	30
 
@@ -51,6 +56,15 @@ extern void __bad_udelay(void);
 #define __udelay(n)		arm_delay_ops.udelay(n)
 #define __const_udelay(n)	arm_delay_ops.const_udelay(n)
 
+
+/* IAMROOT-12:
+ * -------------
+ * 상수로 2000(us)을 초과한 경우 컴파일 타임 에러
+ *
+ *    n x 0x105f68 = 
+ *
+ *    즉, 0x105f68 만큼의 루프가 1 us 이다.
+ */
 #define udelay(n)							\
 	(__builtin_constant_p(n) ?					\
 	  ((n) > (MAX_UDELAY_MS * 1000) ? __bad_udelay() :		\

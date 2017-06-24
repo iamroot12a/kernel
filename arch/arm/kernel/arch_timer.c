@@ -38,6 +38,10 @@ int __init arch_timer_arch_init(void)
 	if (arch_timer_rate == 0)
 		return -ENXIO;
 
+/* IAMROOT-12:
+ * -------------
+ * delay 타이머로 등록한다.
+ */
 	arch_timer_delay_timer_register();
 
 	return 0;

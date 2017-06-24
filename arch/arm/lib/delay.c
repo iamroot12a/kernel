@@ -58,14 +58,29 @@ static void __timer_delay(unsigned long cycles)
 {
 	cycles_t start = get_cycles();
 
+/* IAMROOT-12:
+ * -------------
+ * 요청한 사이클만큼 반복하며 딜레이 카운터를 읽어온다. 해당 cycle을 초과하는
+ * 경우 루프를 벗어난다.
+ */
 	while ((get_cycles() - start) < cycles)
 		cpu_relax();
 }
 
+
+/* IAMROOT-12:
+ * -------------
+ * arm에서 const udelay를 통해 busy-wait를 수행한다.
+ */
 static void __timer_const_udelay(unsigned long xloops)
 {
 	unsigned long long loops = xloops;
 	loops *= arm_delay_ops.ticks_per_jiffy;
+
+/* IAMROOT-12:
+ * -------------
+ * 산출된 cycle만큼 busy-wait 한다.
+ */
 	__timer_delay(loops >> UDELAY_SHIFT);
 }
 
@@ -79,8 +94,17 @@ void __init register_current_timer_delay(const struct delay_timer *timer)
 	u32 new_mult, new_shift;
 	u64 res;
 
+/* IAMROOT-12:
+ * -------------
+ * 3600초로 mult/shift를 산출한다.
+ */
 	clocks_calc_mult_shift(&new_mult, &new_shift, timer->freq,
 			       NSEC_PER_SEC, 3600);
+
+/* IAMROOT-12:
+ * -------------
+ * 1 cycle에 해당하는 나노초를 구해온다. (rpi2: 52ns)
+ */
 	res = cyc_to_ns(1ULL, new_mult, new_shift);
 
 	if (!delay_calibrated && (!delay_res || (res < delay_res))) {

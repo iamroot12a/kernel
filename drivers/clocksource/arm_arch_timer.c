@@ -577,12 +577,33 @@ static void __init arch_counter_register(unsigned type)
  * 이 시점의 카운터를 읽어온다.
  */
 	start_count = arch_timer_read_counter();
+
+/* IAMROOT-12:
+ * -------------
+ * 클럭 소스를 등록한다.
+ */
 	clocksource_register_hz(&clocksource_counter, arch_timer_rate);
+
+/* IAMROOT-12:
+ * -------------
+ * 사이클 카운터에 mult와 shift를 대입한다. <- for timekeeping
+ */
 	cyclecounter.mult = clocksource_counter.mult;
 	cyclecounter.shift = clocksource_counter.shift;
+
+/* IAMROOT-12:
+ * -------------
+ * 타임 카운터는 고속 디바이스에서 시간 비교를 위해 사용된다.
+ * (10G ethernet drive or PTP)
+ */
 	timecounter_init(&timecounter, &cyclecounter, start_count);
 
 	/* 56 bits minimum, so we assume worst case rollover */
+
+/* IAMROOT-12:
+ * -------------
+ * sched 클럭으로 등록완료. (sched_clock() 인터페이스)
+ */
 	sched_clock_register(arch_timer_read_counter, 56, arch_timer_rate);
 }
 
@@ -851,7 +872,20 @@ static void __init arch_timer_common_init(void)
 	}
 
 	arch_timer_banner(arch_timers_present);
+
+/* IAMROOT-12:
+ * -------------
+ * 카운터 관련한 클럭 인터페이스를 제공하기 위해 준비한다.
+ *	- 클럭소스
+ *	- 타임카운터(사이클카운터)
+ *	- sched 클럭
+ */
 	arch_counter_register(arch_timers_present);
+
+/* IAMROOT-12:
+ * -------------
+ * delay 타이머로 등록한다.
+ */
 	arch_timer_arch_init();
 }
 
@@ -945,6 +979,11 @@ static void __init arch_timer_init(struct device_node *np)
  * arch 타이머를 등록한다.
  */
 	arch_timer_register();
+
+/* IAMROOT-12:
+ * -------------
+ * arch 타이머를 각종 클럭 인터페이스에 제공한다.
+ */
 	arch_timer_common_init();
 }
 CLOCKSOURCE_OF_DECLARE(armv7_arch_timer, "arm,armv7-timer", arch_timer_init);
