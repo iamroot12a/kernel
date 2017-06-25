@@ -499,3 +499,8 @@ page_address_init()
 ### 113주차
 - 2017.06.17, 토즈 선릉점 (9명, 김민호, 김종철, 문영일, 정재준, 양유석, 윤창호, 임채훈, 조현철, 한상종)
 - time_init() -> clocksource_of_init() ~
+
+### 114주차
+- 2017.06.24, Kosslab (9명, 김민호, 김종철, 문영일, 정재준, 윤창호, 임채훈, 조현철, 최영민, 한대근)
+- time_init() -> clocksource_of_init()
+- timekeeping_init()
