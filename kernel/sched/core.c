@@ -26,6 +26,21 @@
  *              Thomas Gleixner, Mike Kravetz
  */
 
+/*
+ * 참여자:
+ *     김민호 
+ *     문영일
+ *     한대근
+ *     최영민
+ *     한상종
+ *     김종철
+ *     정재준
+ *     윤창호
+ *     임채훈
+ *     조현철
+ *     권경환
+ *     양유석
+ */
 #include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/nmi.h>
