@@ -33,7 +33,7 @@ EXPORT_SYMBOL(init_task);
 
 /* IAMROOT-12AB:
  * -------------
- * init_task용 커널 스택
+ * init_task용 커널 스택 생성 위치
  */
 union thread_union init_thread_union __init_task_data =
 	{ INIT_THREAD_INFO(init_task) };

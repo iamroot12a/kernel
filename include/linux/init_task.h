@@ -186,6 +186,15 @@ extern struct task_group root_task_group;
  *  INIT_TASK is used to set up the first task table, touch at
  * your own risk!. Base=0, limit=0x1fffff (=2MB)
  */
+
+/* IAMROOT-12:
+ * -------------
+ * init_task가 처음 동작 시 갖는 속성
+ *      - prio=120
+ *      - policy=SCHED_NORMAL 
+ *      - 커널 스레드 
+ *      - 태스크명: "swapper"
+ */
 #define INIT_TASK(tsk)	\
 {									\
 	.state		= 0,						\

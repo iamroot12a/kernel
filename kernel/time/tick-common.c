@@ -84,6 +84,13 @@ int tick_is_oneshot_available(void)
  */
 static void tick_periodic(int cpu)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 다음 조건을 만족하지 못하는 경우 2 가지
+ *	1) timekeeping 루틴이 갱신 중일 때 
+ *	2) jiffies를 담당하지 않는 cpu일 때
+ */
 	if (tick_do_timer_cpu == cpu) {
 		write_seqlock(&jiffies_lock);
 
@@ -102,6 +109,11 @@ static void tick_periodic(int cpu)
 /*
  * Event handler for periodic ticks
  */
+
+/* IAMROOT-12:
+ * -------------
+ * 정규 tick 타이머 핸들러
+ */
 void tick_handle_periodic(struct clock_event_device *dev)
 {
 	int cpu = smp_processor_id();
@@ -109,6 +121,11 @@ void tick_handle_periodic(struct clock_event_device *dev)
 
 	tick_periodic(cpu);
 
+/* IAMROOT-12:
+ * -------------
+ * oneshot이 아닌 주기적으로 tick을 만드는 클럭이벤트 디바이스를 사용한 
+ * 경우 틱을 만들 필요가 없으므로 여기서 빠져나간다.
+ */
 	if (dev->mode != CLOCK_EVT_MODE_ONESHOT)
 		return;
 	for (;;) {
@@ -118,6 +135,12 @@ void tick_handle_periodic(struct clock_event_device *dev)
 		 */
 		next = ktime_add(next, tick_period);
 
+/* IAMROOT-12:
+ * -------------
+ * 틱 프로그래밍 시 만료시간(tick_period)을 초과하는 경우 
+ * 시간이 남아 있지 않는 경우 계속 루프를 돌며
+ * 성공할 때 까지 시도한다. (0=성공, 음수값=실패)
+ */
 		if (!clockevents_program_event(dev, next, false))
 			return;
 		/*

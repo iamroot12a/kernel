@@ -57,6 +57,11 @@
 
 /* Variables and functions for calc_load */
 atomic_long_t calc_load_tasks;
+
+/* IAMROOT-12:
+ * -------------
+ * load 갱신해야 할 시각을 대입한다. (jiffies 단위)
+ */
 unsigned long calc_load_update;
 unsigned long avenrun[3];
 EXPORT_SYMBOL(avenrun); /* should be removed */
@@ -147,6 +152,11 @@ calc_load(unsigned long load, unsigned long exp, unsigned long active)
  * When making the ILB scale, we should try to pull this in as well.
  */
 static atomic_long_t calc_load_idle[2];
+
+/* IAMROOT-12:
+ * -------------
+ * 5초 인터벌 + 10 tick 마다 증가된다.
+ */
 static int calc_load_idx;
 
 static inline int calc_load_write_idx(void)
@@ -163,6 +173,11 @@ static inline int calc_load_write_idx(void)
 	 * If the folding window started, make sure we start writing in the
 	 * next idle-delta.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * flip 조건: just 5초부터는 flip
+ */
 	if (!time_before(jiffies, calc_load_update))
 		idx++;
 
@@ -212,9 +227,18 @@ void calc_load_exit_idle(void)
 
 static long calc_load_fold_idle(void)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 0과 1 둘 중 하나를 가져온다.
+ */
 	int idx = calc_load_read_idx();
 	long delta = 0;
 
+/* IAMROOT-12:
+ * -------------
+ * 한 번 읽어온 경우 atomic하게 0으로 클리어한다.
+ */
 	if (atomic_long_read(&calc_load_idle[idx]))
 		delta = atomic_long_xchg(&calc_load_idle[idx], 0);
 
@@ -344,6 +368,10 @@ void calc_global_load(unsigned long ticks)
 {
 	long active, delta;
 
+/* IAMROOT-12:
+ * -------------
+ * 인터벌 5초 후 10 틱을 지나간 경우에만 글로벌 로드를 갱신한다.
+ */
 	if (time_before(jiffies, calc_load_update + 10))
 		return;
 

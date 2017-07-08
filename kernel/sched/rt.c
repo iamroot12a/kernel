@@ -70,6 +70,11 @@ void init_rt_rq(struct rt_rq *rt_rq, struct rq *rq)
 		__clear_bit(i, array->bitmap);
 	}
 	/* delimiter for bitsearch: */
+
+/* IAMROOT-12:
+ * -------------
+ * 101번째 우선 순위를 가리키는 bit를 1로 설정하여 delimiter로 사용한다.
+ */
 	__set_bit(MAX_RT_PRIO, array->bitmap);
 
 #if defined CONFIG_SMP

@@ -307,6 +307,13 @@ const_debug unsigned int sysctl_sched_nr_migrate = 32;
  */
 const_debug unsigned int sysctl_sched_time_avg = MSEC_PER_SEC;
 
+
+/* IAMROOT-12:
+ * -------------
+ * 디폴트 밴드위드 = sysctl_sched_rt_runtime / sysctl_sched_rt_period
+ *                 = 0.95s / 1s = 0.95
+ */
+
 /*
  * period over which we measure -rt task cpu usage in us.
  * default: 1s
@@ -5695,9 +5702,18 @@ static int init_rootdomain(struct root_domain *rd)
 		goto free_dlo_mask;
 
 	init_dl_bw(&rd->dl_bw);
+
+/* IAMROOT-12:
+ * -------------
+ * dl 로드밸런싱을 위한 준비
+ */
 	if (cpudl_init(&rd->cpudl) != 0)
 		goto free_dlo_mask;
 
+/* IAMROOT-12:
+ * -------------
+ * rt 로드밸런싱을 위한 준비
+ */
 	if (cpupri_init(&rd->cpupri) != 0)
 		goto free_rto_mask;
 	return 0;
@@ -7163,6 +7179,14 @@ void __init sched_init(void)
 	int i, j;
 	unsigned long alloc_size = 0, ptr;
 
+/* IAMROOT-12:
+ * -------------
+ * 루트 태스크 그룹에 다음 구조체를 가리키는 포인터를 cpu 수만큼 할당한다.
+ *	- sched_entity *
+ *	- cfs_rq *
+ *	- sched_rt_entity *
+ *	- rt_rq *
+ */
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	alloc_size += 2 * nr_cpu_ids * sizeof(void **);
 #endif
@@ -7189,6 +7213,11 @@ void __init sched_init(void)
 
 #endif /* CONFIG_RT_GROUP_SCHED */
 	}
+
+/* IAMROOT-12:
+ * -------------
+ * 로드밸런스용 per-cpu cpu 비트마스크를 할당한다.
+ */
 #ifdef CONFIG_CPUMASK_OFFSTACK
 	for_each_possible_cpu(i) {
 		per_cpu(load_balance_mask, i) = (cpumask_var_t)kzalloc_node(
@@ -7196,20 +7225,38 @@ void __init sched_init(void)
 	}
 #endif /* CONFIG_CPUMASK_OFFSTACK */
 
+/* IAMROOT-12:
+ * -------------
+ * 디폴트 rt 및 dl 대역폭 초기화 
+ *	- /proc/sys/kernel/sched_rt_period_us = 1000000
+ *	- /proc/sys/kernel/sched_rt_runtime_us = 950000
+ */
 	init_rt_bandwidth(&def_rt_bandwidth,
 			global_rt_period(), global_rt_runtime());
 	init_dl_bandwidth(&def_dl_bandwidth,
 			global_rt_period(), global_rt_runtime());
 
+/* IAMROOT-12:
+ * -------------
+ * 루트 도메인 초기화
+ */
 #ifdef CONFIG_SMP
 	init_defrootdomain();
 #endif
 
+/* IAMROOT-12:
+ * -------------
+ * 루트 태스크 그룹용 rt 대역폭 초기화
+ */
 #ifdef CONFIG_RT_GROUP_SCHED
 	init_rt_bandwidth(&root_task_group.rt_bandwidth,
 			global_rt_period(), global_rt_runtime());
 #endif /* CONFIG_RT_GROUP_SCHED */
 
+/* IAMROOT-12:
+ * -------------
+ * 스케줄링 그룹의 계층 관리를 위해 초기화한다.
+ */
 #ifdef CONFIG_CGROUP_SCHED
 	list_add(&root_task_group.list, &task_groups);
 	INIT_LIST_HEAD(&root_task_group.children);
@@ -7226,6 +7273,12 @@ void __init sched_init(void)
 		rq->nr_running = 0;
 		rq->calc_load_active = 0;
 		rq->calc_load_update = jiffies + LOAD_FREQ;
+
+/* IAMROOT-12:
+ * -------------
+ * 각 cpu의 런큐에 있는 cfs, rt, dl 런큐들을 초기화한다.
+ * (이 중 cfs 및 rt 런큐는 루트 태스크 그룹에 연결된다.)
+ */
 		init_cfs_rq(&rq->cfs);
 		init_rt_rq(&rq->rt, rq);
 		init_dl_rq(&rq->dl, rq);
@@ -7255,6 +7308,10 @@ void __init sched_init(void)
 		init_tg_cfs_entry(&root_task_group, &rq->cfs, NULL, i, NULL);
 #endif /* CONFIG_FAIR_GROUP_SCHED */
 
+/* IAMROOT-12:
+ * -------------
+ * 디폴트 rt 대역폭으로 초기화
+ */
 		rq->rt.rt_runtime = def_rt_bandwidth.rt_runtime;
 #ifdef CONFIG_RT_GROUP_SCHED
 		init_tg_rt_entry(&root_task_group, &rq->rt, NULL, i, NULL);
@@ -7281,6 +7338,10 @@ void __init sched_init(void)
 
 		INIT_LIST_HEAD(&rq->cfs_tasks);
 
+/* IAMROOT-12:
+ * -------------
+ * 디폴트 루트 도메인과 연결한다.
+ */
 		rq_attach_root(rq, &def_root_domain);
 #ifdef CONFIG_NO_HZ_COMMON
 		rq->nohz_flags = 0;
@@ -7308,6 +7369,11 @@ void __init sched_init(void)
 	/*
 	 * During early bootup we pretend to be a normal task:
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 부트업 시 처음에는 cfs 스케줄러를 사용하게 한다.
+ */
 	current->sched_class = &fair_sched_class;
 
 	/*

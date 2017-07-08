@@ -45,6 +45,14 @@ extern void update_cpu_load_active(struct rq *this_rq);
  * when BITS_PER_LONG <= 32 are pretty high and the returns do not justify the
  * increased costs.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * 추후 커널 코드에서는 64비트인 경우도 사용한다.
+ * arm: NICE_0_LOAD(2^10=1024)
+ * arm64: NICE_0_LOAD(2^20=1048576)
+ */
+
 #if 0 /* BITS_PER_LONG > 32 -- currently broken: it increases power usage under light load  */
 # define SCHED_LOAD_RESOLUTION	10
 # define scale_load(w)		((w) << SCHED_LOAD_RESOLUTION)
@@ -263,6 +271,11 @@ struct task_group {
 };
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
+
+/* IAMROOT-12:
+ * -------------
+ * 루트 태스크 그룹의 로드 값은 32bit에서 1024, 64bit에서 1048576을 사용한다.
+ */
 #define ROOT_TASK_GROUP_LOAD	NICE_0_LOAD
 
 /*
@@ -543,6 +556,11 @@ struct rq {
 	 * nr_running and cpu_load should be in the same cacheline because
 	 * remote CPUs use both these fields when doing load calculation.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * active 태스크 수(curr + 런큐 대기)
+ */
 	unsigned int nr_running;
 #ifdef CONFIG_NUMA_BALANCING
 	unsigned int nr_numa_running;

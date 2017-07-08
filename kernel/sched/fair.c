@@ -8032,6 +8032,11 @@ void init_tg_cfs_entry(struct task_group *tg, struct cfs_rq *cfs_rq,
 	tg->se[cpu] = se;
 
 	/* se could be NULL for root_task_group */
+
+/* IAMROOT-12:
+ * -------------
+ * 루트 태스크그룹을 cfs 런큐와 연동시킨 경우 그만 빠져나간다.
+ */
 	if (!se)
 		return;
 

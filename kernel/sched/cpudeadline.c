@@ -218,6 +218,10 @@ int cpudl_init(struct cpudl *cp)
 	raw_spin_lock_init(&cp->lock);
 	cp->size = 0;
 
+/* IAMROOT-12:
+ * -------------
+ * cpu 수 만큼 cpudl_item 배열을 만든다.
+ */
 	cp->elements = kcalloc(nr_cpu_ids,
 			       sizeof(struct cpudl_item),
 			       GFP_KERNEL);

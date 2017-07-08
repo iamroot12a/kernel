@@ -211,6 +211,10 @@ int cpupri_init(struct cpupri *cp)
 
 	memset(cp, 0, sizeof(*cp));
 
+/* IAMROOT-12:
+ * -------------
+ * 102개의 prio 만큼 cpumask 할당
+ */
 	for (i = 0; i < CPUPRI_NR_PRIORITIES; i++) {
 		struct cpupri_vec *vec = &cp->pri_to_cpu[i];
 
@@ -219,6 +223,10 @@ int cpupri_init(struct cpupri *cp)
 			goto cleanup;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * cpu 수 만큼 int 값이 들어갈 수 있는 배열을 할당한다.
+ */
 	cp->cpu_to_pri = kcalloc(nr_cpu_ids, sizeof(int), GFP_KERNEL);
 	if (!cp->cpu_to_pri)
 		goto cleanup;
