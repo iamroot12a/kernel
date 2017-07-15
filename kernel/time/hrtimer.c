@@ -817,6 +817,10 @@ static void retrigger_next_event(void *arg)
 	if (!hrtimer_hres_active())
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * timekeeping의 realtime이 변경된 경우 hrtimer의 리트리거 작업을 해야 한다.
+ */
 	raw_spin_lock(&base->lock);
 	hrtimer_update_base(base);
 	hrtimer_force_reprogram(base, 0);
@@ -900,6 +904,12 @@ static inline void retrigger_next_event(void *arg) { }
  */
 void clock_was_set(void)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * timekeeping의 realtime이 바뀌었으므로 cpu마다 동작하는 hrtimer들도
+ * 거기에 따른 리트리거 작업을 한다.
+ */
 #ifdef CONFIG_HIGH_RES_TIMERS
 	/* Retrigger the CPU local events everywhere */
 	on_each_cpu(retrigger_next_event, NULL, 1);

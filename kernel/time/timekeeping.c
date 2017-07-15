@@ -1717,10 +1717,20 @@ static cycle_t logarithmic_accumulation(struct timekeeper *tk, cycle_t offset,
 	u64 raw_nsecs;
 
 	/* If the offset is smaller then a shifted interval, do nothing */
+
+/* IAMROOT-12:
+ * -------------
+ * 해당 shift 단위에서 처리할 수 없는 작은 offset이기 때문에 빠져나간다.
+ */
 	if (offset < interval)
 		return offset;
 
 	/* Accumulate one shifted interval */
+
+/* IAMROOT-12:
+ * -------------
+ * 마지막 처리 시각을 cycle_interval의 로그2 승수 단위로 기록한다.
+ */
 	offset -= interval;
 	tk->tkr.cycle_last += interval;
 
@@ -1761,17 +1771,32 @@ void update_wall_time(void)
 	raw_spin_lock_irqsave(&timekeeper_lock, flags);
 
 	/* Make sure we're fully resumed: */
+
+/* IAMROOT-12:
+ * -------------
+ * suspend 시도 중에는 timekeeping 갱신이되지 않도록 한다.
+ */
 	if (unlikely(timekeeping_suspended))
 		goto out;
 
 #ifdef CONFIG_ARCH_USES_GETTIMEOFFSET
 	offset = real_tk->cycle_interval;
 #else
+
+/* IAMROOT-12:
+ * -------------
+ * (now - last & mask)
+ */
 	offset = clocksource_delta(tk->tkr.read(tk->tkr.clock),
 				   tk->tkr.cycle_last, tk->tkr.mask);
 #endif
 
 	/* Check if there's really nothing to do */
+
+/* IAMROOT-12:
+ * -------------
+ * cycle_interval(1 jiffies에 해당하는 cycle) 보다 작은 offset 값은 무시한다.
+ */
 	if (offset < real_tk->cycle_interval)
 		goto out;
 
@@ -1783,9 +1808,22 @@ void update_wall_time(void)
 	 * chunk in one go, and then try to consume the next smaller
 	 * doubled multiple.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * ntpd가 큰 시간 간격을 바꾸면 문제가 발생하므로 cycle_interval 단위로
+ * 시간을 바꿔야하는데 nohz 시스템으로 인해 큰 offset가 발생하여 
+ * 이를 한 꺼번에 바꾸는데 인터럽트 레이튼시가 커지는 문제가 발생한다.
+ * 따라서 로그2 단위로 처리를 하도록 하였다.
+ */
 	shift = ilog2(offset) - ilog2(tk->cycle_interval);
 	shift = max(0, shift);
 	/* Bound shift to one less than what overflows tick_length */
+
+/* IAMROOT-12:
+ * -------------
+ * ntp가 인식할 수 없는 단위로 시간을 바꾸지 않게 제한한다.
+ */
 	maxshift = (64 - (ilog2(ntp_tick_length())+1)) - 1;
 	shift = min(shift, maxshift);
 	while (offset >= tk->cycle_interval) {
@@ -1821,6 +1859,11 @@ void update_wall_time(void)
 	 * memcpy under the tk_core.seq against one before we start
 	 * updating.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * real_tk <- tk 복사
+ */
 	memcpy(real_tk, tk, sizeof(*tk));
 	timekeeping_update(real_tk, clock_set);
 	write_seqcount_end(&tk_core.seq);
@@ -1828,6 +1871,11 @@ out:
 	raw_spin_unlock_irqrestore(&timekeeper_lock, flags);
 	if (clock_set)
 		/* Have to call _delayed version, since in irq context*/
+
+/* IAMROOT-12:
+ * -------------
+ * bottom-half인 워크큐를 사용하여 realtime이 설정되었음을 알린다.
+ */
 		clock_was_set_delayed();
 }
 
@@ -1907,6 +1955,11 @@ struct timespec64 get_monotonic_coarse64(void)
 void do_timer(unsigned long ticks)
 {
 	jiffies_64 += ticks;
+
+/* IAMROOT-12:
+ * -------------
+ * 글로벌 로드 산출
+ */
 	calc_global_load(ticks);
 }
 

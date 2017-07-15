@@ -56,6 +56,12 @@
  */
 
 /* Variables and functions for calc_load */
+
+/* IAMROOT-12:
+ * -------------
+ * avenload[]를 산출할 때 사용하는 로드를 정한다.
+ * calc_load() 함수에서 사용한다.
+ */
 atomic_long_t calc_load_tasks;
 
 /* IAMROOT-12:
@@ -85,6 +91,15 @@ long calc_load_fold_active(struct rq *this_rq)
 {
 	long nr_active, delta = 0;
 
+/* IAMROOT-12:
+ * -------------
+ * 로드 계산에 적용되지 않은 변동된 active 태스크 수를 산출한다.
+ *
+ * nohz idle시 nr_running=0 
+ * nohz full시 nr_running=1
+ *
+ * nr_uninterruptible은 로드 계산을 위한 active 태스크 수에 포함시킨다.
+ */
 	nr_active = this_rq->nr_running;
 	nr_active += (long) this_rq->nr_uninterruptible;
 
@@ -102,6 +117,15 @@ long calc_load_fold_active(struct rq *this_rq)
 static unsigned long
 calc_load(unsigned long load, unsigned long exp, unsigned long active)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * old * k + new * (1 - k)
+ * -> load * exp + active * (2048 - exp)
+ *
+ * 예: load(old)=4096, active(new)=2048, exp(k)=1884 (1min)
+ * -> 3932
+ */
 	load *= exp;
 	load += active * (FIXED_1 - exp);
 	load += 1UL << (FSHIFT - 1);
@@ -198,6 +222,11 @@ void calc_load_enter_idle(void)
 	 * We're going into NOHZ mode, if there's any pending delta, fold it
 	 * into the pending idle delta.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * nohz idle 진입 시 로드 계산에 사용할 변동된 active 태스크 수를 알아온다.
+ */
 	delta = calc_load_fold_active(this_rq);
 	if (delta) {
 		int idx = calc_load_write_idx();
@@ -326,6 +355,13 @@ static void calc_global_nohz(void)
 {
 	long delta, active, n;
 
+/* IAMROOT-12:
+ * -------------
+ * nohz로 인해 5초 이상 더 소모된 경우 이 루틴에 진입한다.
+ *
+ * n = nohz로 인해 계산 못한 횟 수
+ *     (calc_global_load()에서 한 번 계산한 것 제외)
+ */
 	if (!time_before(jiffies, calc_load_update + 10)) {
 		/*
 		 * Catch-up, fold however many we are behind still
@@ -378,13 +414,38 @@ void calc_global_load(unsigned long ticks)
 	/*
 	 * Fold the 'old' idle-delta to include all NO_HZ cpus.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * calc_load_idle[]을 읽어온다. (동기화 방법을 사용하여 idx=0/1을 구분)
+ * 읽어온 delta(로드 값에 사용할 변동된 active 태스크 수) 값을 
+ * calc_load_tasks에 추가한다.
+ *
+ * idle로 누적되는 값을 읽어오되 10tick 구간을 제외한 값을 읽어온다.
+ * 추후 10tick에 대한 구간은 차후에 읽어오게 하였다.
+ *
+ * nohz idle 진입 시의 active 태스크 수를 cpu 로드에 반영하여 사용한다.
+ */
 	delta = calc_load_fold_idle();
 	if (delta)
 		atomic_long_add(delta, &calc_load_tasks);
 
+/* IAMROOT-12:
+ * -------------
+ * load의 정확도로 11비트를 사용한 2048을 사용한다. (즉 1.0 = 2048)
+ */
 	active = atomic_long_read(&calc_load_tasks);
 	active = active > 0 ? active * FIXED_1 : 0;
 
+
+/* IAMROOT-12:
+ * -------------
+ * 1분, 5분, 15분에 대한 글로벌 로드 값을 산출한다.
+ *
+ * EXP_1=1884  (0.9200)
+ * EXP_5=2014  (0.9835)
+ * EXP_15=2037 (0.9945)
+ */
 	avenrun[0] = calc_load(avenrun[0], EXP_1, active);
 	avenrun[1] = calc_load(avenrun[1], EXP_5, active);
 	avenrun[2] = calc_load(avenrun[2], EXP_15, active);

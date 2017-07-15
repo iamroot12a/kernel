@@ -27,6 +27,11 @@
  * The struct is separate from struct timekeeper as it is also used
  * for a fast NMI safe accessor to clock monotonic.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * cycle_last: timekeeping을 위해 읽은 클럭소스의 마지막 값
+ */
 struct tk_read_base {
 	struct clocksource	*clock;
 	cycle_t			(*read)(struct clocksource *cs);
@@ -74,6 +79,12 @@ struct tk_read_base {
  *
  * wall_to_monotonic is no longer the boot time, getboottime must be
  * used instead.
+ */
+
+/* IAMROOT-12:
+ * -------------
+ * cycle_interval   
+ *      1 jiffes에 해당하는 cycle 수
  */
 struct timekeeper {
 	struct tk_read_base	tkr;

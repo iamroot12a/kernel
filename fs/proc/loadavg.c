@@ -12,6 +12,11 @@
 
 static int loadavg_proc_show(struct seq_file *m, void *v)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 글로벌 로드 출력
+ */
 	unsigned long avnrun[3];
 
 	get_avenrun(avnrun, FIXED_1/200, 0);
