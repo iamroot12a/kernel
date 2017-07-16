@@ -514,3 +514,6 @@ page_address_init()
 - sched_init()
 - tick_handle_periodic() ~
 
+### 117주차
+- 2017.07.15, 강남 토즈타워점 (11명, 김민호, 김종철, 문영일, 양유석, 윤창호, 임채훈, 정재준, 조현철, 최영민, 한대근, 한상종)
+- tick_handle_periodic() ~
