@@ -462,6 +462,17 @@ void thread_group_cputime_adjusted(struct task_struct *p, cputime_t *ut, cputime
  */
 void account_process_tick(struct task_struct *p, int user_tick)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 유저모드에서 인터럽트가 발생하여 진입한 경우 user_tick=1 
+ *
+ * 지정된 태스크에서 소모시킨 시간을 산출한다.
+ * ($ time vim -> vim에서 사용한 시간 
+ *  real   0m2.823s
+ *  user   0m0.168s
+ *  sys    0m0.024s)
+ */
 	cputime_t one_jiffy_scaled = cputime_to_scaled(cputime_one_jiffy);
 	struct rq *rq = this_rq();
 

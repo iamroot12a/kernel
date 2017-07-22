@@ -136,13 +136,40 @@ void update_rq_clock(struct rq *rq)
 
 	lockdep_assert_held(&rq->lock);
 
+/* IAMROOT-12:
+ * -------------
+ * 클럭 갱신을 skip해야 할 때 RQCF_ACT_SKIP 플래그를 사용한다.
+ * (__schedule() 함수에서 잠시 막아둔다. -동기화목적-)
+ */
 	if (rq->clock_skip_update & RQCF_ACT_SKIP)
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 cpu에 대한 클럭 소스의 시각을 ns 단위로 알아온다. 
+ * 그런 후 지난번 갱신했던 시각과의 차이 delta를 구한다.
+ *
+ * rq->clock(ns)은 매번 갱신된다.
+ */
 	delta = sched_clock_cpu(cpu_of(rq)) - rq->clock;
+
+/* IAMROOT-12:
+ * -------------
+ * 안정되지 않은 clock의 경우 음수가 될 수 있어 더 이상 처리하지 않는다.
+ */
 	if (delta < 0)
 		return;
+
+/* IAMROOT-12:
+ * -------------
+ * 결국 sched_clock에서 읽은 값을 rq->clock에 대입한 것과 같다.
+ */
 	rq->clock += delta;
+
+/* IAMROOT-12:
+ * -------------
+ * rq->clock_task를 갱신한다.
+ */
 	update_rq_clock_task(rq, delta);
 }
 
@@ -883,6 +910,16 @@ static void update_rq_clock_task(struct rq *rq, s64 delta)
 	 * the current rq->clock timestamp, except that would require using
 	 * atomic ops.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * COFIG_IRQ_TIME_ACCOUNTING 커널 옵션을 사용하지 않는 경우 
+ *	rq->clock = rq->clock_task 
+ * 사용하는 경우 
+ *	rq->clock = rq->clock_task + <irq delta>
+ *
+ * 즉 rq->clock_task는 태스크에 사용한 시간만 누적된다.
+ */
 	if (irq_delta > delta)
 		irq_delta = delta;
 
@@ -2528,11 +2565,25 @@ void scheduler_tick(void)
 {
 	int cpu = smp_processor_id();
 	struct rq *rq = cpu_rq(cpu);
+
+/* IAMROOT-12:
+ * -------------
+ * 런큐에서 현재 동작하고 있는 태스크(task_struct)
+ */
 	struct task_struct *curr = rq->curr;
 
+/* IAMROOT-12:
+ * -------------
+ * arm에서는 아무것도 하지 않는다. (stable 클럭이므로)
+ */
 	sched_clock_tick();
 
 	raw_spin_lock(&rq->lock);
+
+/* IAMROOT-12:
+ * -------------
+ * rq->clock & rq->clock_task를 갱신한다.
+ */
 	update_rq_clock(rq);
 	curr->sched_class->task_tick(rq, curr, 0);
 	update_cpu_load_active(rq);

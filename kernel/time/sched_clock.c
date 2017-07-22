@@ -74,6 +74,8 @@ unsigned long long notrace sched_clock(void)
 /* IAMROOT-12:
  * -------------
  * update 중에는 다시 읽어오도록 유도한다.
+ *
+ * epoch_cyc와 epoch_ns는 약 52분마다 갱신한다.
  */
 	do {
 		seq = raw_read_seqcount_begin(&cd.seq);
@@ -81,6 +83,10 @@ unsigned long long notrace sched_clock(void)
 		epoch_ns = cd.epoch_ns;
 	} while (read_seqcount_retry(&cd.seq, seq));
 
+/* IAMROOT-12:
+ * -------------
+ * 클럭소스를 통해 cycle 값을 알아온다.
+ */
 	cyc = read_sched_clock();
 	cyc = (cyc - epoch_cyc) & sched_clock_mask;
 	return epoch_ns + cyc_to_ns(cyc, cd.mult, cd.shift);

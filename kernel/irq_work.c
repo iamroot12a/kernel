@@ -175,6 +175,11 @@ EXPORT_SYMBOL_GPL(irq_work_run);
 
 void irq_work_tick(void)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * raised_list에 연결된 irq_work를 처리한다.
+ */
 	struct llist_head *raised = this_cpu_ptr(&raised_list);
 
 	if (!llist_empty(raised) && !arch_irq_work_has_interrupt())

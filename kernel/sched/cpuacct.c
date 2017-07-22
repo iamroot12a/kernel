@@ -237,6 +237,10 @@ void cpuacct_charge(struct task_struct *tsk, u64 cputime)
 	struct cpuacct *ca;
 	int cpu;
 
+/* IAMROOT-12:
+ * -------------
+ * 태스크 그룹별로 수행 시간을 누적시킨다.
+ */
 	cpu = task_cpu(tsk);
 
 	rcu_read_lock();

@@ -1703,9 +1703,23 @@ void update_process_times(int user_tick)
 
 	/* Note: this timer irq context must be accounted for as well. */
 	account_process_tick(p, user_tick);
+
+/* IAMROOT-12:
+ * -------------
+ * tick에 의해 hrtimer 및 타이머휠을 처리한다.
+ */
 	run_local_timers();
+
+/* IAMROOT-12:
+ * -------------
+ * rcu cb 처리를 수행한다.
+ */
 	rcu_check_callbacks(user_tick);
 #ifdef CONFIG_IRQ_WORK
+/* IAMROOT-12:
+ * -------------
+ * raised_list에 연결된 irq_work를 처리한다.
+ */
 	if (in_irq())
 		irq_work_tick();
 #endif
@@ -1742,7 +1756,17 @@ static void run_timer_softirq(struct softirq_action *h)
  */
 void run_local_timers(void)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * hrtimer 루틴이 동작하지 않은 경우 tick으로 hrtimer의 만료처리를 수행한다.
+ */
 	hrtimer_run_queues();
+
+/* IAMROOT-12:
+ * -------------
+ * 타이머휠을 체크하도록 softirq를 호출한다.
+ */
 	raise_softirq(TIMER_SOFTIRQ);
 }
 

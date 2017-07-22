@@ -1974,6 +1974,11 @@ void do_timer(unsigned long ticks)
 ktime_t ktime_get_update_offsets_tick(ktime_t *offs_real, ktime_t *offs_boot,
 							ktime_t *offs_tai)
 {
+/* IAMROOT-12:
+ * -------------
+ * tk를 통해 monotonic 타임을 반환한다. 출력 인수 3개에는 각각의 clock에 대한 
+ * offset를 가져온다.
+ */
 	struct timekeeper *tk = &tk_core.timekeeper;
 	unsigned int seq;
 	ktime_t base;

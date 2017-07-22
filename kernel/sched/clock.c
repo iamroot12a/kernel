@@ -296,6 +296,11 @@ u64 sched_clock_cpu(int cpu)
 	struct sched_clock_data *scd;
 	u64 clock;
 
+/* IAMROOT-12:
+ * -------------
+ * arm의 경우 안정화된 클럭을 사용하므로 sched_clock() 함수를 호출한다.
+ * sched_clock()을 사용하여 현재 클럭 소스의 시각을 ns 단위로 알아온다.
+ */
 	if (sched_clock_stable())
 		return sched_clock();
 
@@ -319,6 +324,10 @@ void sched_clock_tick(void)
 	struct sched_clock_data *scd;
 	u64 now, now_gtod;
 
+/* IAMROOT-12:
+ * -------------
+ * arm은 stable clock을 사용하므로 함수를 빠져나간다.
+ */
 	if (sched_clock_stable())
 		return;
 
