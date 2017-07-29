@@ -345,6 +345,12 @@ struct cfs_bandwidth { };
 
 #endif	/* CONFIG_CGROUP_SCHED */
 
+/* IAMROOT-12:
+ * -------------
+ * last_decay: 
+ *      마지막 decay 계산한 시각(ms)
+ */
+
 /* CFS-related fields in a runqueue */
 struct cfs_rq {
 	struct load_weight load;

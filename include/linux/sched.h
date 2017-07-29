@@ -1131,6 +1131,19 @@ struct load_weight {
 	u32 inv_weight;
 };
 
+/* IAMROOT-12:
+ * -------------
+ * PELT용 러너블 로드 평균 
+ * -----------------------
+ * runnable_avg_sum:
+ *      러너블 로드 평균을 산출하기 위한 러너블 총합 
+ * runnable_avg_period:
+ *      러너블 로드 평균을 산출하기 위한 기간 총합 
+ * last_runnable_update:
+ *      최종 산출 시각
+ * load_avg_contrib:
+ *      러너블 로드 평균
+ */
 struct sched_avg {
 	/*
 	 * These sums represent an infinite geometric series and so are bound
@@ -1179,6 +1192,37 @@ struct sched_statistics {
 };
 #endif
 
+
+/* IAMROOT-12:
+ * -------------
+ * load: 
+ *      로드 weight (inverse weight 포함)
+ * run_node:
+ *      RB 트리에 연결될 노드 
+ * on_rq:
+ *      cfs 런큐에 엔큐된 경우 1. 그렇지 않은 경우 0
+ * exec_start:
+ *      실행 시각 
+ * sum_exec_runtime:
+ *      총 실행 시간 
+ * vruntime:
+ *      (생략)
+ * prev_sum_exec_runtime:
+ *      이전까지의 총 실행 시간:
+ * depth:
+ *      루트 태스크 그룹용 cfs 런큐에 포함된 최상위 엔티티가 0부터 시작하여
+ *      하위 태스크 그룹으로 내려갈 때 마다 1씩 증가 
+ * parent:
+ *      부모 스케줄 엔티티로 없는 경우 null 
+ *      (최상위 스케줄 엔티티인 경우 부모가 없다) 
+ * cfs_rq:
+ *      스케줄 엔티티가 등록될 cfs 런큐 
+ * my_q:
+ *      태스크 그룹용 스케줄 엔티티인 경우 태스크 그룹에 해당하는 cfs 런큐를 
+ *      가리킨다. 태스크용 스케줄 엔티티인 경우 null.
+ * avg:
+ *      러너블 로드 평균
+ */
 struct sched_entity {
 	struct load_weight	load;		/* for load-balancing */
 	struct rb_node		run_node;

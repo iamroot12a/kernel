@@ -2542,8 +2542,18 @@ static __always_inline u64 decay_load(u64 val, u64 n)
 {
 	unsigned int local_n;
 
+/* IAMROOT-12:
+ * -------------
+ * n이 0이면 decay할 필요가 없다.
+ */
 	if (!n)
 		return val;
+
+/* IAMROOT-12:
+ * -------------
+ * LOAD_AVG_PERIOD(32) * 63 = 2016(ms) 
+ * 약 2초가 지나면 decay한 값은 0이다. 
+ */
 	else if (unlikely(n > LOAD_AVG_PERIOD * 63))
 		return 0;
 
@@ -2557,6 +2567,11 @@ static __always_inline u64 decay_load(u64 val, u64 n)
 	 *
 	 * To achieve constant time decay_load.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 32ms 단위로 반절씩 줄어든다.
+ */
 	if (unlikely(local_n >= LOAD_AVG_PERIOD)) {
 		val >>= local_n / LOAD_AVG_PERIOD;
 		local_n %= LOAD_AVG_PERIOD;
@@ -2578,12 +2593,27 @@ static u32 __compute_runnable_contrib(u64 n)
 {
 	u32 contrib = 0;
 
+/* IAMROOT-12:
+ * -------------
+ * 32ms 이하는 곧바로 decay sum을 찾아서 반환한다.
+ */
 	if (likely(n <= LOAD_AVG_PERIOD))
 		return runnable_avg_yN_sum[n];
+
+/* IAMROOT-12:
+ * -------------
+ * 345ms를 초과하는 경우 최대 값 47742를 반환한다.
+ */
 	else if (unlikely(n >= LOAD_AVG_MAX_N))
 		return LOAD_AVG_MAX;
 
 	/* Compute \Sum k^n combining precomputed values for k^i, \Sum k^j */
+
+/* IAMROOT-12:
+ * -------------
+ * n=33ms -> 23371 * 0.978 + 1002 = 
+ * n=63ms -> 23371 * 0.51  + 22859 = 
+ */
 	do {
 		contrib /= 2; /* y^LOAD_AVG_PERIOD = 1/2 */
 		contrib += runnable_avg_yN_sum[LOAD_AVG_PERIOD];
@@ -2671,6 +2701,11 @@ static __always_inline int __update_entity_runnable_avg(u64 now,
 	sa->last_runnable_update = now;
 
 	/* delta_w is the amount already accumulated against our next period */
+
+/* IAMROOT-12:
+ * -------------
+ * 기존 값의 us 단위의 잔량만을 가져온다.
+ */
 	delta_w = sa->runnable_avg_period % 1024;
 
 /* IAMROOT-12:
@@ -2687,23 +2722,43 @@ static __always_inline int __update_entity_runnable_avg(u64 now,
 		 * out how much from delta we need to complete the current
 		 * period and accrue it.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 기존 값의 잔량을 채워서 1개 기간(period)을 채운다.
+ */
 		delta_w = 1024 - delta_w;
 		if (runnable)
 			sa->runnable_avg_sum += delta_w;
 		sa->runnable_avg_period += delta_w;
 
+/* IAMROOT-12:
+ * -------------
+ * 위에서 1024us에 해당하는 기간에 사용한 빌린 delta_w 기간을 delta에서 
+ * 뺀다.
+ */
 		delta -= delta_w;
 
 		/* Figure out how many additional periods this update spans */
 		periods = delta / 1024;
 		delta %= 1024;
 
+/* IAMROOT-12:
+ * -------------
+ * 기존 로드 값에 periods+1 기간만큼 decay 한다.
+ * (+1을 해야하는 이유: 잔량 처리한 것을 포함시키기 위해)
+ */
 		sa->runnable_avg_sum = decay_load(sa->runnable_avg_sum,
 						  periods + 1);
 		sa->runnable_avg_period = decay_load(sa->runnable_avg_period,
 						     periods + 1);
 
 		/* Efficiently calculate \sum (1..n_period) 1024*y^i */
+
+/* IAMROOT-12:
+ * -------------
+ * 기존 로드 값 + 주어진 기간 만큼 decay sum한 새 로드 값 추가
+ */
 		runnable_contrib = __compute_runnable_contrib(periods);
 		if (runnable)
 			sa->runnable_avg_sum += runnable_contrib;
@@ -2714,7 +2769,7 @@ static __always_inline int __update_entity_runnable_avg(u64 now,
 
 /* IAMROOT-12:
  * -------------
- * 러너블 로드 평균합과 평균 기간에 delta를 합산한다. 
+ * 러너블 로드 평균합과 평균 기간에 잔량 delta를 합산한다. 
  * (decay되고 남은 delta를 합산)
  */
 	if (runnable)
@@ -2747,6 +2802,13 @@ static inline void __update_cfs_rq_tg_load_contrib(struct cfs_rq *cfs_rq,
 	struct task_group *tg = cfs_rq->tg;
 	long tg_contrib;
 
+/* IAMROOT-12:
+ * -------------
+ * cfs_rq->tg_load_contrib = cfs런큐의 러너블 로드 평균 + 블럭드 로드 평균 
+ * (변동분이 기존 값의 1/8을 초과할때에 갱신한다) 
+ *
+ * tg->load_avg에도 변동분 추가
+ */
 	tg_contrib = cfs_rq->runnable_load_avg + cfs_rq->blocked_load_avg;
 	tg_contrib -= cfs_rq->tg_load_contrib;
 
@@ -2770,10 +2832,23 @@ static inline void __update_tg_runnable_avg(struct sched_avg *sa,
 	long contrib;
 
 	/* The fraction of a cpu used by this cfs_rq */
+
+/* IAMROOT-12:
+ * -------------
+ * contrib = 1024 * 러너블 비율(sum / period) - tg_runnable_contrib 
+ *    169  =                920               -     751 
+ *
+ * tg_runnable_contrib = 1024 * 러너블 비율(sum / period) 
+ * tg->runnable_avg = tg_runnable_avg(751) + 169 = 920
+ */
 	contrib = div_u64((u64)sa->runnable_avg_sum << NICE_0_SHIFT,
 			  sa->runnable_avg_period + 1);
 	contrib -= cfs_rq->tg_runnable_contrib;
 
+/* IAMROOT-12:
+ * -------------
+ * 변동분이 원래 있던 값의 1/64보다는 커야 반영을 한다.
+ */
 	if (abs(contrib) > cfs_rq->tg_runnable_contrib / 64) {
 		atomic_add(contrib, &tg->runnable_avg);
 		cfs_rq->tg_runnable_contrib += contrib;
@@ -2788,6 +2863,13 @@ static inline void __update_group_entity_contrib(struct sched_entity *se)
 
 	u64 contrib;
 
+/* IAMROOT-12:
+ * -------------
+ * 그룹에 설정된 shares 값에 비율(cfs_rq / tg)을 적용하여 엔티티에 대입한다.
+ *
+ * se->avg.load_avg_contrib = 
+ *	tg->shares * cfs_rq->tg_load_contrib / tg->load_avg
+ */
 	contrib = cfs_rq->tg_load_contrib * tg->shares;
 	se->avg.load_avg_contrib = div_u64(contrib,
 				     atomic_long_read(&tg->load_avg) + 1);
@@ -2815,6 +2897,12 @@ static inline void __update_group_entity_contrib(struct sched_entity *se)
 	 * of consequential size guaranteed to see n_i*w_i quickly converge to
 	 * our upper bound of 1-cpu.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * tg->runnable_avg가 1024보다 작은 경우에 한해 
+ *	se->avg.load_avg_contrib * 비율(tg->runnable_avg / 1024)
+ */
 	runnable_avg = atomic_read(&tg->runnable_avg);
 	if (runnable_avg < NICE_0_LOAD) {
 		se->avg.load_avg_contrib *= runnable_avg;
@@ -2841,6 +2929,11 @@ static inline void __update_task_entity_contrib(struct sched_entity *se)
 	u32 contrib;
 
 	/* avoid overflowing a 32-bit type w/ SCHED_LOAD_SCALE */
+
+/* IAMROOT-12:
+ * -------------
+ * avg.load_avg_contrib = se->load.weight * 러너블 비율(sum / period)
+ */
 	contrib = se->avg.runnable_avg_sum * scale_load_down(se->load.weight);
 	contrib /= (se->avg.runnable_avg_period + 1);
 	se->avg.load_avg_contrib = scale_load(contrib);
@@ -2852,12 +2945,34 @@ static long __update_entity_load_avg_contrib(struct sched_entity *se)
 	long old_contrib = se->avg.load_avg_contrib;
 
 	if (entity_is_task(se)) {
+
+/* IAMROOT-12:
+ * -------------
+ * se->avg.runnable_load_avg = 태스크의 weight * 러너블 비율
+ */
 		__update_task_entity_contrib(se);
 	} else {
+
+/* IAMROOT-12:
+ * -------------
+ * cfs_rq->tg_runnable_contrib = 1024 * 러너블 비율 
+ * tg->runnable_avg            =       (상동)
+ */
 		__update_tg_runnable_avg(&se->avg, group_cfs_rq(se));
+
+/* IAMROOT-12:
+ * -------------
+ * se->avg.load_avg_contrib = 
+ *	tg->shares * 비율1(cfs_rq->tg_load_contrib / tg->load_avg)
+ *	           * 비율2(tg->runnable_avg / 1024)
+ */
 		__update_group_entity_contrib(se);
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * se->avg.load_avg_contrib 변화분만을 반환한다.
+ */
 	return se->avg.load_avg_contrib - old_contrib;
 }
 
@@ -2889,14 +3004,29 @@ static inline void update_entity_load_avg(struct sched_entity *se,
 	else
 		now = cfs_rq_clock_task(group_cfs_rq(se));
 
+/* IAMROOT-12:
+ * -------------
+ * 1) 러너블 로드 평균 산출을 위한 기간과 러너블 로드 합계를 산출한다.
+ * se->avg.runnable_avg_period & se->avg.runnable_avg_sum
+ */
 	if (!__update_entity_runnable_avg(now, &se->avg, se->on_rq))
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * 2) se->avg.runnable_load_avg를 산출한다.
+ *    a) se->load.weight를 반영한 스케줄 엔티티의 러너블 로드 평균 산출
+ *    b) shares를 반영한 스케줄 엔티티의 러너블 로드 평균을 산출 
+ */
 	contrib_delta = __update_entity_load_avg_contrib(se);
 
 	if (!update_cfs_rq)
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * 3) se->avg.runnable_load_avg 변동분을 cfs 런큐에도 추가한다.
+ */
 	if (se->on_rq)
 		cfs_rq->runnable_load_avg += contrib_delta;
 	else
@@ -2909,19 +3039,37 @@ static inline void update_entity_load_avg(struct sched_entity *se,
  */
 static void update_cfs_rq_blocked_load(struct cfs_rq *cfs_rq, int force_update)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * ns -> ms 단위로 변환한다.
+ */
 	u64 now = cfs_rq_clock_task(cfs_rq) >> 20;
 	u64 decays;
 
+/* IAMROOT-12:
+ * -------------
+ * 마지막 decay 시각(ms)을 기록한 이후 소요된 기간(ms 단위)
+ */
 	decays = now - cfs_rq->last_decay;
 	if (!decays && !force_update)
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * cfs_rq->blocked_load_avg에서 removed_load 값만큼 감소시킨다.
+ */
 	if (atomic_long_read(&cfs_rq->removed_load)) {
 		unsigned long removed_load;
 		removed_load = atomic_long_xchg(&cfs_rq->removed_load, 0);
 		subtract_blocked_load_contrib(cfs_rq, removed_load);
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * cfs_rq->blocked_load_avg를 decay 시킨다.
+ * decay_counter에는 decay된 시간(ms)을 추가한다.
+ */
 	if (decays) {
 		cfs_rq->blocked_load_avg = decay_load(cfs_rq->blocked_load_avg,
 						      decays);
@@ -3458,6 +3606,13 @@ entity_tick(struct cfs_rq *cfs_rq, struct sched_entity *curr, int queued)
 	/*
 	 * Ensure that runnable average is periodically updated.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 스케줄 엔티티의 러너블 로드 평균을 산출한다.
+ *	1) 태스크인 경우 weight를 반영 
+ *	2) 그룹인 경우 share를 반영
+ */
 	update_entity_load_avg(curr, 1);
 	update_cfs_rq_blocked_load(cfs_rq, 1);
 	update_cfs_shares(cfs_rq);
