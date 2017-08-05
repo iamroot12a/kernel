@@ -2394,7 +2394,17 @@ static inline void account_numa_dequeue(struct rq *rq, struct task_struct *p)
 static void
 account_entity_enqueue(struct cfs_rq *cfs_rq, struct sched_entity *se)
 {
+/* IAMROOT-12:
+ * -------------
+ * cfs 런큐에 스케줄 엔티티의 로드 값을 추가하여 반영한다 
+ */
 	update_load_add(&cfs_rq->load, se->load.weight);
+
+/* IAMROOT-12:
+ * -------------
+ * 최상위 스케줄 엔티티인 경우(root 그룹의 cfs 런큐에 소속되어 있는 se)
+ * 런큐의 load 값에도 추가한다. (런큐(cpu)에 있는 total load 값)
+ */
 	if (!parent_entity(se))
 		update_load_add(&rq_of(cfs_rq)->load, se->load.weight);
 #ifdef CONFIG_SMP
@@ -2411,7 +2421,18 @@ account_entity_enqueue(struct cfs_rq *cfs_rq, struct sched_entity *se)
 static void
 account_entity_dequeue(struct cfs_rq *cfs_rq, struct sched_entity *se)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * cfs 런큐에 반영되어 있던 스케줄 엔티티의 로드 값을 감소시킨다.
+ */
 	update_load_sub(&cfs_rq->load, se->load.weight);
+
+/* IAMROOT-12:
+ * -------------
+ * 최상위 스케줄 엔티티인 경우(root 그룹의 cfs 런큐에 소속되어 있는 se)
+ * 런큐의 load 값에서도 감소시킨다. (런큐(cpu)에 있는 total load 값)
+ */
 	if (!parent_entity(se))
 		update_load_sub(&rq_of(cfs_rq)->load, se->load.weight);
 	if (entity_is_task(se)) {
@@ -2432,6 +2453,11 @@ static inline long calc_tg_weight(struct task_group *tg, struct cfs_rq *cfs_rq)
 	 * to gain a more accurate current total weight. See
 	 * update_cfs_rq_load_contribution().
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * tg_weight = tg->load_avg - cfs_rq->tg_load_contrib + cfs_rq->load.weight
+ */
 	tg_weight = atomic_long_read(&tg->load_avg);
 	tg_weight -= cfs_rq->tg_load_contrib;
 	tg_weight += cfs_rq->load.weight;
@@ -2443,6 +2469,19 @@ static long calc_cfs_shares(struct cfs_rq *cfs_rq, struct task_group *tg)
 {
 	long tg_weight, load, shares;
 
+/* IAMROOT-12:
+ * -------------
+ * shares = tg->shares * cfs_rq->load.weight / tg_weight
+ * (tg_weight = tg->load_avg - cfs_rq->tg_load_contrib + cfs_rq->load.weight)
+ *
+ * shares = shares * weight / (tg->load_avg - cfs_rq->tg_load_contrib + weight)
+ *                            ^                ^
+ *                            |                +--- 이 값이 항상 작거나 같다.
+ *                            |
+ *                      이 값이 항상 크거나 같다.
+ *
+ *          결국은 이 함수를 통해 shares 값이 같거나 작아진다. 
+ */
 	tg_weight = calc_tg_weight(tg, cfs_rq);
 	load = cfs_rq->load.weight;
 
@@ -2450,6 +2489,11 @@ static long calc_cfs_shares(struct cfs_rq *cfs_rq, struct task_group *tg)
 	if (tg_weight)
 		shares /= tg_weight;
 
+/* IAMROOT-12:
+ * -------------
+ * 산출된 shares 결과가 2보다 작아지지 않도록 제한한다.
+ * 산출된 shares 결과가 원래 값보다 커지지 않도록 제한한다.
+ */
 	if (shares < MIN_SHARES)
 		shares = MIN_SHARES;
 	if (shares > tg->shares)
@@ -2466,6 +2510,12 @@ static inline long calc_cfs_shares(struct cfs_rq *cfs_rq, struct task_group *tg)
 static void reweight_entity(struct cfs_rq *cfs_rq, struct sched_entity *se,
 			    unsigned long weight)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * cfs 런큐의 로드 weight - se의 기존 weight + se의 새 weight 
+ * (최상위 se인 경우 런큐의 로드 weight - se의 기존 weight + se의 새 weight)
+ */
 	if (se->on_rq) {
 		/* commit outstanding execution time */
 		if (cfs_rq->curr == se)
@@ -2473,6 +2523,10 @@ static void reweight_entity(struct cfs_rq *cfs_rq, struct sched_entity *se,
 		account_entity_dequeue(cfs_rq, se);
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 스케줄 엔티티의 로드 값을 weight(비율 반영된 shares) 값으로 설정한다.
+ */
 	update_load_set(&se->load, weight);
 
 	if (se->on_rq)
@@ -2487,6 +2541,10 @@ static void update_cfs_shares(struct cfs_rq *cfs_rq)
 	struct sched_entity *se;
 	long shares;
 
+/* IAMROOT-12:
+ * -------------
+ * tg->shares * 비율 -> se부터 cfs_rq 및 rq 까지 weight를 재산출한다.
+ */
 	tg = cfs_rq->tg;
 	se = tg->se[cpu_of(rq_of(cfs_rq))];
 	if (!se || throttled_hierarchy(cfs_rq))
@@ -2495,6 +2553,11 @@ static void update_cfs_shares(struct cfs_rq *cfs_rq)
 	if (likely(se->load.weight == tg->shares))
 		return;
 #endif
+
+/* IAMROOT-12:
+ * -------------
+ * shares = shares * cfs->load_weight / ((tg - cfs) + cfs->load.weight)
+ */
 	shares = calc_cfs_shares(cfs_rq, tg);
 
 	reweight_entity(cfs_rq_of(se), se, shares);
@@ -2834,7 +2897,9 @@ static inline void __update_tg_runnable_avg(struct sched_avg *sa,
 	/* The fraction of a cpu used by this cfs_rq */
 
 /* IAMROOT-12:
- * -------------
+ * ------------- 
+ * 1024 weight 기준으로 se에 산출된 러너블 비율을 cfs_rq 및 tg에 적용한다.
+ *
  * contrib = 1024 * 러너블 비율(sum / period) - tg_runnable_contrib 
  *    169  =                920               -     751 
  *
@@ -2955,7 +3020,7 @@ static long __update_entity_load_avg_contrib(struct sched_entity *se)
 
 /* IAMROOT-12:
  * -------------
- * cfs_rq->tg_runnable_contrib = 1024 * 러너블 비율 
+ * cfs_rq->tg_runnable_contrib = (1024 * 러너블 비율) 변동분
  * tg->runnable_avg            =       (상동)
  */
 		__update_tg_runnable_avg(&se->avg, group_cfs_rq(se));
@@ -2994,6 +3059,15 @@ static inline void update_entity_load_avg(struct sched_entity *se,
 	struct cfs_rq *cfs_rq = cfs_rq_of(se);
 	long contrib_delta;
 	u64 now;
+
+/* IAMROOT-12:
+ * -------------
+ * 이 함수를 호출하는 함수들
+ *	1) entity_tick()
+ *	2) enqueue_entity_load_avg()
+ *	3) dequeue_entity_load_avg()
+ *	4) put_prev_entity()
+ */
 
 	/*
 	 * For a group entity we need to use their owned cfs_rq_clock_task() in
@@ -3077,6 +3151,13 @@ static void update_cfs_rq_blocked_load(struct cfs_rq *cfs_rq, int force_update)
 		cfs_rq->last_decay = now;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * cfs_rq->tg_load_contrib = cfs런큐의 러너블 로드 평균 + 블럭드 로드 평균 
+ * (변동분이 기존 값의 1/8을 초과할때에 갱신한다) 
+ *
+ * tg->load_avg에도 변동분 추가
+ */
 	__update_cfs_rq_tg_load_contrib(cfs_rq, force_update);
 }
 
@@ -3140,7 +3221,16 @@ static inline void dequeue_entity_load_avg(struct cfs_rq *cfs_rq,
 	/* we force update consideration on load-balancer moves */
 	update_cfs_rq_blocked_load(cfs_rq, !sleep);
 
+/* IAMROOT-12:
+ * -------------
+ * cfs 런큐의 러너블 로드에서 se 로드 평균 기여를 감소시킨다.
+ */
 	cfs_rq->runnable_load_avg -= se->avg.load_avg_contrib;
+
+/* IAMROOT-12:
+ * -------------
+ * 슬립 목적으로 진입한 경우 blocked_load_avg에 그 감소 값을 추가한다.
+ */
 	if (sleep) {
 		cfs_rq->blocked_load_avg += se->avg.load_avg_contrib;
 		se->avg.decay_count = atomic64_read(&cfs_rq->decay_counter);
@@ -4533,6 +4623,11 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 {
 	struct cfs_rq *cfs_rq;
 	struct sched_entity *se = &p->se;
+
+/* IAMROOT-12:
+ * -------------
+ * sleep 목적으로 진입한 dequeue_task()
+ */
 	int task_sleep = flags & DEQUEUE_SLEEP;
 
 	for_each_sched_entity(se) {
