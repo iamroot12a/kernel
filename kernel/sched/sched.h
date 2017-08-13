@@ -349,6 +349,12 @@ struct cfs_bandwidth { };
  * -------------
  * last_decay: 
  *      마지막 decay 계산한 시각(ms)
+ * load.weight:
+ *      - 엔티티들의 weight 총합
+ * nr_running:
+ *      - cfs 런큐에 엔큐된 엔티티 수 (curr + rb 트리 대기)
+ * h_nr_running:
+ *      - cfs 런큐이하의 모든 태스크 수
  */
 
 /* CFS-related fields in a runqueue */
