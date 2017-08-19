@@ -214,6 +214,13 @@ struct rt_rq;
 
 extern struct list_head task_groups;
 
+
+/* IAMROOT-12:
+ * -------------
+ * period 
+ *      bandwidth 주기(나노초)
+ */
+
 struct cfs_bandwidth {
 #ifdef CONFIG_CFS_BANDWIDTH
 	raw_spinlock_t lock;
@@ -303,6 +310,11 @@ extern int walk_tg_tree_from(struct task_group *from,
  */
 static inline int walk_tg_tree(tg_visitor down, tg_visitor up, void *data)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 루트 태스크 그룹부터 tree를 순환하여 down 및 up 함수를 호출한다.
+ */
 	return walk_tg_tree_from(&root_task_group, down, up, data);
 }
 
@@ -579,6 +591,11 @@ struct rq {
 	unsigned int nr_preferred_running;
 #endif
 	#define CPU_LOAD_IDX_MAX 5
+
+/* IAMROOT-12:
+ * -------------
+ * cpu_load[]는 1, 2, 4, 8, 16 틱 기간에 대한 로드 평균 값을 담는다.
+ */
 	unsigned long cpu_load[CPU_LOAD_IDX_MAX];
 	unsigned long last_load_update_tick;
 #ifdef CONFIG_NO_HZ_COMMON
@@ -640,6 +657,11 @@ struct rq {
 
 	struct list_head cfs_tasks;
 
+/* IAMROOT-12:
+ * -------------
+ * rt_avg는 irq 시간 + rt 태스크 사용 시간 + dl 태스크 사용 시간에 대한 
+ * 로드 평균이고 디폴트로 0.5초마다 절반씩 decay된다.
+ */
 	u64 rt_avg;
 	u64 age_stamp;
 	u64 idle_stamp;
@@ -1366,6 +1388,12 @@ extern const_debug unsigned int sysctl_sched_migration_cost;
 
 static inline u64 sched_avg_period(void)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 디폴트로 스케줄 기간 값의 1초의 반절을 평균으로 반환한다.
+ * (ns로 반환하므로 500,000,000 (ns)을 반환한다.)
+ */
 	return (u64)sysctl_sched_time_avg * NSEC_PER_MSEC / 2;
 }
 

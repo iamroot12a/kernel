@@ -31,6 +31,10 @@ static __always_inline void preempt_count_set(int pc)
 	task_thread_info(p)->preempt_count = PREEMPT_ENABLED; \
 } while (0)
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 x86에서만 사용한다.
+ */
 static __always_inline void set_preempt_need_resched(void)
 {
 }

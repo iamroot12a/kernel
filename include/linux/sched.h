@@ -2888,6 +2888,11 @@ static inline int test_tsk_thread_flag(struct task_struct *tsk, int flag)
 
 static inline void set_tsk_need_resched(struct task_struct *tsk)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 태스크에 리스케줄 요청 플래그를 설정한다.
+ */
 	set_tsk_thread_flag(tsk,TIF_NEED_RESCHED);
 }
 
@@ -2898,6 +2903,11 @@ static inline void clear_tsk_need_resched(struct task_struct *tsk)
 
 static inline int test_tsk_need_resched(struct task_struct *tsk)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 태스크에 리스케줄 요청 플래그가 이미 설정되어 있는지 여부를 반환한다.
+ */
 	return unlikely(test_tsk_thread_flag(tsk,TIF_NEED_RESCHED));
 }
 

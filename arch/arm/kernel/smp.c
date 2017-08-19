@@ -63,6 +63,10 @@ struct secondary_data secondary_data;
  */
 volatile int pen_release = -1;
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 arm 커널 8개의 IPI가 사용되고 있다.
+ */
 enum ipi_msg_type {
 	IPI_WAKEUP,
 	IPI_TIMER,
@@ -449,10 +453,20 @@ void __init smp_prepare_cpus(unsigned int max_cpus)
 	}
 }
 
+/* IAMROOT-12:
+ * -------------
+ * 전역 함수 포인터(IPI를 호출하기 위한 함수)
+ *	예) gic: gic_raise_softirq()
+ */
 static void (*__smp_cross_call)(const struct cpumask *, unsigned int);
 
 void __init set_smp_cross_call(void (*fn)(const struct cpumask *, unsigned int))
 {
+
+/* IAMROOT-12:
+ * -------------
+ * null인 경우 설정한다.
+ */
 	if (!__smp_cross_call)
 		__smp_cross_call = fn;
 }
@@ -669,6 +683,11 @@ void handle_IPI(int ipinr, struct pt_regs *regs)
 
 void smp_send_reschedule(int cpu)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 다른 cpu로 리스케줄 요청을 한다.
+ */
 	smp_cross_call(cpumask_of(cpu), IPI_RESCHEDULE);
 }
 

@@ -95,6 +95,11 @@ static struct {
 
 void get_online_cpus(void)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * cpu_hotplug의 참조 카운터를 1 증가시킨다.
+ */
 	might_sleep();
 	if (cpu_hotplug.active_writer == current)
 		return;
@@ -125,6 +130,10 @@ void put_online_cpus(void)
 	if (cpu_hotplug.active_writer == current)
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * cpu_hotplug의 참조 카운터를 1 감소시킨다.
+ */
 	refcount = atomic_dec_return(&cpu_hotplug.refcount);
 	if (WARN_ON(refcount < 0)) /* try to fix things up */
 		atomic_inc(&cpu_hotplug.refcount);

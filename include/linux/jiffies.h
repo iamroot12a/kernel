@@ -57,6 +57,11 @@
 extern int register_refined_jiffies(long clock_tick_rate);
 
 /* TICK_NSEC is the time between ticks in nsec assuming SHIFTED_HZ */
+
+/* IAMROOT-12:
+ * -------------
+ * 1틱을 나노세컨드 단위로 반올림하여 변환한 값
+ */
 #define TICK_NSEC ((NSEC_PER_SEC+HZ/2)/HZ)
 
 /* TICK_USEC is the time between ticks in usec assuming fake USER_HZ */

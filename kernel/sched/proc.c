@@ -437,7 +437,6 @@ void calc_global_load(unsigned long ticks)
 	active = atomic_long_read(&calc_load_tasks);
 	active = active > 0 ? active * FIXED_1 : 0;
 
-
 /* IAMROOT-12:
  * -------------
  * 1분, 5분, 15분에 대한 글로벌 로드 값을 산출한다.
@@ -466,9 +465,17 @@ static void calc_load_account_active(struct rq *this_rq)
 {
 	long delta;
 
+/* IAMROOT-12:
+ * -------------
+ * 이미 업데이트된 경우 함수를 빠져나간다. (5초마다)
+ */
 	if (time_before(jiffies, this_rq->calc_load_update))
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * 태스크 변동 분 delta(음수 가능)
+ */
 	delta  = calc_load_fold_active(this_rq);
 	if (delta)
 		atomic_long_add(delta, &calc_load_tasks);
@@ -510,6 +517,15 @@ static void calc_load_account_active(struct rq *this_rq)
 #define DEGRADE_SHIFT		7
 static const unsigned char
 		degrade_zero_ticks[CPU_LOAD_IDX_MAX] = {0, 8, 32, 64, 128};
+
+/* IAMROOT-12:
+ * -------------
+ * 실제 CPU_LOAD_IDX_MAX에 해당하는 배열에서 [2][]~[4][]의 배열 값만 사용한다.
+ *
+ * [2][0] = 3/4 = 96/128 
+ * [2][1] = 3/4 * 3/4 = (3/4)^2 = 72/128 
+ * [2][2] = 3/4 * 3/4 * 3/4 * 3/4 = (3/4)^4 = 40/128
+ */
 static const unsigned char
 		degrade_factor[CPU_LOAD_IDX_MAX][DEGRADE_SHIFT + 1] = {
 					{0, 0, 0, 0, 0, 0, 0, 0},
@@ -528,15 +544,40 @@ decay_load_missed(unsigned long load, unsigned long missed_updates, int idx)
 {
 	int j = 0;
 
+/* IAMROOT-12:
+ * -------------
+ * missed_updates 값이 0인 경우 그냥 load 값을 반환한다.
+ * (scheduler_tick()을 통해 들어온 경우 항상 0으로 진입한다)
+ */
 	if (!missed_updates)
 		return load;
 
+/* IAMROOT-12:
+ * -------------
+ * idx는 1 ~ 4까지 호출된다. (0은 사용하지 않음)
+ *
+ * idx가 1인 경우 cpu_load[1] 값을 decay 하는데 8 tick을 decay 하면 
+ * 거의 0에 가까운 값이 된다. 이러한 경우 decay load 값은 그냥 0으로 간주한다.
+ */
 	if (missed_updates >= degrade_zero_ticks[idx])
 		return 0;
 
+/* IAMROOT-12:
+ * -------------
+ * idx가 1인 경우 그냥 로드 값은 decay할 틱 만큼 1/2씩 줄인것과 동일하다.
+ */
 	if (idx == 1)
 		return load >> missed_updates;
 
+/* IAMROOT-12:
+ * -------------
+ * idx가 2~4인 경우 아래 루프를 사용한다.
+ *
+ * missed_updates 틱 수 만큼 루프를 돌며 decay하는 경우 시간이 오래 걸리므로 
+ * ilog2(n) 수 만큼 루프를 도는 방식으로 빠르게 산출한다.
+ *
+ * missed_updates가 절반씩 줄어들면서 홀 수 일때에만 degrade_factor를 사용한다.
+ */
 	while (missed_updates) {
 		if (missed_updates % 2)
 			load = (load * degrade_factor[idx][j]) >> DEGRADE_SHIFT;
@@ -552,20 +593,46 @@ decay_load_missed(unsigned long load, unsigned long missed_updates, int idx)
  * scheduler tick (TICK_NSEC). With tickless idle this will not be called
  * every tick. We fix it up based on jiffies.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * pending_updates에는 처리할 지연 tick이 담긴다. (1 ~ )
+ */
+
 static void __update_cpu_load(struct rq *this_rq, unsigned long this_load,
 			      unsigned long pending_updates)
 {
 	int i, scale;
 
+/* IAMROOT-12:
+ * -------------
+ * 로드 계산에 대한 카운터를 1 증가시킨다.
+ */
 	this_rq->nr_load_updates++;
 
 	/* Update our load: */
+
+/* IAMROOT-12:
+ * -------------
+ * cpu_load[0]의 경우 매 틱마다 즉시 new load가 100% 반영된다.
+ */
 	this_rq->cpu_load[0] = this_load; /* Fasttrack for idx 0 */
+
+/* IAMROOT-12:
+ * -------------
+ * cpu_load[1] ~ cpu_load[4]까지는 비율에 따라 old와 new load가 반영된다.
+ */
+
 	for (i = 1, scale = 2; i < CPU_LOAD_IDX_MAX; i++, scale += scale) {
 		unsigned long old_load, new_load;
 
 		/* scale is effectively 1 << i now, and >> i divides by scale */
 
+/* IAMROOT-12:
+ * -------------
+ * decay_load_missed(1024, 6, 2)
+ * = 1024 * (3/4)^2 * (3/4)^4 = 1024 * 72/128 * 40/128 = 180
+ */
 		old_load = this_rq->cpu_load[i];
 		old_load = decay_load_missed(old_load, pending_updates - 1, i);
 		new_load = this_load;
@@ -574,12 +641,32 @@ static void __update_cpu_load(struct rq *this_rq, unsigned long this_load,
 		 * prevents us from getting stuck on 9 if the load is 10, for
 		 * example.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * new 로드가 old 로드보다 더 큰(그래프로 상승) 반올림 처리한다.
+ */
 		if (new_load > old_load)
 			new_load += scale - 1;
 
+/* IAMROOT-12:
+ * -------------
+ * i=1, scale=2: 2틱 로드 평균
+ *	(old 로드 * 1/2) + (new 로드 * 1/2)
+ * i=2, scale=4: 4틱 로드 평균
+ *	(old 로드 * 3/4) + (new 로드 * 1/4)
+ * i=3, scale=8: 8틱 로드 평균
+ *	(old 로드 * 7/8) + (new 로드 * 1/8)
+ * i=4, scale=16: 16틱 로드 평균
+ *	(old 로드 * 15/16) + (new 로드 * 1/16)
+ */
 		this_rq->cpu_load[i] = (old_load * (scale - 1) + new_load) >> i;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * rt_avg(rt 로드 평균)을 디폴트 0.5초마다 decay 한다.
+ */
 	sched_avg_update(this_rq);
 }
 
@@ -662,12 +749,26 @@ void update_cpu_load_nohz(void)
  */
 void update_cpu_load_active(struct rq *this_rq)
 {
+/* IAMROOT-12:
+ * -------------
+ * 현재 cpu의 로드 값을 알아온다.
+ *	- 최상위 cfs->runnable_load_avg (러너블 로드 평균)을 가져온다.
+ */
 	unsigned long load = get_rq_runnable_load(this_rq);
 	/*
 	 * See the mess around update_idle_cpu_load() / update_cpu_load_nohz().
 	 */
 	this_rq->last_load_update_tick = jiffies;
+
+/* IAMROOT-12:
+ * -------------
+ * 런큐의 cpu_load[]를 산출하고 rt_avg(rt 로드 평균)를 decay 한다.
+ */
 	__update_cpu_load(this_rq, load, 1);
 
+/* IAMROOT-12:
+ * -------------
+ * active 태스크 수를 산출한다.
+ */
 	calc_load_account_active(this_rq);
 }

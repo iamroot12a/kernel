@@ -3882,6 +3882,11 @@ void cfs_bandwidth_usage_dec(void) {}
  * default period for cfs group bandwidth.
  * default: 0.1s, units: nanoseconds
  */
+
+/* IAMROOT-12:
+ * -------------
+ * 디폴트 0.1초에 해당하는 나노초
+ */
 static inline u64 default_cfs_period(void)
 {
 	return 100000000ULL;
@@ -3907,7 +3912,17 @@ void __refill_cfs_bandwidth_runtime(struct cfs_bandwidth *cfs_b)
 		return;
 
 	now = sched_clock_cpu(smp_processor_id());
+
+/* IAMROOT-12:
+ * -------------
+ * 글로벌 런타임에 quota를 채워준다.(refill)
+ */
 	cfs_b->runtime = cfs_b->quota;
+
+/* IAMROOT-12:
+ * -------------
+ * period 타이머에 사용할 시각을 대입한다. (매 period 마다 expire)
+ */
 	cfs_b->runtime_expires = now + ktime_to_ns(cfs_b->period);
 }
 
@@ -3984,9 +3999,18 @@ static void expire_cfs_rq_runtime(struct cfs_rq *cfs_rq)
 	struct cfs_bandwidth *cfs_b = tg_cfs_bandwidth(cfs_rq->tg);
 
 	/* if the deadline is ahead of our clock, nothing to do */
+
+/* IAMROOT-12:
+ * -------------
+ * 만료 시각이 지난 경우 함수를 빠져나간다.
+ */
 	if (likely((s64)(rq_clock(rq_of(cfs_rq)) - cfs_rq->runtime_expires) < 0))
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * 로컬풀의 런타임 잔량이 없어도 함수를 빠져나간다.
+ */
 	if (cfs_rq->runtime_remaining < 0)
 		return;
 
@@ -4001,6 +4025,13 @@ static void expire_cfs_rq_runtime(struct cfs_rq *cfs_rq)
 	 * exact equality, so a partial write will still work.
 	 */
 
+/* IAMROOT-12:
+ * -------------
+ * 로컬풀의 런타임 만료 시각이 글로벌 풀의 런타임 만료 시각과 다른 경우 
+ * 1틱 만큼의 나노초를 연장한다. 
+ *
+ * 그렇지 않고 동일한 경우 런타임 잔량을 0으로 변경한다.
+ */
 	if (cfs_rq->runtime_expires != cfs_b->runtime_expires) {
 		/* extend local deadline, drift is bounded above by 2 ticks */
 		cfs_rq->runtime_expires += TICK_NSEC;
@@ -4013,9 +4044,26 @@ static void expire_cfs_rq_runtime(struct cfs_rq *cfs_rq)
 static void __account_cfs_rq_runtime(struct cfs_rq *cfs_rq, u64 delta_exec)
 {
 	/* dock delta_exec before expiring quota (as it could span periods) */
+
+/* IAMROOT-12:
+ * -------------
+ * 로컬 풀의 런타임 잔량을 delta_exec(task time) 만큼 소모시킨다.
+ */
 	cfs_rq->runtime_remaining -= delta_exec;
+
+/* IAMROOT-12:
+ * -------------
+ * 로컬풀의 런타임 만료 시각이 글로벌 풀의 런타임 만료 시각과 다른 경우 
+ * 1틱 만큼의 나노초를 연장한다. 
+ *
+ * 그렇지 않고 동일한 경우 런타임 잔량을 0으로 변경한다.
+ */
 	expire_cfs_rq_runtime(cfs_rq);
 
+/* IAMROOT-12:
+ * -------------
+ * 잔량이 아직 남아 있으면 함수를 빠져나간다.
+ */
 	if (likely(cfs_rq->runtime_remaining > 0))
 		return;
 
@@ -4023,6 +4071,11 @@ static void __account_cfs_rq_runtime(struct cfs_rq *cfs_rq, u64 delta_exec)
 	 * if we're unable to extend our runtime we resched so that the active
 	 * hierarchy can be throttled
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 잔량이 음수인 경우 여기에 진입한다.
+ */
 	if (!assign_cfs_rq_runtime(cfs_rq) && likely(cfs_rq->curr))
 		resched_curr(rq_of(cfs_rq));
 }
@@ -4030,9 +4083,19 @@ static void __account_cfs_rq_runtime(struct cfs_rq *cfs_rq, u64 delta_exec)
 static __always_inline
 void account_cfs_rq_runtime(struct cfs_rq *cfs_rq, u64 delta_exec)
 {
+/* IAMROOT-12:
+ * -------------
+ * cfs bandwidth가 가동중이지 않으면 함수를 빠져나간다.
+ */
 	if (!cfs_bandwidth_used() || !cfs_rq->runtime_enabled)
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * 로컬 런타임 만료 시각이 글로벌 런타임 만료 시각과 동일하면 런타임 잔량을 
+ * 0으로 변경하여 사용하지 못하게 한다. 그렇지 않은 경우 로컬 풀의 런타임 
+ * 만료 시각을 1틱 만큼의 나노초를 더해 연장한다.
+ */
 	__account_cfs_rq_runtime(cfs_rq, delta_exec);
 }
 
@@ -4498,6 +4561,11 @@ void init_cfs_bandwidth(struct cfs_bandwidth *cfs_b)
 {
 	raw_spin_lock_init(&cfs_b->lock);
 	cfs_b->runtime = 0;
+
+/* IAMROOT-12:
+ * -------------
+ * ~0ULL: 설정안됨
+ */
 	cfs_b->quota = RUNTIME_INF;
 	cfs_b->period = ns_to_ktime(default_cfs_period());
 
@@ -4523,6 +4591,14 @@ void __start_cfs_bandwidth(struct cfs_bandwidth *cfs_b, bool force)
 	 * (timer_active==0 becomes visible before the hrtimer call-back
 	 * terminates).  In either case we ensure that it's re-programmed
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * period 타이머가 동작 중인 경우를 cancel을 시도한다. 만일 cancel이 실패하는 
+ * 경우 force=0이고 여전히 timer가 active 상태인 경우 함수를 그냥 빠져나온다.
+ *
+ * force=1인 경우 cancel 실패되는 경우 반복하여 cancel 될 때까지 수행한다.
+ */
 	while (unlikely(hrtimer_active(&cfs_b->period_timer)) &&
 	       hrtimer_try_to_cancel(&cfs_b->period_timer) < 0) {
 		/* bounce the lock to allow do_sched_cfs_period_timer to run */
@@ -4534,6 +4610,10 @@ void __start_cfs_bandwidth(struct cfs_bandwidth *cfs_b, bool force)
 			return;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * period 타이머를 동작시킨다.
+ */
 	cfs_b->timer_active = 1;
 	start_bandwidth_timer(&cfs_b->period_timer, cfs_b->period);
 }
@@ -8318,6 +8398,11 @@ static void task_tick_fair(struct rq *rq, struct task_struct *curr, int queued)
 	if (numabalancing_enabled)
 		task_tick_numa(rq, curr);
 
+/* IAMROOT-12:
+ * -------------
+ * __update_entity_runnable_avg() 함수와 __update_tg_runnable_avg()함수를 
+ * 호출하여 최종 cfs 런큐의 러너블 로드를 산출한다. 
+ */
 	update_rq_runnable_avg(rq, 1);
 }
 
@@ -8572,6 +8657,10 @@ int alloc_fair_sched_group(struct task_group *tg, struct task_group *parent)
 
 	tg->shares = NICE_0_LOAD;
 
+/* IAMROOT-12:
+ * -------------
+ * tg에 있는 cfs bandwidth 구조체를 초기화한다.
+ */
 	init_cfs_bandwidth(tg_cfs_bandwidth(tg));
 
 	for_each_possible_cpu(i) {

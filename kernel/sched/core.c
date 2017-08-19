@@ -332,6 +332,11 @@ const_debug unsigned int sysctl_sched_nr_migrate = 32;
  *
  * default: 1s
  */
+
+/* IAMROOT-12:
+ * -------------
+ * "/proc/sys/kernel/sched_time_avg_ms" 값은 디폴트로 1000 (=1초)
+ */
 const_debug unsigned int sysctl_sched_time_avg = MSEC_PER_SEC;
 
 
@@ -601,17 +606,30 @@ void resched_curr(struct rq *rq)
 
 	lockdep_assert_held(&rq->lock);
 
+/* IAMROOT-12:
+ * -------------
+ * 태스크에 리스케줄 요청 플래그가 이미 설정되어 있는 경우 함수를 빠져나간다.
+ */
 	if (test_tsk_need_resched(curr))
 		return;
 
 	cpu = cpu_of(rq);
 
+/* IAMROOT-12:
+ * -------------
+ * 런큐의 cpu가 현재 cpu인 경우 태스크에 리스케줄 요청 플래그를 설정한다.
+ */
 	if (cpu == smp_processor_id()) {
 		set_tsk_need_resched(curr);
 		set_preempt_need_resched();
 		return;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 만일 다른 cpu에서 동작하는 태스크를 리스케줄 요청하려면 IPI를 사용하여 
+ * 리스케줄 요청한다.
+ */
 	if (set_nr_and_not_polling(curr))
 		smp_send_reschedule(cpu);
 	else
@@ -774,8 +792,18 @@ bool sched_can_stop_tick(void)
 
 void sched_avg_update(struct rq *rq)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 디폴트로 500,000,000(ns)를 가져온다.
+ */
 	s64 period = sched_avg_period();
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 시각 - age_stamp 기간이 period(0.5초)를 초과한 경우 
+ * 초과한 횟 수만큼 rt_avg를 절반으로 줄인다.(절반씩 decay)
+ */
 	while ((s64)(rq_clock(rq) - rq->age_stamp) > period) {
 		/*
 		 * Inline assembly required to prevent the compiler
@@ -805,6 +833,33 @@ int walk_tg_tree_from(struct task_group *from,
 	int ret;
 
 	parent = from;
+
+
+/* IAMROOT-12:
+ * -------------
+ * from 부터 계층 구조를 사용하여 트리 순환하면서 down 및 up 함수를 
+ * 호출한다. (child는 좌측 부터 우측으로 이동하고 child가 발견되면
+ * 밑으로 내려간다)
+ *
+ *       root 
+ *     |      |
+ *     A      B
+ *   |   |    | 
+ *   C   D    E
+ *
+ *  1. down(root)
+ *  2. down(A)
+ *  3. down(C)
+ *  4. up(C)
+ *  5. down(D)
+ *  6. up(D)
+ *  7. up(A)
+ *  8. down(B)
+ *  9. down(E)
+ * 10. up(E)
+ * 11. up(B)
+ * 12. up(root)
+ */
 
 down:
 	ret = (*down)(parent, data);
@@ -1623,6 +1678,11 @@ void scheduler_ipi(void)
 	 * TIF_NEED_RESCHED remotely (for the first time) will also send
 	 * this IPI.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 아래는 x86 아키텍처를 위해 사용된다.
+ */
 	preempt_fold_need_resched();
 
 	if (llist_empty(&this_rq()->wake_list) && !got_nohz_idle_kick())
@@ -2046,6 +2106,11 @@ int sched_fork(unsigned long clone_flags, struct task_struct *p)
 
 unsigned long to_ratio(u64 period, u64 runtime)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * runtime(quota)가 설정되지 않은 경우 1.0에 해당하는 정수 값 1048576이 반환된다.
+ */
 	if (runtime == RUNTIME_INF)
 		return 1ULL << 20;
 
@@ -2054,9 +2119,21 @@ unsigned long to_ratio(u64 period, u64 runtime)
 	 * the calling paths, and returning zero seems
 	 * safe for them anyway.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 분모(period)가 0인 경우 0을 반환한다.
+ */
 	if (period == 0)
 		return 0;
 
+/* IAMROOT-12:
+ * -------------
+ * runtime(quota) / period를 정수화(1M 단위)하여 반환한다.
+ *
+ * 예) quota=5ms, period=20ms
+ *     -> 256K (=실수 0.25)
+ */
 	return div64_u64(runtime << 20, period);
 }
 
@@ -2585,7 +2662,19 @@ void scheduler_tick(void)
  * rq->clock & rq->clock_task를 갱신한다.
  */
 	update_rq_clock(rq);
+
+/* IAMROOT-12:
+ * -------------
+ * 현재 태스크가 사용하는 스케줄러의 틱 루틴을 호출한다.
+ *	cfs 태스크의 경우) task_tick_fair()
+ */
+
 	curr->sched_class->task_tick(rq, curr, 0);
+
+/* IAMROOT-12:
+ * -------------
+ * rq->cpu_load[]들을 산출한다.
+ */
 	update_cpu_load_active(rq);
 	raw_spin_unlock(&rq->lock);
 
@@ -8249,6 +8338,10 @@ static int tg_set_cfs_bandwidth(struct task_group *tg, u64 period, u64 quota)
 	int i, ret = 0, runtime_enabled, runtime_was_enabled;
 	struct cfs_bandwidth *cfs_b = &tg->cfs_bandwidth;
 
+/* IAMROOT-12:
+ * -------------
+ * 루트 태스크 그룹에는 bandwidth 설정을 할 수 없다.
+ */
 	if (tg == &root_task_group)
 		return -EINVAL;
 
@@ -8257,6 +8350,11 @@ static int tg_set_cfs_bandwidth(struct task_group *tg, u64 period, u64 quota)
 	 * to prevent reaching a state of large arrears when throttled via
 	 * entity_tick() resulting in prolonged exit starvation.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 1ms <= quota 및 period 
+ */
 	if (quota < min_cfs_quota_period || period < min_cfs_quota_period)
 		return -EINVAL;
 
@@ -8265,6 +8363,11 @@ static int tg_set_cfs_bandwidth(struct task_group *tg, u64 period, u64 quota)
 	 * periods.  This also allows us to normalize in computing quota
 	 * feasibility.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * period <= 1초
+ */
 	if (period > max_cfs_quota_period)
 		return -EINVAL;
 
@@ -8274,26 +8377,49 @@ static int tg_set_cfs_bandwidth(struct task_group *tg, u64 period, u64 quota)
 	 */
 	get_online_cpus();
 	mutex_lock(&cfs_constraints_mutex);
+
+/* IAMROOT-12:
+ * -------------
+ * normalize(quota/period 정수 비율) bandwidth를 설정한다.
+ */
 	ret = __cfs_schedulable(tg, period, quota);
 	if (ret)
 		goto out_unlock;
 
+/* IAMROOT-12:
+ * -------------
+ * bandwidth가 가동된 상태여부
+ */
 	runtime_enabled = quota != RUNTIME_INF;
 	runtime_was_enabled = cfs_b->quota != RUNTIME_INF;
 	/*
 	 * If we need to toggle cfs_bandwidth_used, off->on must occur
 	 * before making related changes, and on->off must occur afterwards
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 설정 요청으로 인해 새롭게 bandwidth가 시작하는 경우
+ */
 	if (runtime_enabled && !runtime_was_enabled)
 		cfs_bandwidth_usage_inc();
 	raw_spin_lock_irq(&cfs_b->lock);
 	cfs_b->period = ns_to_ktime(period);
 	cfs_b->quota = quota;
 
+/* IAMROOT-12:
+ * -------------
+ * 글로벌 풀에 quota 만큼 런타임을 재보충한다.
+ */
 	__refill_cfs_bandwidth_runtime(cfs_b);
 	/* restart the period timer (if active) to handle new period expiry */
 	if (runtime_enabled && cfs_b->timer_active) {
 		/* force a reprogram */
+
+/* IAMROOT-12:
+ * -------------
+ * 기존 period 타이머가 동작하는 경우 cancel 시키고 다시 재가동한다.
+ */
 		__start_cfs_bandwidth(cfs_b, true);
 	}
 	raw_spin_unlock_irq(&cfs_b->lock);
@@ -8303,13 +8429,29 @@ static int tg_set_cfs_bandwidth(struct task_group *tg, u64 period, u64 quota)
 		struct rq *rq = cfs_rq->rq;
 
 		raw_spin_lock_irq(&rq->lock);
+
+/* IAMROOT-12:
+ * -------------
+ * 로컬 풀인 cfs 런큐에도 bandwidth 가동 여부를 설정한다.
+ * 런타임 잔량에는 0으로 초기화한다.
+ */
 		cfs_rq->runtime_enabled = runtime_enabled;
 		cfs_rq->runtime_remaining = 0;
 
+/* IAMROOT-12:
+ * -------------
+ * cfs 런큐가 스로틀 중인 경우 언스로틀 상태로 바꾼다.
+ */
 		if (cfs_rq->throttled)
 			unthrottle_cfs_rq(cfs_rq);
 		raw_spin_unlock_irq(&rq->lock);
 	}
+
+/* IAMROOT-12:
+ * -------------
+ * bandwidth가 동작하다가 quota에 -1을 대입하여 bandwidth를 off 시킨 경우 
+ * (statickey 값만 변경한다)
+ */
 	if (runtime_was_enabled && !runtime_enabled)
 		cfs_bandwidth_usage_dec();
 out_unlock:
@@ -8329,6 +8471,10 @@ int tg_set_cfs_quota(struct task_group *tg, long cfs_quota_us)
 	else
 		quota = (u64)cfs_quota_us * NSEC_PER_USEC;
 
+/* IAMROOT-12:
+ * -------------
+ * 해당 태스크 그룹에 period와 quota를 대입하여 cfs bandwidth를 설정한다.
+ */
 	return tg_set_cfs_bandwidth(tg, period, quota);
 }
 
@@ -8371,6 +8517,10 @@ static s64 cpu_cfs_quota_read_s64(struct cgroup_subsys_state *css,
 	return tg_get_cfs_quota(css_tg(css));
 }
 
+/* IAMROOT-12:
+ * -------------
+ * 설정 예: "echo 20000 > /sys/fs/cgroup/cpu/AAA/cpu.cfs_quota_us"
+ */
 static int cpu_cfs_quota_write_s64(struct cgroup_subsys_state *css,
 				   struct cftype *cftype, s64 cfs_quota_us)
 {
@@ -8403,6 +8553,17 @@ static u64 normalize_cfs_quota(struct task_group *tg,
 {
 	u64 quota, period;
 
+
+/* IAMROOT-12:
+ * -------------
+ * 인수로 제공된 tg와 data에서 가리키는 tg가 같은 경우 data를 사용하고,
+ * 그렇지않은 경우 tg의 값을 사용해서 tg_ratio()를 호출하여
+ * quota / period를 1M 정확도로 정수화 시켜 반환한다.
+ *
+ * 예) quota=5ms, period=20ms
+ *     -> 256K (=실수 0.25)
+ */
+
 	if (tg == d->tg) {
 		period = d->period;
 		quota = d->quota;
@@ -8427,6 +8588,19 @@ static int tg_cfs_schedulable_down(struct task_group *tg, void *data)
 	if (!tg->parent) {
 		quota = RUNTIME_INF;
 	} else {
+
+/* IAMROOT-12:
+ * -------------
+ * 순회 tg->cfs->b->hierarchical_quota = quota / period 정수화 비율(1M 정확도)
+ *
+ * 루트부터 순회하는 tg의 quota/period 비율을 정수화시킨다.(루트 제외)
+ * 단 tg와 d->tg(사용자가 지정한)가 같은 경우는 새 설정 값 d->tg의 비율을
+ * 정수화시킨다.
+ *
+ * quota가 설정되지 않은 경우 부모 quota 정수 비율을 사용한다.
+ *
+ * 각 child tg의 비율은 부모 tg의 비율을 초과할 수 없다.
+ */
 		struct cfs_bandwidth *parent_b = &tg->parent->cfs_bandwidth;
 
 		quota = normalize_cfs_quota(tg, d);
@@ -8441,6 +8615,12 @@ static int tg_cfs_schedulable_down(struct task_group *tg, void *data)
 		else if (parent_quota != RUNTIME_INF && quota > parent_quota)
 			return -EINVAL;
 	}
+
+/* IAMROOT-12:
+ * -------------
+ * 정수화 비율을 설정한다. 
+ * (quota가 설정되지 않았었던 경우 부모의 비율을 사용한다.)
+ */
 	cfs_b->hierarchical_quota = quota;
 
 	return 0;
@@ -8449,11 +8629,22 @@ static int tg_cfs_schedulable_down(struct task_group *tg, void *data)
 static int __cfs_schedulable(struct task_group *tg, u64 period, u64 quota)
 {
 	int ret;
+
+/* IAMROOT-12:
+ * -------------
+ * 인수 전달용
+ */
 	struct cfs_schedulable_data data = {
 		.tg = tg,
 		.period = period,
 		.quota = quota,
 	};
+
+
+/* IAMROOT-12:
+ * -------------
+ * ns -> us단위로 변경
+ */
 
 	if (quota != RUNTIME_INF) {
 		do_div(data.period, NSEC_PER_USEC);
@@ -8461,6 +8652,15 @@ static int __cfs_schedulable(struct task_group *tg, u64 period, u64 quota)
 	}
 
 	rcu_read_lock();
+
+/* IAMROOT-12:
+ * -------------
+ * 루트 태스크 그룹부터 트리를 순환하면서 down 함수를 호출한다.
+ * 이 때 루트부터 모든 트리의 tg에 대해 quota/periods 비율을 재설정한다.
+ *
+ * 지정된 하나의 tg에 대해 비율을 설정(상속 포함)할 때 부모보다 큰 비율을 
+ * 지정할 수 없다.
+ */
 	ret = walk_tg_tree(tg_cfs_schedulable_down, tg_nop, &data);
 	rcu_read_unlock();
 
