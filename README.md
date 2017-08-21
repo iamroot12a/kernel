@@ -537,3 +537,10 @@ page_address_init()
 - 2017.08.12, Kosslab (6명, 김종철, 문영일, 양유석, 윤창호, 정재준, 조현철)
 - tick_handle_periodic() ~
   - PELT ~
+
+### 122주차
+- 2017.08.19, Kosslab (10명, 김민호, 김종철, 문영일, 양유석, 윤창호, 임채훈, 정재준, 조현철, 최영민, 한상종)
+- cfs bandwidth
+  - account_cfs_rq_runtime()
+  - tg_set_cfs_quota() ~
+  
