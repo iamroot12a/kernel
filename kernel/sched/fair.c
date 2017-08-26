@@ -111,6 +111,11 @@ unsigned int __read_mostly sysctl_sched_shares_window = 10000000UL;
  *
  * default: 5 msec, units: microseconds
   */
+
+/* IAMROOT-12:
+ * -------------
+ * 글로벌 풀에서 로컬 풀(cfs 런큐)로 assign(할당)해 주는 런타임양을 말한다.
+ */
 unsigned int sysctl_sched_cfs_bandwidth_slice = 5000UL;
 #endif
 
@@ -3894,6 +3899,11 @@ static inline u64 default_cfs_period(void)
 
 static inline u64 sched_cfs_bandwidth_slice(void)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 기본 5ms를 나노초 단위로 반환한다.
+ */
 	return (u64)sysctl_sched_cfs_bandwidth_slice * NSEC_PER_USEC;
 }
 
@@ -3952,6 +3962,12 @@ static int assign_cfs_rq_runtime(struct cfs_rq *cfs_rq)
 	u64 amount = 0, min_amount, expires;
 
 	/* note: this is a positive sum as runtime_remaining <= 0 */
+
+/* IAMROOT-12:
+ * -------------
+ * 이미 소모한 시간(음수 잔량) + 디폴트 5ms의 양을 글로벌로 부터 빌려오고 
+ * 싶어한다.
+ */
 	min_amount = sched_cfs_bandwidth_slice() - cfs_rq->runtime_remaining;
 
 	raw_spin_lock(&cfs_b->lock);
@@ -3964,11 +3980,23 @@ static int assign_cfs_rq_runtime(struct cfs_rq *cfs_rq)
 		 * Refresh the global state and ensure bandwidth timer becomes
 		 * active.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 밴드위드 타이머가 가동되지 않은 상태인 경우 동작시킨다.
+ */
 		if (!cfs_b->timer_active) {
 			__refill_cfs_bandwidth_runtime(cfs_b);
 			__start_cfs_bandwidth(cfs_b, false);
 		}
 
+/* IAMROOT-12:
+ * -------------
+ * cfs_b->runtime: 글로벌 런타임 잔량
+ *
+ * 글로벌 런타임 잔량으로부터 amount 만큼 빌려온다. 단 글로벌 런타임 잔량이
+ * 남아 있는 만큼으로 제한한다.
+ */
 		if (cfs_b->runtime > 0) {
 			amount = min(cfs_b->runtime, min_amount);
 			cfs_b->runtime -= amount;
@@ -3978,15 +4006,38 @@ static int assign_cfs_rq_runtime(struct cfs_rq *cfs_rq)
 	expires = cfs_b->runtime_expires;
 	raw_spin_unlock(&cfs_b->lock);
 
+/* IAMROOT-12:
+ * -------------
+ * 글로벌로부터 빌려온 런타임을 로컬에 추가한다.
+ */
 	cfs_rq->runtime_remaining += amount;
 	/*
 	 * we may have advanced our local expiration to account for allowed
 	 * spread between our sched_clock and the one on which runtime was
 	 * issued.
 	 */
+
+/* IAMROOT-12:
+ * ------------- 
+ * 로컬 런타임이 할당된 경우
+ *
+ * 글로벌 런타임 만료 시각이 로컬 런타임 만료 시각보다 나중인 경우 
+ * 로컬 런타임 만료 시각을 글로벌 런타임 만료 시각으로 변경한다.
+ *
+ * ---------------+------------------+------------->
+ *                |                  |
+ *              local               global 
+ *                |
+ *                +----------------->local
+ */
+
 	if ((s64)(expires - cfs_rq->runtime_expires) > 0)
 		cfs_rq->runtime_expires = expires;
 
+/* IAMROOT-12:
+ * -------------
+ * 로컬 런타임 잔량이 있는지 여부를 반환한다.
+ */
 	return cfs_rq->runtime_remaining > 0;
 }
 
@@ -4074,7 +4125,9 @@ static void __account_cfs_rq_runtime(struct cfs_rq *cfs_rq, u64 delta_exec)
 
 /* IAMROOT-12:
  * -------------
- * 잔량이 음수인 경우 여기에 진입한다.
+ * 잔량이 0또는 음수인 경우 여기에 진입한다.
+ *
+ * 로컬 런타임 잔량을 보충한다. 만일 보충에 실패하는 경우 리스케줄 요청한다.
  */
 	if (!assign_cfs_rq_runtime(cfs_rq) && likely(cfs_rq->curr))
 		resched_curr(rq_of(cfs_rq));
@@ -4133,10 +4186,19 @@ static int tg_unthrottle_up(struct task_group *tg, void *data)
 	struct rq *rq = data;
 	struct cfs_rq *cfs_rq = tg->cfs_rq[cpu_of(rq)];
 
+/* IAMROOT-12:
+ * -------------
+ * 스로틀 카운터를 감소시킨다.
+ */
 	cfs_rq->throttle_count--;
 #ifdef CONFIG_SMP
 	if (!cfs_rq->throttle_count) {
 		/* adjust cfs_rq_clock_task() */
+
+/* IAMROOT-12:
+ * -------------
+ * 감소시킨 값이 0이 되는 순간 스로틀된 태스크 시간을 구해 대입한다.
+ */
 		cfs_rq->throttled_clock_task_time += rq_clock_task(rq) -
 					     cfs_rq->throttled_clock_task;
 	}
@@ -4151,6 +4213,13 @@ static int tg_throttle_down(struct task_group *tg, void *data)
 	struct cfs_rq *cfs_rq = tg->cfs_rq[cpu_of(rq)];
 
 	/* group is entering throttled state, stop time */
+
+/* IAMROOT-12:
+ * -------------
+ * 다운방향으로 트리 워크 순회 중인 cfs 런큐에 대해 스로틀 카운터를 증가시킨다.
+ *
+ * 처음 스로틀 되는 경우 처음 스로틀되는 시각을 기록해둔다.
+ */
 	if (!cfs_rq->throttle_count)
 		cfs_rq->throttled_clock_task = rq_clock_task(rq);
 	cfs_rq->throttle_count++;
@@ -4165,31 +4234,81 @@ static void throttle_cfs_rq(struct cfs_rq *cfs_rq)
 	struct sched_entity *se;
 	long task_delta, dequeue = 1;
 
+/* IAMROOT-12:
+ * -------------
+ * 요청하는 cfs 런큐를 스로틀시킨다.
+ * (스로틀되는 경우 상위 cfs 런큐에서 디큐된다)
+ */
+
+/* IAMROOT-12:
+ * -------------
+ * 태스크 그룹을 대표하는 엔티티를 알아온다.
+ */
 	se = cfs_rq->tg->se[cpu_of(rq_of(cfs_rq))];
 
 	/* freeze hierarchy runnable averages while throttled */
 	rcu_read_lock();
+
+/* IAMROOT-12:
+ * -------------
+ * cfs 런큐들을 하향 방향으로 순회하며 스로틀 카운터를 증가시킨다.
+ */
 	walk_tg_tree_from(cfs_rq->tg, tg_throttle_down, tg_nop, (void *)rq);
 	rcu_read_unlock();
 
+
+/* IAMROOT-12:
+ * -------------
+ * task_delta:
+ *	cfs 런큐 이하의 모든 태스크 수
+ */
 	task_delta = cfs_rq->h_nr_running;
+
+/* IAMROOT-12:
+ * -------------
+ * 스로틀 요청한 cfs 런큐를 대표하는 엔티티부터 최상위 엔티티까지 순회한다.
+ */
 	for_each_sched_entity(se) {
 		struct cfs_rq *qcfs_rq = cfs_rq_of(se);
 		/* throttled entity or throttle-on-deactivate */
 		if (!se->on_rq)
 			break;
 
+/* IAMROOT-12:
+ * -------------
+ * 엔티티를 dequeue 한다.
+ */
 		if (dequeue)
 			dequeue_entity(qcfs_rq, se, DEQUEUE_SLEEP);
+
+/* IAMROOT-12:
+ * -------------
+ * 상위 cfs 런큐의 h_nr_running에서는 스로틀된 cfs 런큐이하에 매달린 
+ * 모든 태스크의 수를 뺀다.
+ */
 		qcfs_rq->h_nr_running -= task_delta;
 
+/* IAMROOT-12:
+ * -------------
+ * 상위 cfs 런큐에 로드 weight이 여전히 있는 경우 더 이상 dequeue하지 않도록 
+ * 한다. (상위 cfs 런큐에 로드가 걸려 있지 않으면 상위로 올라갈 때마다 
+ * dequeue한다.)
+ */
 		if (qcfs_rq->load.weight)
 			dequeue = 0;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 최상위 그룹까지 루프를 다 돈 경우 런큐에서 태스크 수를 뺀다.
+ */
 	if (!se)
 		sub_nr_running(rq, task_delta);
 
+/* IAMROOT-12:
+ * -------------
+ * 스로틀이 되었음을 마크하고 스로틀된 현재 시각을 대입한다.
+ */
 	cfs_rq->throttled = 1;
 	cfs_rq->throttled_clock = rq_clock(rq);
 	raw_spin_lock(&cfs_b->lock);
@@ -4197,6 +4316,11 @@ static void throttle_cfs_rq(struct cfs_rq *cfs_rq)
 	 * Add to the _head_ of the list, so that an already-started
 	 * distribute_cfs_runtime will not see us
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 그룹에 스로틀된 cfs 런큐 리스트에 추가한다.
+ */
 	list_add_rcu(&cfs_rq->throttled_list, &cfs_b->throttled_cfs_rq);
 	if (!cfs_b->timer_active)
 		__start_cfs_bandwidth(cfs_b, false);
@@ -4211,6 +4335,11 @@ void unthrottle_cfs_rq(struct cfs_rq *cfs_rq)
 	int enqueue = 1;
 	long task_delta;
 
+/* IAMROOT-12:
+ * -------------
+ * period 타이머가 동작하여 스로틀된 cfs 런큐들에 대해 과소모된 런타임 잔량을 
+ * 보충해준 경우 언스로틀 시키기위해 이 루틴이 호출된다.
+ */
 	se = cfs_rq->tg->se[cpu_of(rq)];
 
 	cfs_rq->throttled = 0;
@@ -4218,17 +4347,45 @@ void unthrottle_cfs_rq(struct cfs_rq *cfs_rq)
 	update_rq_clock(rq);
 
 	raw_spin_lock(&cfs_b->lock);
+
+/* IAMROOT-12:
+ * -------------
+ * 스로틀된 동안의 시간을 구한다.
+ */
 	cfs_b->throttled_time += rq_clock(rq) - cfs_rq->throttled_clock;
+
+/* IAMROOT-12:
+ * -------------
+ * 태스크그룹의 스로틀드 cfs 런큐 리스트에서 요청한 cfs 런큐를 제거한다.
+ */
 	list_del_rcu(&cfs_rq->throttled_list);
 	raw_spin_unlock(&cfs_b->lock);
 
 	/* update hierarchical throttle state */
+
+/* IAMROOT-12:
+ * -------------
+ * 언스로틀한 cfs 런큐부터 상위로 트리 워크하면서 스로틀 카운터를 감소시킨다.
+ */
 	walk_tg_tree_from(cfs_rq->tg, tg_nop, tg_unthrottle_up, (void *)rq);
 
+/* IAMROOT-12:
+ * -------------
+ * 로드 weight이 없다는 뜻은 그 이하로 매달려 있는 태스크가 없다는 의미
+ */
 	if (!cfs_rq->load.weight)
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * 언스로틀하고자 하는 cfs 런큐에 매달린 태스크의 수를 알아온다.
+ */
 	task_delta = cfs_rq->h_nr_running;
+
+/* IAMROOT-12:
+ * -------------
+ * 상위 방향으로 엔큐를 하고 태스크 수를 더한다.
+ */
 	for_each_sched_entity(se) {
 		if (se->on_rq)
 			enqueue = 0;
@@ -4242,10 +4399,20 @@ void unthrottle_cfs_rq(struct cfs_rq *cfs_rq)
 			break;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 최상위까지 중간에 스로틀된 cfs 런큐가 없으면 런큐의 태스크 수에 반영한다.
+ */
 	if (!se)
 		add_nr_running(rq, task_delta);
 
 	/* determine whether we need to wake up potentially idle cpu */
+
+/* IAMROOT-12:
+ * -------------
+ * idle 상태였다가 언스로틀로 인해 최상위 cfs 런큐의 엔티티 수가 1개 이상이
+ * 된 경우 리스케줄 요청을 한다.
+ */
 	if (rq->curr == rq->idle && rq->cfs.nr_running)
 		resched_curr(rq);
 }
@@ -4258,6 +4425,11 @@ static u64 distribute_cfs_runtime(struct cfs_bandwidth *cfs_b,
 	u64 starting_runtime = remaining;
 
 	rcu_read_lock();
+
+/* IAMROOT-12:
+ * -------------
+ * 스로틀된 cfs 런큐에 대해 순회한다.
+ */
 	list_for_each_entry_rcu(cfs_rq, &cfs_b->throttled_cfs_rq,
 				throttled_list) {
 		struct rq *rq = rq_of(cfs_rq);
@@ -4266,15 +4438,25 @@ static u64 distribute_cfs_runtime(struct cfs_bandwidth *cfs_b,
 		if (!cfs_rq_throttled(cfs_rq))
 			goto next;
 
+/* IAMROOT-12:
+ * -------------
+ * 초과 소모된 로컬 런타임 잔량 + 1ns만큼 먼저 분배한다.
+ */
 		runtime = -cfs_rq->runtime_remaining + 1;
 		if (runtime > remaining)
 			runtime = remaining;
+
 		remaining -= runtime;
 
 		cfs_rq->runtime_remaining += runtime;
 		cfs_rq->runtime_expires = expires;
 
 		/* we check whether we're throttled above */
+
+/* IAMROOT-12:
+ * -------------
+ * 로컬 잔량값이 1ns라도 리필되어 있는 경우 언스로틀 시킨다.
+ */
 		if (cfs_rq->runtime_remaining > 0)
 			unthrottle_cfs_rq(cfs_rq);
 
@@ -4286,6 +4468,10 @@ next:
 	}
 	rcu_read_unlock();
 
+/* IAMROOT-12:
+ * -------------
+ * 처음 리필된 글로벌 런타임 잔량에서 사용한 잔량을 뺀 남은 잔량을 반환한다.
+ */
 	return starting_runtime - remaining;
 }
 
@@ -4301,9 +4487,18 @@ static int do_sched_cfs_period_timer(struct cfs_bandwidth *cfs_b, int overrun)
 	int throttled;
 
 	/* no need to continue the timer with no bandwidth constraint */
+
+/* IAMROOT-12:
+ * -------------
+ * 밴드위드 설정이 없으면 빠져나간다.
+ */
 	if (cfs_b->quota == RUNTIME_INF)
 		goto out_deactivate;
 
+/* IAMROOT-12:
+ * -------------
+ * 그룹에 포함된 cfs 런큐가 하나라도 스로틀된 적이 있는지 여부
+ */
 	throttled = !list_empty(&cfs_b->throttled_cfs_rq);
 	cfs_b->nr_periods += overrun;
 
@@ -4311,6 +4506,14 @@ static int do_sched_cfs_period_timer(struct cfs_bandwidth *cfs_b, int overrun)
 	 * idle depends on !throttled (for the case of a large deficit), and if
 	 * we're going inactive then everything else can be deferred
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 밴드위드가 동작 정지(idle)이면서 스로틀로 인해 idle된 것이 아닌 경우 빠져나간다.
+ *
+ * 이 전 period에서 스로틀된적이 없는 경우 이번에는 refill하지 않는다.
+ * (로컬 런타임이 계속 소모되어 결국 스로틀이 언젠가는 된다)
+ */
 	if (cfs_b->idle && !throttled)
 		goto out_deactivate;
 
@@ -4321,10 +4524,19 @@ static int do_sched_cfs_period_timer(struct cfs_bandwidth *cfs_b, int overrun)
 	 */
 	cfs_b->timer_active = 1;
 
+/* IAMROOT-12:
+ * -------------
+ * 글로벌 런타임을 다시 refill 한다.
+ */
 	__refill_cfs_bandwidth_runtime(cfs_b);
 
 	if (!throttled) {
 		/* mark as potentially idle for the upcoming period */
+
+/* IAMROOT-12:
+ * -------------
+ * 다음 주기를 위해 idle 상태로 변경한다.
+ */
 		cfs_b->idle = 1;
 		return 0;
 	}
@@ -4341,16 +4553,34 @@ static int do_sched_cfs_period_timer(struct cfs_bandwidth *cfs_b, int overrun)
 	 * in us over-using our runtime if it is all used during this loop, but
 	 * only by limited amounts in that extreme case.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 스로틀된 cfs 런큐에 런타임을 우선 배분한다.
+ */
 	while (throttled && cfs_b->runtime > 0) {
 		runtime = cfs_b->runtime;
 		raw_spin_unlock(&cfs_b->lock);
 		/* we can't nest cfs_b->lock while distributing bandwidth */
+
+/* IAMROOT-12:
+ * -------------
+ * 스로틀된 로컬풀부터 초과 소모된 로컬 잔량을 먼저 리필하고 언스로틀한다.
+ */
 		runtime = distribute_cfs_runtime(cfs_b, runtime,
 						 runtime_expires);
 		raw_spin_lock(&cfs_b->lock);
 
+/* IAMROOT-12:
+ * -------------
+ * 여전히 스로틀된 로컬풀이 있는지 여부를 알아온다.
+ */
 		throttled = !list_empty(&cfs_b->throttled_cfs_rq);
 
+/* IAMROOT-12:
+ * -------------
+ * 로컬에 분배해준 만큼 글로벌 런타임 잔량에서 뺀다.
+ */
 		cfs_b->runtime -= min(runtime, cfs_b->runtime);
 	}
 
@@ -4360,6 +4590,11 @@ static int do_sched_cfs_period_timer(struct cfs_bandwidth *cfs_b, int overrun)
 	 * insufficient to cover the existing bandwidth deficit.  (Forcing the
 	 * timer to remain active while there are any throttled entities.)
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 이번 period에 정상적인 배분을 한 경우 idle을 0으로 설정한다.
+ */
 	cfs_b->idle = 0;
 
 	return 0;
@@ -4491,14 +4726,28 @@ static void check_enqueue_throttle(struct cfs_rq *cfs_rq)
 	if (!cfs_bandwidth_used())
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * cfs 런큐에 최초 엔티티 엔큐 시 진입된다.
+ */
+
 	/* an active group must be handled by the update_curr()->put() path */
 	if (!cfs_rq->runtime_enabled || cfs_rq->curr)
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * 이미 스로틀되어 있는 경우는 함수를 빠져나간다.
+ */
 	/* ensure the group is not already throttled */
 	if (cfs_rq_throttled(cfs_rq))
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * 로컬풀의 런타임 잔량을 보충한다. (글로벌로 부터)	
+ * 여전히 로컬풀의 런타임 잔량이 0 이하인 경우 스로틀 시킨다.
+ */
 	/* update runtime allocation */
 	account_cfs_rq_runtime(cfs_rq, 0);
 	if (cfs_rq->runtime_remaining <= 0)

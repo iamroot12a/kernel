@@ -993,6 +993,17 @@ void unlock_hrtimer_base(const struct hrtimer *timer, unsigned long *flags)
  * -------------
  * now: 절대 시각(나노초)
  * interval: 시간(나노초 간격)
+ *
+ * 타이머가 아직 만료되지 않은 경우 0을 반환한다.
+ * 만료된 경우 새로 타이머를 설정한 시간까지의 기간 수를 반환한다.
+ *
+ *     0               +1               +2               +3
+ * ----+----------------+----------------+----------------+--->
+ *     |                                                  ^
+ *     |                                                  |
+ *    만료                                      설정------+
+ *
+ *    위의 그림에서 결과 값 -> 3
  */
 u64 hrtimer_forward(struct hrtimer *timer, ktime_t now, ktime_t interval)
 {
