@@ -543,4 +543,8 @@ page_address_init()
 - cfs bandwidth
   - account_cfs_rq_runtime()
   - tg_set_cfs_quota() ~
-  
+
+### 123주차
+- 2017.08.26, Kosslab (7명, 김민호, 문영일, 윤창호, 임채훈, 정재준, 최영민, 한대근)
+- cfs bandwidth
+  - sched_cfs_period_timer()  
