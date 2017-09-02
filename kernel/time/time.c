@@ -512,6 +512,11 @@ unsigned long msecs_to_jiffies(const unsigned int m)
 	/*
 	 * Negative value, means infinite timeout:
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 음수인 경우 무한...
+ */
 	if ((int)m < 0)
 		return MAX_JIFFY_OFFSET;
 
@@ -521,6 +526,18 @@ unsigned long msecs_to_jiffies(const unsigned int m)
 	 * round multiple of HZ, divide with the factor between them,
 	 * but round upwards:
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * HZ=100, HZ=200, HZ=250, HZ=500, HZ=1000 
+ *
+ * 예) m=0, HZ=100인 경우 
+ *     -> 0 tick
+ * 예) m=1~10, HZ=100인 경우 
+ *     -> 1 tick
+ * 예) m-11~20, HZ=100인 경우 
+ *     -> 2 tick
+ */
 	return (m + (MSEC_PER_SEC / HZ) - 1) / (MSEC_PER_SEC / HZ);
 #elif HZ > MSEC_PER_SEC && !(HZ % MSEC_PER_SEC)
 	/*
@@ -530,6 +547,11 @@ unsigned long msecs_to_jiffies(const unsigned int m)
 	 * But first make sure the multiplication result cannot
 	 * overflow:
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * HZ>1000인 경우(아직은 없다)
+ */
 	if (m > jiffies_to_msecs(MAX_JIFFY_OFFSET))
 		return MAX_JIFFY_OFFSET;
 
@@ -540,6 +562,12 @@ unsigned long msecs_to_jiffies(const unsigned int m)
 	 * check that if we are doing a net multiplication, that
 	 * we wouldn't overflow:
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * HZ=300
+ */
+
 	if (HZ > MSEC_PER_SEC && m > jiffies_to_msecs(MAX_JIFFY_OFFSET))
 		return MAX_JIFFY_OFFSET;
 

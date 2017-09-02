@@ -918,7 +918,22 @@ static void enqueue_task(struct rq *rq, struct task_struct *p, int flags)
 static void dequeue_task(struct rq *rq, struct task_struct *p, int flags)
 {
 	update_rq_clock(rq);
+
+/* IAMROOT-12:
+ * -------------
+ * 디버깅 정보를 갱신한다.
+ */
 	sched_info_dequeued(rq, p);
+
+/* IAMROOT-12:
+ * -------------
+ * 현재 태스크에 해당하는 스케줄러의 dequeue_task를 호출한다.
+ *	- stop: dequeue_task_stop()
+ *	- dl:   dequeue_task_dl()
+ *	- rt:   dequeue_task_rt()
+ *	- cfs:  dequeue_task_fair()
+ *	- idle: dequeue_task_idle()
+ */
 	p->sched_class->dequeue_task(rq, p, flags);
 }
 
@@ -932,6 +947,12 @@ void activate_task(struct rq *rq, struct task_struct *p, int flags)
 
 void deactivate_task(struct rq *rq, struct task_struct *p, int flags)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * uninterruptible 태스크(no frozen)인 경우 nr_uninterruptible을 1 증가시킨다.
+ * 이 값은 추후에 로드 값 계산에도 active 태스크 수에 사용하게 된다.
+ */
 	if (task_contributes_to_load(p))
 		rq->nr_uninterruptible++;
 
@@ -2916,6 +2937,10 @@ static void __sched __schedule(void)
 	struct rq *rq;
 	int cpu;
 
+/* IAMROOT-12:
+ * -------------
+ * preempt를 막는다.
+ */
 	preempt_disable();
 	cpu = smp_processor_id();
 	rq = cpu_rq(cpu);
@@ -2932,13 +2957,34 @@ static void __sched __schedule(void)
 	 * can't be reordered with __set_current_state(TASK_INTERRUPTIBLE)
 	 * done by the caller to avoid the race with signal_wake_up().
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * rpi2: dmb(ishst)와 동일하다.
+ */
 	smp_mb__before_spinlock();
 	raw_spin_lock_irq(&rq->lock);
 
+/* IAMROOT-12:
+ * -------------
+ * 1을 2로 변경한다.
+ */
 	rq->clock_skip_update <<= 1; /* promote REQ to ACT */
 
 	switch_count = &prev->nivcsw;
+
+/* IAMROOT-12:
+ * -------------
+ * 락을 건 상태에서 다시 한 번 TASK_RUNNING 상태가 아니어야 하고,
+ * schedule() 함수에서 호출한 경우이다.
+ */
 	if (prev->state && !(preempt_count() & PREEMPT_ACTIVE)) {
+
+/* IAMROOT-12:
+ * -------------
+ * 낮은 확률로 signal pending 상태인 경우 다시 TASK_RUNNING 상태로 바꾼다.
+ */
+
 		if (unlikely(signal_pending_state(prev->state, prev))) {
 			prev->state = TASK_RUNNING;
 		} else {
@@ -2986,6 +3032,14 @@ static void __sched __schedule(void)
 
 static inline void sched_submit_work(struct task_struct *tsk)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 태스크가 러닝상태이거나 pi blocked 상태인 경우 함수를 빠져나간다.
+ *
+ * pi: priority inversion 문제를 해결하기 위해 priority inheritance protocol을
+ *     사용하는 중
+ */
 	if (!tsk->state || tsk_is_pi_blocked(tsk))
 		return;
 	/*
@@ -3001,6 +3055,11 @@ asmlinkage __visible void __sched schedule(void)
 	struct task_struct *tsk = current;
 
 	sched_submit_work(tsk);
+
+/* IAMROOT-12:
+ * -------------
+ * 스케줄 요청이 없어질 때까지 스케줄을 반복한다.
+ */
 	do {
 		__schedule();
 	} while (need_resched());

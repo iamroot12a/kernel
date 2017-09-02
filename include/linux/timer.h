@@ -122,6 +122,11 @@ static inline void init_timer_on_stack_key(struct timer_list *timer,
 		init_timer_on_stack_key((_timer), (_flags), #_timer, &__key); \
 	} while (0)
 #else
+
+/* IAMROOT-12:
+ * -------------
+ * low-res 타이머 초기화
+ */
 #define __init_timer(_timer, _flags)					\
 	init_timer_key((_timer), (_flags), NULL, NULL)
 #define __init_timer_on_stack(_timer, _flags)				\

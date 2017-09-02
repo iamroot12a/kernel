@@ -737,6 +737,10 @@ void init_timer_on_stack_key(struct timer_list *timer, unsigned int flags,
 			     const char *name, struct lock_class_key *key)
 {
 	debug_object_init_on_stack(timer, &timer_debug_descr);
+/* IAMROOT-12:
+ * -------------
+ * low-res 타이머 초기화
+ */
 	do_init_timer(timer, flags, name, key);
 }
 EXPORT_SYMBOL_GPL(init_timer_on_stack_key);
@@ -783,6 +787,10 @@ static void do_init_timer(struct timer_list *timer, unsigned int flags,
 {
 	struct tvec_base *base = raw_cpu_read(tvec_bases);
 
+/* IAMROOT-12:
+ * -------------
+ * low-res 타이머 초기화
+ */
 	timer->entry.next = NULL;
 	timer->base = (void *)((unsigned long)base | flags);
 	timer->slack = -1;
@@ -809,6 +817,11 @@ void init_timer_key(struct timer_list *timer, unsigned int flags,
 		    const char *name, struct lock_class_key *key)
 {
 	debug_init(timer);
+
+/* IAMROOT-12:
+ * -------------
+ * low-res 타이머 초기화
+ */
 	do_init_timer(timer, flags, name, key);
 }
 EXPORT_SYMBOL(init_timer_key);
@@ -1829,6 +1842,11 @@ signed long __sched schedule_timeout(signed long timeout)
 		 * but I' d like to return a valid offset (>=0) to allow
 		 * the caller to do everything it want with the retval.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 타임아웃 설정 없이 슬립한다.
+ */
 		schedule();
 		goto out;
 	default:
@@ -1840,6 +1858,12 @@ signed long __sched schedule_timeout(signed long timeout)
 		 * that will tell you if something is gone wrong and where.
 		 */
 		if (timeout < 0) {
+
+/* IAMROOT-12:
+ * -------------
+ * msleep()이 아닌 다른 곳에서 호출될 때 timeout이 음수로 들어올 수 있다.
+ * 이 경우 TASK_RUNNING 상태로 바꾸고 바로 빠져나간다.
+ */
 			printk(KERN_ERR "schedule_timeout: wrong timeout "
 				"value %lx\n", timeout);
 			dump_stack();
@@ -1848,10 +1872,22 @@ signed long __sched schedule_timeout(signed long timeout)
 		}
 	}
 
+
+/* IAMROOT-12:
+ * -------------
+ * 현재시각에 요청한 timeout을 더해 만료 시각을 구한 후 low-res 타이머를 
+ * 프로그래밍한다.
+ */
 	expire = timeout + jiffies;
 
 	setup_timer_on_stack(&timer, process_timeout, (unsigned long)current);
 	__mod_timer(&timer, expire, false, TIMER_NOT_PINNED);
+
+/* IAMROOT-12:
+ * -------------
+ * 스케줄 함수에 진입하면 잠들게 되는데 타이머에 의해서 깨워지고 이 함수를 
+ * 빠져나오게된다. (따라서 timer 구조체를 local에 만들어 사용할 수 있다) 
+ */
 	schedule();
 	del_singleshot_timer_sync(&timer);
 
@@ -1871,6 +1907,11 @@ EXPORT_SYMBOL(schedule_timeout);
  */
 signed long __sched schedule_timeout_interruptible(signed long timeout)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 인터럽터블 상태로 타임아웃 스케줄함수를 호출한다.
+ */
 	__set_current_state(TASK_INTERRUPTIBLE);
 	return schedule_timeout(timeout);
 }
@@ -1878,6 +1919,10 @@ EXPORT_SYMBOL(schedule_timeout_interruptible);
 
 signed long __sched schedule_timeout_killable(signed long timeout)
 {
+/* IAMROOT-12:
+ * -------------
+ * 킬러블 상태로 타임아웃 스케줄함수를 호출한다.
+ */
 	__set_current_state(TASK_KILLABLE);
 	return schedule_timeout(timeout);
 }
@@ -1885,6 +1930,10 @@ EXPORT_SYMBOL(schedule_timeout_killable);
 
 signed long __sched schedule_timeout_uninterruptible(signed long timeout)
 {
+/* IAMROOT-12:
+ * -------------
+ * 언인터럽터블 상태로 타임아웃 스케줄함수를 호출한다.
+ */
 	__set_current_state(TASK_UNINTERRUPTIBLE);
 	return schedule_timeout(timeout);
 }
@@ -2111,6 +2160,11 @@ void __init init_timers(void)
  */
 void msleep(unsigned int msecs)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * m=0인 경우 0 tick이 반환되므로 + 1 tick 한다.
+ */
 	unsigned long timeout = msecs_to_jiffies(msecs) + 1;
 
 	while (timeout)

@@ -1130,6 +1130,10 @@ static inline bool blk_needs_flush_plug(struct task_struct *tsk)
 {
 	struct blk_plug *plug = tsk->plug;
 
+/* IAMROOT-12:
+ * -------------
+ * 플러그된 항목(mq, cb)들이 있으면 true를 반환한다.
+ */
 	return plug &&
 		(!list_empty(&plug->list) ||
 		 !list_empty(&plug->mq_list) ||

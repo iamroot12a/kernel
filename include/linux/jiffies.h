@@ -197,6 +197,11 @@ static inline u64 get_jiffies_64(void)
  * at _least_ "jiffies" - so "jiffies+1" had better still
  * be positive.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * 32bit: 0x7fff_ffff (signed)
+ */
 #define MAX_JIFFY_OFFSET ((LONG_MAX >> 1)-1)
 
 extern unsigned long preset_lpj;

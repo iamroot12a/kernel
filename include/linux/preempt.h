@@ -37,6 +37,12 @@ extern void preempt_count_sub(int val);
 
 #define preempt_disable() \
 do { \
+
+/* IAMROOT-12:
+ * -------------
+ * preempt 커널(CONFIG_PREEMPT)로 인해 커널 모드에서 preemption이 가능할 때라도
+ * preempt_disable() 함수를 통해 preemption을 막을 수 있다.
+ */
 	preempt_count_inc(); \
 	barrier(); \
 } while (0)

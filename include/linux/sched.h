@@ -2939,6 +2939,11 @@ static inline int signal_pending_state(long state, struct task_struct *p)
 	if (!signal_pending(p))
 		return 0;
 
+/* IAMROOT-12:
+ * -------------
+ * TASK_INTERRUPTIBLE 상태인 태스크에 signal pending 플래그가 설정되었거나 
+ * task 종료 요청이 있는 경우 true를 반환한다.
+ */
 	return (state & TASK_INTERRUPTIBLE) || __fatal_signal_pending(p);
 }
 

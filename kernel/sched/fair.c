@@ -950,6 +950,11 @@ update_stats_dequeue(struct cfs_rq *cfs_rq, struct sched_entity *se)
 	 * Mark the end of the wait period if dequeueing a
 	 * waiting task:
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * curr가 아닌 엔티티에 대해서 wait관련 stat을 갱신한다.
+ */
 	if (se != cfs_rq->curr)
 		update_stats_wait_end(cfs_rq, se);
 }
@@ -2482,6 +2487,7 @@ account_entity_dequeue(struct cfs_rq *cfs_rq, struct sched_entity *se)
 /* IAMROOT-12:
  * -------------
  * cfs 런큐에 반영되어 있던 스케줄 엔티티의 로드 값을 감소시킨다.
+ * (cfs_rq->load는 각 엔티티 로드의 총 합)
  */
 	update_load_sub(&cfs_rq->load, se->load.weight);
 
@@ -2496,6 +2502,11 @@ account_entity_dequeue(struct cfs_rq *cfs_rq, struct sched_entity *se)
 		account_numa_dequeue(rq_of(cfs_rq), task_of(se));
 		list_del_init(&se->group_node);
 	}
+
+/* IAMROOT-12:
+ * -------------
+ * cfs 런큐에 소속된 엔티티 수를 1 감소 시킨다.
+ */
 	cfs_rq->nr_running--;
 }
 
@@ -3542,6 +3553,10 @@ dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 	update_curr(cfs_rq);
 	dequeue_entity_load_avg(cfs_rq, se, flags & DEQUEUE_SLEEP);
 
+/* IAMROOT-12:
+ * -------------
+ * curr가 아닌 엔티티에 대해서 wait관련 stat을 갱신한다.
+ */
 	update_stats_dequeue(cfs_rq, se);
 	if (flags & DEQUEUE_SLEEP) {
 #ifdef CONFIG_SCHEDSTATS
@@ -3556,11 +3571,24 @@ dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 #endif
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 디큐되므로 3개의 버디에 포함되지 않도록 클리어한다.
+ */
 	clear_buddies(cfs_rq, se);
 
+/* IAMROOT-12:
+ * -------------
+ * curr가 아닌 엔트리를 rb 트리에서 제거한다.
+ */
 	if (se != cfs_rq->curr)
 		__dequeue_entity(cfs_rq, se);
 	se->on_rq = 0;
+
+/* IAMROOT-12:
+ * -------------
+ * 엔티티 수를 1 감소시키고, rq 및 cfs 런큐에 기여하는 로드를 감소시킨다.
+ */
 	account_entity_dequeue(cfs_rq, se);
 
 	/*
@@ -3568,13 +3596,30 @@ dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 	 * update can refer to the ->curr item and we need to reflect this
 	 * movement in our normalized position.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * sleep이 아니라 정말 dequeue되는 엔티티들은 min_vruntime을 제거하여 
+ * 관리한다.
+ */
 	if (!(flags & DEQUEUE_SLEEP))
 		se->vruntime -= cfs_rq->min_vruntime;
 
 	/* return excess runtime on last dequeue */
+
+/* IAMROOT-12:
+ * -------------
+ * 런타임을 반납한다. (해당 cfs 런큐에 태스크가 남아있으면 반납하지않는다)
+ */
 	return_cfs_rq_runtime(cfs_rq);
 
 	update_min_vruntime(cfs_rq);
+
+/* IAMROOT-12:
+ * -------------
+ * 로드 값이 위에서 바뀌지었으므로 shares를 이용하여 다시 엔티티 로드를 
+ * 갱신한다.
+ */
 	update_cfs_shares(cfs_rq);
 }
 
@@ -4605,10 +4650,21 @@ out_deactivate:
 }
 
 /* a cfs_rq won't donate quota below this amount */
+
+/* IAMROOT-12:
+ * -------------
+ * min_cfs_rq_runtime 
+ *	로컬에 할당된 런타임을 이 값 만큼 빼고 글로벌 풀에 반납한다.
+ */
 static const u64 min_cfs_rq_runtime = 1 * NSEC_PER_MSEC;
 /* minimum remaining period time to redistribute slack quota */
 static const u64 min_bandwidth_expiration = 2 * NSEC_PER_MSEC;
 /* how long we wait to gather additional slack before distributing */
+
+/* IAMROOT-12:
+ * -------------
+ * slack 타이머는 디폴트 5ms 이후에 동작한다.
+ */
 static const u64 cfs_bandwidth_slack_period = 5 * NSEC_PER_MSEC;
 
 /*
@@ -4637,12 +4693,23 @@ static int runtime_refresh_within(struct cfs_bandwidth *cfs_b, u64 min_expire)
 
 static void start_cfs_slack_bandwidth(struct cfs_bandwidth *cfs_b)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * period 만료 시각이 얼마 남지 않은 경우 slack 타이머를 가동시킬 필요가 
+ * 없다. (디폴트로 period 만료 시각으로부터 5ms + 2ms 이전에만 slack
+ * 타이머를 가동시키게 한다.)
+ */
 	u64 min_left = cfs_bandwidth_slack_period + min_bandwidth_expiration;
 
 	/* if there's a quota refresh soon don't bother with slack */
 	if (runtime_refresh_within(cfs_b, min_left))
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * slack 타이머는 디폴트 5ms 이후에 동작시킨다.
+ */
 	start_bandwidth_timer(&cfs_b->slack_timer,
 				ns_to_ktime(cfs_bandwidth_slack_period));
 }
@@ -4651,6 +4718,11 @@ static void start_cfs_slack_bandwidth(struct cfs_bandwidth *cfs_b)
 static void __return_cfs_rq_runtime(struct cfs_rq *cfs_rq)
 {
 	struct cfs_bandwidth *cfs_b = tg_cfs_bandwidth(cfs_rq->tg);
+
+/* IAMROOT-12:
+ * -------------
+ * 남은 로컬 런타임 잔량에서 min_cfs_rq_runtime(디폴트 1ms)를 빼고 반납한다.
+ */
 	s64 slack_runtime = cfs_rq->runtime_remaining - min_cfs_rq_runtime;
 
 	if (slack_runtime <= 0)
@@ -4659,9 +4731,20 @@ static void __return_cfs_rq_runtime(struct cfs_rq *cfs_rq)
 	raw_spin_lock(&cfs_b->lock);
 	if (cfs_b->quota != RUNTIME_INF &&
 	    cfs_rq->runtime_expires == cfs_b->runtime_expires) {
+
+/* IAMROOT-12:
+ * -------------
+ * 여기서 실제 글로벌 풀에 반납을 한다.
+ */
 		cfs_b->runtime += slack_runtime;
 
 		/* we are under rq->lock, defer unthrottling using a timer */
+
+/* IAMROOT-12:
+ * -------------
+ * 반납 후 글로벌 풀의 런타임 잔량이 sline(디폴트 5ms)을 초과한 경우에만 
+ * slack 타이머를 돌린다. 물론 스로틀된 cpu가 있는 경우이다.
+ */
 		if (cfs_b->runtime > sched_cfs_bandwidth_slice() &&
 		    !list_empty(&cfs_b->throttled_cfs_rq))
 			start_cfs_slack_bandwidth(cfs_b);
@@ -4669,6 +4752,12 @@ static void __return_cfs_rq_runtime(struct cfs_rq *cfs_rq)
 	raw_spin_unlock(&cfs_b->lock);
 
 	/* even if it's not valid for return we don't want to try again */
+
+/* IAMROOT-12:
+ * -------------
+ * 로컬풀을 min_cfs_rq_runtime(디폴트 1ms)를 빼고 비운다.
+ * (스로틀 시키지 않는다)
+ */
 	cfs_rq->runtime_remaining -= slack_runtime;
 }
 
@@ -4677,6 +4766,11 @@ static __always_inline void return_cfs_rq_runtime(struct cfs_rq *cfs_rq)
 	if (!cfs_bandwidth_used())
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * 수행될 cfs 태스크가 있는 남아있는 경우 런타임을 반납할 필요 없으므로 
+ * 함수를 빠져나간다.
+ */
 	if (!cfs_rq->runtime_enabled || cfs_rq->nr_running)
 		return;
 
@@ -4694,6 +4788,12 @@ static void do_sched_cfs_slack_timer(struct cfs_bandwidth *cfs_b)
 
 	/* confirm we're still not at a refresh boundary */
 	raw_spin_lock(&cfs_b->lock);
+
+/* IAMROOT-12:
+ * -------------
+ * period 만료 시각으로 부터 디폴트 2m 미만의 시간이 남은 경우 
+ * 처리하지 않는다.
+ */
 	if (runtime_refresh_within(cfs_b, min_bandwidth_expiration)) {
 		raw_spin_unlock(&cfs_b->lock);
 		return;
@@ -4708,9 +4808,18 @@ static void do_sched_cfs_slack_timer(struct cfs_bandwidth *cfs_b)
 	if (!runtime)
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * 스로틀된 cpu에게 먼저 런타임을 할당해준다.
+ */
 	runtime = distribute_cfs_runtime(cfs_b, runtime, expires);
 
 	raw_spin_lock(&cfs_b->lock);
+
+/* IAMROOT-12:
+ * -------------
+ * 분배해준 만큼 글로벌 런타임 잔량을 빼준다.
+ */
 	if (expires == cfs_b->runtime_expires)
 		cfs_b->runtime -= min(runtime, cfs_b->runtime);
 	raw_spin_unlock(&cfs_b->lock);
@@ -4776,6 +4885,11 @@ static bool check_cfs_rq_runtime(struct cfs_rq *cfs_rq)
 
 static enum hrtimer_restart sched_cfs_slack_timer(struct hrtimer *timer)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * slack 타이머 만료 시 호출되는 루틴이다.
+ */
 	struct cfs_bandwidth *cfs_b =
 		container_of(timer, struct cfs_bandwidth, slack_timer);
 	do_sched_cfs_slack_timer(cfs_b);
@@ -5129,11 +5243,24 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 /* IAMROOT-12:
  * -------------
  * sleep 목적으로 진입한 dequeue_task()
+ * 예) msleep(), schedule() 등
  */
 	int task_sleep = flags & DEQUEUE_SLEEP;
 
 	for_each_sched_entity(se) {
+
+/* IAMROOT-12:
+ * -------------
+ * 큐잉될 cfs 런큐를 알아온다.
+ */
 		cfs_rq = cfs_rq_of(se);
+
+/* IAMROOT-12:
+ * -------------
+ * 루프의 처음인 경우 해당 cfs 런큐에서 태스크를 대표하는 엔티티를 뺀다. 
+ * 루프가 계속되어 다시 호출되는 경우는 해당 cfs 런큐가 비게 되면 디큐를 한다.
+ * (내부에서 로드 감소 시키고 cfs_rq->nr_running을 1 감소시킨다.
+ */
 		dequeue_entity(cfs_rq, se, flags);
 
 		/*
@@ -5142,16 +5269,42 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 		 * note: in the case of encountering a throttled cfs_rq we will
 		 * post the final h_nr_running decrement below.
 		*/
+
+/* IAMROOT-12:
+ * -------------
+ * 순회 중인 cfs 런큐가 스로틀된 상태라면 break 한다.
+ */
 		if (cfs_rq_throttled(cfs_rq))
 			break;
+
+/* IAMROOT-12:
+ * -------------
+ * 순회 중인 cfs 런큐의 태스크 수를 감소시킨다.
+ */
 		cfs_rq->h_nr_running--;
 
 		/* Don't dequeue parent if it has other entities besides us */
+
+/* IAMROOT-12:
+ * -------------
+ * 동작시킬 태스크가 연결되어 있는 경우(그룹을 대표하는 엔티티포함)
+ * 루프를 빠져나간다.
+ *
+ * 그러나 태스크가 하나만 매달려있는 cfs 런큐가 상위로 계속 연결되는 경우 
+ * 각 cfs 런큐들이 추가 태스크가 없으면 루프를 돌면서 cfs 런큐를 대표하는 
+ * 엔티티도 모두 디큐한다.
+ */
 		if (cfs_rq->load.weight) {
 			/*
 			 * Bias pick_next to pick a task from this cfs_rq, as
 			 * p is sleeping when it is within its sched_slice.
 			 */
+
+/* IAMROOT-12:
+ * -------------
+ * sleep 태스크를 디큐하는 경우 부모 엔티티 즉, 상위 cfs 런큐에 하위 cfs 런큐를 
+ * 더 빨리 스케줄 해달라고 부탁한다. (next 버디에 설정한다.)
+ */
 			if (task_sleep && parent_entity(se))
 				set_next_buddy(parent_entity(se));
 
@@ -5162,6 +5315,12 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 		flags |= DEQUEUE_SLEEP;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * se가 null이 아닌 경우(중간에 break)
+ * 상위까지 태스크 수를 1씩 감소시키고 shares를 사용하여 다시 엔티티 로드를 
+ * 갱신시킨다. 마지막으로 PELT를 수행한다.
+ */
 	for_each_sched_entity(se) {
 		cfs_rq = cfs_rq_of(se);
 		cfs_rq->h_nr_running--;
@@ -5173,6 +5332,12 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 		update_entity_load_avg(se, 1);
 	}
 
+
+/* IAMROOT-12:
+ * -------------
+ * 스로틀로 루프를 벗어나지 않은 경우는 런큐에 태스크 수를 1 감소 시키고 
+ * 런큐의 러너블 로드도 갱신한다.
+ */
 	if (!se) {
 		sub_nr_running(rq, 1);
 		update_rq_runnable_avg(rq, 1);
