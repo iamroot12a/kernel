@@ -548,3 +548,10 @@ page_address_init()
 - 2017.08.26, Kosslab (7명, 김민호, 문영일, 윤창호, 임채훈, 정재준, 최영민, 한대근)
 - cfs bandwidth
   - sched_cfs_period_timer()  
+
+### 124주차
+- 2017.09.02, Kosslab (10명, 김민호, 김종철, 문영일, 양유석, 윤창호, 임채훈, 정재준, 최영민, 한대근, 한상종)
+- cfs bandwidth
+  - sched_cfs_slack_timer()
+- msleep() ~ 
+  
