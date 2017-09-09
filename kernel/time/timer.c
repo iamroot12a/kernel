@@ -1796,6 +1796,11 @@ SYSCALL_DEFINE1(alarm, unsigned int, seconds)
 
 #endif
 
+
+/* IAMROOT-12:
+ * -------------
+ * schedule_timeout() 함수에서 만료 시각이 결정되고 이에 의해 호출되는 함수이다.
+ */
 static void process_timeout(unsigned long __data)
 {
 	wake_up_process((struct task_struct *)__data);
@@ -1871,7 +1876,6 @@ signed long __sched schedule_timeout(signed long timeout)
 			goto out;
 		}
 	}
-
 
 /* IAMROOT-12:
  * -------------

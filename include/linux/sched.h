@@ -247,6 +247,11 @@ extern char ___assert_task_state[1 - 2*!!(
 #define task_is_stopped(task)	((task->state & __TASK_STOPPED) != 0)
 #define task_is_stopped_or_traced(task)	\
 			((task->state & (__TASK_STOPPED | __TASK_TRACED)) != 0)
+
+/* IAMROOT-12:
+ * -------------
+ * 태스크가 uninterruptible 상태이면서 frozen되지 않은 상태인 경우이다.
+ */
 #define task_contributes_to_load(task)	\
 				((task->state & TASK_UNINTERRUPTIBLE) != 0 && \
 				 (task->flags & PF_FROZEN) == 0)
@@ -1352,6 +1357,12 @@ struct task_struct {
 	struct llist_node wake_entry;
 	int on_cpu;
 	struct task_struct *last_wakee;
+
+/* IAMROOT-12:
+ * -------------
+ * 깨울 때마다 깨울 태스크가 바뀌는 경우 증가되고, 1초 마다 절반으로 줄어든다.
+ * (로드 밸런싱에서 현재 빈번하게 깨워질 태스크가 flip되는 경우 수치가 증가)
+ */
 	unsigned long wakee_flips;
 	unsigned long wakee_flip_decay_ts;
 

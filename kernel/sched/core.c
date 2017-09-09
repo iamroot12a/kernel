@@ -910,6 +910,15 @@ static void set_load_weight(struct task_struct *p)
 
 static void enqueue_task(struct rq *rq, struct task_struct *p, int flags)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 런큐 clock을 갱신하고 각 스케줄러에 해당하는 enequeue_task를 호출한다.
+ *	stop:	enqueue_task_stop()
+ *	dl:	enqueue_task_dl()
+ *	rt:	enqueue_task_rt()
+ *	cfs:	enqueue_task_fair()
+ */
 	update_rq_clock(rq);
 	sched_info_queued(rq, p);
 	p->sched_class->enqueue_task(rq, p, flags);
@@ -939,9 +948,18 @@ static void dequeue_task(struct rq *rq, struct task_struct *p, int flags)
 
 void activate_task(struct rq *rq, struct task_struct *p, int flags)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * uninterruptible 태스크의 경우 nr_uninterruptible을 1 감소시킨다.
+ */
 	if (task_contributes_to_load(p))
 		rq->nr_uninterruptible--;
 
+/* IAMROOT-12:
+ * -------------
+ * 런큐에 태스크를 추가한다.
+ */
 	enqueue_task(rq, p, flags);
 }
 
@@ -1132,6 +1150,22 @@ void check_preempt_curr(struct rq *rq, struct task_struct *p, int flags)
 {
 	const struct sched_class *class;
 
+/* IAMROOT-12:
+ * -------------
+ * 1) 요청한 태스크의 스케줄러와 현재 동작하던 태스크의 스케줄러가 동일한 경우 
+ *    해당 스케줄러 내에서만 우선 순위를 바꿀지 여부를 체크하도록 호출한다.
+ *	stop:	check_preempt_curr_stop() - 빈코드
+ *	dl:	check_preempt_curr_dl()
+ *	rt:	check_preempt_curr_rt()
+ *	cfs:	check_preempt_wakeup()
+ *	idle:	check_preempt_curr_idle() - 무조건 리스케줄 
+ *
+ * 2) 현재 런큐에서 동작하고 있는 태스크보다 우선 순위가 더 높은 태스크가 
+ *    엔큐된 경우 무조건 리스케줄 한다.
+ *	- stop 부터 현재 태스크의 스케줄러까지 순회하면서
+ *	  (stop -> dl -> rt -> cfs -> idle 순)
+ *      - 순회중인 스케줄러가 요청한 태스크인 경우 무조건 리스케줄한다.
+ */
 	if (p->sched_class == rq->curr->sched_class) {
 		rq->curr->sched_class->check_preempt_curr(rq, p, flags);
 	} else {
@@ -1599,10 +1633,20 @@ ttwu_stat(struct task_struct *p, int cpu, int wake_flags)
 
 static void ttwu_activate(struct rq *rq, struct task_struct *p, int en_flags)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 런큐에 태스크를 추가한다.
+ */
 	activate_task(rq, p, en_flags);
 	p->on_rq = TASK_ON_RQ_QUEUED;
 
 	/* if a worker is waking up, notify workqueue */
+
+/* IAMROOT-12:
+ * -------------
+ * 워커 스레드가 깨어나는 경우 워커 풀의 워커 스레드 수를 1 증가시킨다.
+ */
 	if (p->flags & PF_WQ_WORKER)
 		wq_worker_waking_up(p, cpu_of(rq));
 }
@@ -1613,6 +1657,11 @@ static void ttwu_activate(struct rq *rq, struct task_struct *p, int en_flags)
 static void
 ttwu_do_wakeup(struct rq *rq, struct task_struct *p, int wake_flags)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * preemption이 필요한지..(순서를 바꿔야 할 경우가 있는지)
+ */
 	check_preempt_curr(rq, p, wake_flags);
 	trace_sched_wakeup(p, true);
 
@@ -1643,6 +1692,10 @@ ttwu_do_activate(struct rq *rq, struct task_struct *p, int wake_flags)
 		rq->nr_uninterruptible--;
 #endif
 
+/* IAMROOT-12:
+ * -------------
+ * 깨어나는 태스크에 대해 wakeup 및 waking 플래그를 사용한다.
+ */
 	ttwu_activate(rq, p, ENQUEUE_WAKEUP | ENQUEUE_WAKING);
 	ttwu_do_wakeup(rq, p, wake_flags);
 }
@@ -1782,6 +1835,12 @@ static void ttwu_queue(struct task_struct *p, int cpu)
 	struct rq *rq = cpu_rq(cpu);
 
 #if defined(CONFIG_SMP)
+
+/* IAMROOT-12:
+ * -------------
+ * TTWU_QUEUE(디폴트=1)가 설정되어 있지만 캐시를 공유하지 않는 경우 
+ * ttwu_queue_remote()함수에서 IPI를 사용하여 wakeup 처리한다.
+ */
 	if (sched_feat(TTWU_QUEUE) && !cpus_share_cache(smp_processor_id(), cpu)) {
 		sched_clock_cpu(cpu); /* sync clocks x-cpu */
 		ttwu_queue_remote(p, cpu);
@@ -1823,6 +1882,11 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 	 */
 	smp_mb__before_spinlock();
 	raw_spin_lock_irqsave(&p->pi_lock, flags);
+
+/* IAMROOT-12:
+ * -------------
+ * 요청한 상태가 아닌 경우 깨우지 않고 함수를 빠져나간다.
+ */
 	if (!(p->state & state))
 		goto out;
 
@@ -1837,19 +1901,51 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 	 * If the owning (remote) cpu is still in the middle of schedule() with
 	 * this task as prev, wait until its done referencing the task.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * context_switch() 함수에서 기존 태스크는 on_cpu=0으로 변경되고,
+ * 다음 태스크는 on_cpu=1로 설정된다.
+ *	prepare_lock_switch() ~ finish_lock_switch() 구간에서 1로 설정
+ */
 	while (p->on_cpu)
 		cpu_relax();
 	/*
 	 * Pairs with the smp_wmb() in finish_lock_switch().
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * armv7의 경우 dmb(ish)를 호출한다.
+ */
 	smp_rmb();
 
+/* IAMROOT-12:
+ * -------------
+ * 태스크가 uninterruptible 상태인 경우 로드에 참여하는 것으로 간주한다.
+ */
 	p->sched_contributes_to_load = !!task_contributes_to_load(p);
+
+/* IAMROOT-12:
+ * -------------
+ * 태스크 상태를 waking으로 변경한다.
+ *	- TASK_INTERRUPTIBLE     ->  TASK_WAKING  -> TASK_RUNNING 
+ *	- TASK_UNINTERRUPTIBLE          "                "
+ *	- TASK_PARKED			"                "
+ */
 	p->state = TASK_WAKING;
 
+/* IAMROOT-12:
+ * -------------
+ * cfs: task_waking_fair()만 사용한다.
+ */
 	if (p->sched_class->task_waking)
 		p->sched_class->task_waking(p);
 
+/* IAMROOT-12:
+ * -------------
+ * wake 밸런싱을 통해 cpu를 선택한다.
+ */
 	cpu = select_task_rq(p, p->wake_cpu, SD_BALANCE_WAKE, wake_flags);
 	if (task_cpu(p) != cpu) {
 		wake_flags |= WF_MIGRATED;
@@ -1916,6 +2012,12 @@ out:
  */
 int wake_up_process(struct task_struct *p)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 태스크가 normal(TASK_INTERRUPTIBLE | TASK_UNINTERRUPTIBLE) 상태인 경우 
+ * 깨운다. 
+ */
 	WARN_ON(task_is_stopped_or_traced(p));
 	return try_to_wake_up(p, TASK_NORMAL, 0);
 }
@@ -2968,6 +3070,12 @@ static void __sched __schedule(void)
 /* IAMROOT-12:
  * -------------
  * 1을 2로 변경한다.
+ *
+ * rq_clock_skip_update() 함수를 사용하여 clock의 update를 skip 해달라고 
+ * 요청할 수 있다. 이렇게 요청한 경우 rq->clock_skip_update에 1이 설정되는데
+ * 이를 아래 루틴에서 2로 변경할 수 있다.
+ *
+ * 이 값이 2로 변경되는 경우에만 update_rq_clock() 함수에서 skip할 수 있다.
  */
 	rq->clock_skip_update <<= 1; /* promote REQ to ACT */
 

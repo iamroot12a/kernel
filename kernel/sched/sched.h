@@ -433,7 +433,16 @@ struct cfs_rq {
 	 * leaf_cfs_rq_list ties together list of leaf cfs_rq's in a cpu. This
 	 * list is used during load balance.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * on_list  
+ *      현재 cfs 런큐가 rq->leaf cfs 런큐 리스트에 등록되어 있는지 여부
+ * leaf_cfs_rq_list
+ *      rq->leaf cfs 런큐 리스트에 등록할 때 사용하는 노드이다.
+ */
 	int on_list;
+
 	struct list_head leaf_cfs_rq_list;
 	struct task_group *tg;	/* group that "owns" this runqueue */
 
@@ -616,6 +625,11 @@ struct rq {
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	/* list of leaf cfs_rq on this cpu: */
+
+/* IAMROOT-12:
+ * -------------
+ * leaf cfs 런큐들이 등록되는 리스트
+ */
 	struct list_head leaf_cfs_rq_list;
 
 	struct sched_avg avg;

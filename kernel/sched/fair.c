@@ -88,6 +88,11 @@ unsigned int sysctl_sched_child_runs_first __read_mostly;
  * and reduces their over-scheduling. Synchronous workloads will still
  * have immediate wakeup/sleep latencies.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * wakeup preemption에 사용하는 최소 시간이 1ms
+ */
 unsigned int sysctl_sched_wakeup_granularity = 1000000UL;
 unsigned int normalized_sysctl_sched_wakeup_granularity = 1000000UL;
 
@@ -353,6 +358,11 @@ static void update_cfs_rq_blocked_load(struct cfs_rq *cfs_rq,
 
 static inline void list_add_leaf_cfs_rq(struct cfs_rq *cfs_rq)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * rq->leaf_cfs_rq_list에 등록되지 않은 경우에만 추가한다.
+ */
 	if (!cfs_rq->on_list) {
 		/*
 		 * Ensure we either appear before our parent (if already
@@ -384,6 +394,11 @@ static inline void list_del_leaf_cfs_rq(struct cfs_rq *cfs_rq)
 }
 
 /* Iterate thr' all leaf cfs_rq's on a runqueue */
+
+/* IAMROOT-12:
+ * -------------
+ * leaf cfs 런큐부터 최상위 까지 순회한다.
+ */
 #define for_each_leaf_cfs_rq(rq, cfs_rq) \
 	list_for_each_entry_rcu(cfs_rq, &rq->leaf_cfs_rq_list, leaf_cfs_rq_list)
 
@@ -418,6 +433,10 @@ find_matching_se(struct sched_entity **se, struct sched_entity **pse)
 	se_depth = (*se)->depth;
 	pse_depth = (*pse)->depth;
 
+/* IAMROOT-12:
+ * -------------
+ * se와 pse의 depth가 같아질 때까지 맞춘다.
+ */
 	while (se_depth > pse_depth) {
 		se_depth--;
 		*se = parent_entity(*se);
@@ -428,6 +447,11 @@ find_matching_se(struct sched_entity **se, struct sched_entity **pse)
 		*pse = parent_entity(*pse);
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * depth가 같더라도 같은 cfs 런큐에 소속되지 않은 경우 같아질 때까지 
+ * 서로 위로 올라간다.
+ */
 	while (!is_same_group(*se, *pse)) {
 		*se = parent_entity(*se);
 		*pse = parent_entity(*pse);
@@ -3428,12 +3452,26 @@ place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int initial)
 {
 	u64 vruntime = cfs_rq->min_vruntime;
 
+/* IAMROOT-12:
+ * -------------
+ * 이 함수의 호출:
+ *	- fork로 인하여 새 엔티티의 vruntime 위치 설정
+ *	- sleep 되었던 엔티티가 다시 wakeup할 때의 vruntime 위치 설정
+ *	- 다른 스케줄러에 있다가 cfs로 바뀔 때 vruntime 위치 설정
+ */
+
 	/*
 	 * The 'current' period is already promised to the current tasks,
 	 * however the extra weight of the new task will slow them down a
 	 * little, place the new task so that it fits in the slot that
 	 * stays open at the end.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 새 태스크가 진입되는 경우 START_DEBIT 피처가 동작하는 경우 RB 트리에서 
+ * 뒤(새로 계산된 한 주기만큼 뒤로) 즈음에 위치하도록 조정한다.
+ */
 	if (initial && sched_feat(START_DEBIT))
 		vruntime += sched_vslice(cfs_rq, se);
 
@@ -3445,6 +3483,38 @@ place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int initial)
 		 * Halve their sleep time's effect, to allow
 		 * for a gentler effect of sleepers:
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 새 태스크가 아닌 엔티티가 enqueue할 때 적용할 시작 vruntime 결정 방법
+ * ---------------------------------------------------------
+ * GENTLE_FAIR_SLEEPERS(디폴트=1) 피처를 사용하는 경우 스케줄 레이튼시의 절반을
+ * 사용한다. 이 범위 이내의 sleep된 엔티티는 vruntime을 그대로 사용한다.
+ * sleep한 시간이 오래된 경우 cfs_rq->min_vruntime - sched_latency * 50%를 
+ * 사용한다. 
+ *
+ * 예) rpi2: 6ms * factor(3) * 50% = 9ms.
+ *
+ * 1) 엔티티가 min_vruntime으로 부터 9ms 이전에 dequeue된 경우 
+ *    se->vruntime = cfs->min_vruntime - sched_latency * 50%로 설정.
+ *
+ *                    <----------- 9ms ------------>
+ *    dequeue                                    enqueue
+ * ------+------------+----------------------------+------->
+ *                    ^                           
+ *                    |
+ *           (new se->vruntime)
+ *             
+ * 2) 엔티티가 dequeue된 후 얼마 안된 (sched_latency * 50% 범위 이내) 시간내에 
+ *    다시 enqueue된 경우 엔티티의 vruntime을 변경없이 그대로 사용한다.
+ *                                
+ *                    <------------ 9ms ------------>
+ *                        sleep                    wake
+ * -------------------+-----------------------------+------->
+ *                          ^
+ *                          |
+ *                    (se->vruntime)
+ */
 		if (sched_feat(GENTLE_FAIR_SLEEPERS))
 			thresh >>= 1;
 
@@ -3452,6 +3522,11 @@ place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int initial)
 	}
 
 	/* ensure we never gain time by being placed backwards. */
+
+/* IAMROOT-12:
+ * -------------
+ * 원래 가진 vruntime과 새로 적용할 vruntime 중 큰 값을 사용한다.
+ */
 	se->vruntime = max_vruntime(se->vruntime, vruntime);
 }
 
@@ -3464,6 +3539,23 @@ enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 	 * Update the normalized vruntime before updating min_vruntime
 	 * through calling update_curr().
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * wakeup 플래그가 없거나 waking 플래그가 있는 경우 vruntime에 다시 
+ * min_vruntime을 더한다.
+ *
+ * 1) ttwu_do_activate()에 의해 진입할 때 wakeup과 waking 플래그 둘 다 사용하였다.
+ *    -> min_vruntime을 더한다.
+ *
+ * 2) 태스크가 새롭게 런큐에 진입할 때에는 wakeup 및 waking 플래그를 사용하지 
+ *    않는다.
+ *    -> min_vruntime을 더한다.
+ *
+ * 3) cfs 런큐가 enqueue될 때 wakeup 플래그만 사용한다.
+ *    try_to_wake_up_local() 함수를 사용할 
+ *    -> min_vruntime을 더하지 않는다.
+ */
 	if (!(flags & ENQUEUE_WAKEUP) || (flags & ENQUEUE_WAKING))
 		se->vruntime += cfs_rq->min_vruntime;
 
@@ -3475,19 +3567,46 @@ enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 	account_entity_enqueue(cfs_rq, se);
 	update_cfs_shares(cfs_rq);
 
+/* IAMROOT-12:
+ * -------------
+ * sleep되었다가 깨어난 엔티티의 시작 위치(se->vruntime)를 결정한다.
+ */
 	if (flags & ENQUEUE_WAKEUP) {
 		place_entity(cfs_rq, se, 0);
+
+/* IAMROOT-12:
+ * -------------
+ * sleep 관련 통계 정보를 갱신한다.
+ */
 		enqueue_sleeper(cfs_rq, se);
 	}
 
 	update_stats_enqueue(cfs_rq, se);
 	check_spread(cfs_rq, se);
+
+/* IAMROOT-12:
+ * -------------
+ * enqueue할 때 curr가 아닌 엔티티만 RB 트리에 추가한다.
+ */
 	if (se != cfs_rq->curr)
 		__enqueue_entity(cfs_rq, se);
 	se->on_rq = 1;
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 cfs 런큐에 처음 enqueue된 경우 해당 cfs 런큐를 
+ * leaf cfs 런큐 리스트에 추가한다.
+ *
+ * leaf cfs 런큐 리스트는 leaf가 리스트의 선두에 위치하게 한다.
+ * -> 실제 사용 함수: for_each_leaf_cfs_rq(...){ }
+ */
 	if (cfs_rq->nr_running == 1) {
 		list_add_leaf_cfs_rq(cfs_rq);
+
+/* IAMROOT-12:
+ * -------------
+ * 엔큐하는 현재 시점에서도 runtime 잔량을 확인하고 스로틀할지 여부를 결정한다.
+ */
 		check_enqueue_throttle(cfs_rq);
 	}
 }
@@ -5312,6 +5431,13 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 			se = parent_entity(se);
 			break;
 		}
+
+/* IAMROOT-12:
+ * -------------
+ * cfs 런큐들은 상위 cfs 런큐에서 잠시 dequeue 하였다가 다시 enqueue되는 
+ * 목적으로 운영된다. 따라서 항상 DEQUEUE_SLEEP 플래그를 사용하여 
+ * dequeue 한다.
+ */
 		flags |= DEQUEUE_SLEEP;
 	}
 
@@ -5409,11 +5535,20 @@ static void record_wakee(struct task_struct *p)
 	 * about the boundary, really active task won't care
 	 * about the loss.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 1초가 지날 때마다 wakee_flips를 절반으로 줄인다(decay).
+ */
 	if (time_after(jiffies, current->wakee_flip_decay_ts + HZ)) {
 		current->wakee_flips >>= 1;
 		current->wakee_flip_decay_ts = jiffies;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 태스크에서 깨운 태스크가 바뀔 때 마다 wakee_flips를 증가시킨다.
+ */
 	if (current->last_wakee != p) {
 		current->last_wakee = p;
 		current->wakee_flips++;
@@ -5438,7 +5573,17 @@ static void task_waking_fair(struct task_struct *p)
 	min_vruntime = cfs_rq->min_vruntime;
 #endif
 
+/* IAMROOT-12:
+ * -------------
+ * sleep 목적으로 dequeue_entity()하는 경우 그 때 min_vruntime을 빼지 않았었다.
+ * wakeup할 때 늦게 빼는 이유는?
+ */
 	se->vruntime -= min_vruntime;
+
+/* IAMROOT-12:
+ * -------------
+ * wakee_flips 카운터를 갱신한다
+ */
 	record_wakee(p);
 }
 
@@ -5942,6 +6087,22 @@ wakeup_gran(struct sched_entity *curr, struct sched_entity *se)
 	 * This is especially important for buddies when the leftmost
 	 * task is higher priority than the buddy.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * se의 우선순위가 높을 수록 wakeup_gran 값은 작아진다.
+ * 예) se->load.weigiht=2048, curr->load.weight=1024, gran=1ms 
+ *     -> wakeup_gran() = 0.33ms 
+ *
+ * se가 좌측에 있을 때에 gran 값으로 판단한다.
+ * 
+ * 1) se < curr
+ *     <--se:1024--><----------curr:2048----------->
+ *                  <----------result gran--------->
+ * 2) se > curr
+ *     <----------se:2048-----------><--curr:1024-->
+ *                             <----result gran---->
+ */
 	return calc_delta_fair(gran, se);
 }
 
@@ -5962,12 +6123,38 @@ wakeup_gran(struct sched_entity *curr, struct sched_entity *se)
 static int
 wakeup_preempt_entity(struct sched_entity *curr, struct sched_entity *se)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 1) 요청한 se1이 curr보다 뒤 쪽에 위치한 경우 preemption할 필요 없다.
+ *                             curr       se1
+ *    ---------------------------+---------+----------->
+ *     result=-1
+ *
+ * 3) 요청한 se2가 curr에 가까운 앞 쪽에 위치한 경우 preemption 할 필요 없다.
+ *                 |<---gran---->|
+ *                      se2    curr
+ *    -------------------+-------+--------------------->
+ *     result=0
+ *
+ * 3) 요청한 se3가 curr보다 한참 앞에 있는 경우 preemption 한다.
+ *                 |<---gran---->|
+ *      se3                    curr
+ *    ---------------------------+---------+----------->
+ *     result=1
+ */
+
 	s64 gran, vdiff = curr->vruntime - se->vruntime;
 
 	if (vdiff <= 0)
 		return -1;
 
 	gran = wakeup_gran(curr, se);
+
+/* IAMROOT-12:
+ * -------------
+ * 결과 값이 1인 경우에만 preemption을 하도록 한다.
+ */
 	if (vdiff > gran)
 		return 1;
 
@@ -6006,9 +6193,19 @@ static void check_preempt_wakeup(struct rq *rq, struct task_struct *p, int wake_
 	struct task_struct *curr = rq->curr;
 	struct sched_entity *se = &curr->se, *pse = &p->se;
 	struct cfs_rq *cfs_rq = task_cfs_rq(curr);
+
+/* IAMROOT-12:
+ * -------------
+ * cfs 런큐에서 동작하는 엔티티 수가 sched_nr_latency(기본 8개)를 초과하는지 
+ * 여부를 갖는다.
+ */
 	int scale = cfs_rq->nr_running >= sched_nr_latency;
 	int next_buddy_marked = 0;
 
+/* IAMROOT-12:
+ * -------------
+ * curr와 요청한 태스크가 동일하면 preemption 필요 여부를 체크할 필요 없다.
+ */
 	if (unlikely(se == pse))
 		return;
 
@@ -6018,9 +6215,21 @@ static void check_preempt_wakeup(struct rq *rq, struct task_struct *p, int wake_
 	 * lead to a throttle).  This both saves work and prevents false
 	 * next-buddy nomination below.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 요청한 태스크의 cfs 런큐가 스로틀 중이면 그냥 빠져나간다.
+ */
 	if (unlikely(throttled_hierarchy(cfs_rq_of(pse))))
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * NEXT_BUDDY 피처가 동작중이고(디폴트=0) 9개 이상의 엔티티가 있는데 
+ * WF_FORK가 아닌 경우 요청한 엔티티를 next buddy에 설정한다.
+ *
+ * WF_FORK: wake_up_new_task() 함수에서 호출하는 경우 설정된다.
+ */
 	if (sched_feat(NEXT_BUDDY) && scale && !(wake_flags & WF_FORK)) {
 		set_next_buddy(pse);
 		next_buddy_marked = 1;
@@ -6040,6 +6249,12 @@ static void check_preempt_wakeup(struct rq *rq, struct task_struct *p, int wake_
 		return;
 
 	/* Idle tasks are by definition preempted by non-idle tasks. */
+
+/* IAMROOT-12:
+ * -------------
+ * 현재 idle policy로 돌고 있고 새로 요청한 엔티티는 idle이 아니면 
+ * 당연히 preemption을 하게 한다.
+ */
 	if (unlikely(curr->policy == SCHED_IDLE) &&
 	    likely(p->policy != SCHED_IDLE))
 		goto preempt;
@@ -6048,17 +6263,39 @@ static void check_preempt_wakeup(struct rq *rq, struct task_struct *p, int wake_
 	 * Batch and idle tasks do not preempt non-idle tasks (their preemption
 	 * is driven by the tick):
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 요청한 엔티티의 policy가 idle이나 batch인 경우 preemption 당하지 않는다.
+ * WAKEUP_PREEMPTION 피처(디폴트=1)가 꺼져 있는 경우 preemption하지 않고 
+ * 나간다. 이 기능이 켜 있는 경우 wakeup 엔티티에 대해 preemption을 진행할 
+ * 기회를 얻는다.
+ */
 	if (unlikely(p->policy != SCHED_NORMAL) || !sched_feat(WAKEUP_PREEMPTION))
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * 같은 cfs 런큐를 사용할 때까지 se와 pse를 조정한다.
+ */
 	find_matching_se(&se, &pse);
 	update_curr(cfs_rq_of(se));
 	BUG_ON(!pse);
+/* IAMROOT-12:
+ * -------------
+ * 요청한 엔티티(pse)가 se(curr) 보다 작고 gran 범위 밖에 있는 경우에만 
+ * preemption을 하도록 한다.
+ */
 	if (wakeup_preempt_entity(se, pse) == 1) {
 		/*
 		 * Bias pick_next to pick the sched entity that is
 		 * triggering this preemption.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 버디 세팅도 한다.
+ */
 		if (!next_buddy_marked)
 			set_next_buddy(pse);
 		goto preempt;
@@ -6077,9 +6314,19 @@ preempt:
 	 * Also, during early boot the idle thread is in the fair class,
 	 * for obvious reasons its a bad idea to schedule back to it.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * curr entity가 cfs 런큐에 없거나 curr가 idle 태스크인 경우   
+ */
 	if (unlikely(!se->on_rq || curr == rq->idle))
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * LAST_BUDDY 피처를 사용하고 9개 이상의 엔티티가 있고 curr가 태스크인 경우 
+ * last 버디로 설정한다.
+ */
 	if (sched_feat(LAST_BUDDY) && scale && entity_is_task(se))
 		set_last_buddy(se);
 }
@@ -8854,6 +9101,11 @@ static void task_fork_fair(struct task_struct *p)
 
 	if (curr)
 		se->vruntime = curr->vruntime;
+
+/* IAMROOT-12:
+ * -------------
+ * 새 태스크 엔티티의 시작 위치(se->vruntime)를 결정한다.
+ */
 	place_entity(cfs_rq, se, 1);
 
 	if (sysctl_sched_child_runs_first && curr && entity_before(curr, se)) {
@@ -8896,6 +9148,11 @@ static void switched_from_fair(struct rq *rq, struct task_struct *p)
 {
 	struct sched_entity *se = &p->se;
 	struct cfs_rq *cfs_rq = cfs_rq_of(se);
+
+/* IAMROOT-12:
+ * -------------
+ * 다른 스케줄링 클래스로부터 cfs 스케줄링 클래스로 변경된 경우
+ */
 
 	/*
 	 * Ensure the task's vruntime is normalized, so that when it's
