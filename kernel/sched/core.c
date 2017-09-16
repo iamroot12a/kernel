@@ -564,6 +564,11 @@ static bool set_nr_if_polling(struct task_struct *p)
 	struct thread_info *ti = task_thread_info(p);
 	typeof(ti->flags) old, val = ACCESS_ONCE(ti->flags);
 
+/* IAMROOT-12:
+ * -------------
+ * TIF_POLLING_NRFLAG가 설정되어 있는 경우에만 TIF_NEED_RESCHED 설정을 한다.
+ * 설정된 경우 true를 반환한다.
+ */
 	for (;;) {
 		if (!(val & _TIF_POLLING_NRFLAG))
 			return false;
@@ -1586,6 +1591,14 @@ int select_task_rq(struct task_struct *p, int cpu, int sd_flags, int wake_flags)
 
 static void update_avg(u64 *avg, u64 sample)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * avg 값에 sample을 적용할 때 차이 값 1/8만을 avg에 적용한다.
+ *	avg=1024, sample=1144
+ *	-> avg+=15 
+ *	-> avg=1039
+ */
 	s64 diff = sample - *avg;
 	*avg += diff >> 3;
 }
@@ -1668,12 +1681,28 @@ ttwu_do_wakeup(struct rq *rq, struct task_struct *p, int wake_flags)
 	p->state = TASK_RUNNING;
 #ifdef CONFIG_SMP
 	if (p->sched_class->task_woken)
+
+/* IAMROOT-12:
+ * -------------
+ * 태스크를 push하기 위해 사용한다. (로드밸런싱 목적)
+ *	dl:	task_woken_dl()
+ *	rt:	task_woken_rt()
+ */
 		p->sched_class->task_woken(rq, p);
 
+/* IAMROOT-12:
+ * -------------
+ * idle 밸런싱에 사용할 평균 idle 값을 갱신한다.
+ * 최대 값은 max_idle_balance_cost의 2배로 제한한다.
+ */
 	if (rq->idle_stamp) {
 		u64 delta = rq_clock(rq) - rq->idle_stamp;
 		u64 max = 2*rq->max_idle_balance_cost;
 
+/* IAMROOT-12:
+ * -------------
+ * delta - avg_idle 값의 1/8만을 avg_idle에 추가한다.
+ */
 		update_avg(&rq->avg_idle, delta);
 
 		if (rq->avg_idle > max)
@@ -1736,6 +1765,10 @@ void sched_ttwu_pending(void)
 
 	raw_spin_lock_irqsave(&rq->lock, flags);
 
+/* IAMROOT-12:
+ * -------------
+ * wake_list에 있는 모든 태스크들을 런큐에 엔큐한다.(깨운다)
+ */
 	while (llist) {
 		p = llist_entry(llist, struct task_struct, wake_entry);
 		llist = llist_next(llist);
@@ -1776,6 +1809,12 @@ void scheduler_ipi(void)
 	 * somewhat pessimize the simple resched case.
 	 */
 	irq_enter();
+
+/* IAMROOT-12:
+ * -------------
+ * wake_list에 있는 태스크들을 엔큐한다.
+ *	ttwu_queue_remote() 함수에서 보낸 태스크들이 wake_list에 존재한다.
+ */
 	sched_ttwu_pending();
 
 	/*
@@ -1792,7 +1831,18 @@ static void ttwu_queue_remote(struct task_struct *p, int cpu)
 {
 	struct rq *rq = cpu_rq(cpu);
 
+
+/* IAMROOT-12:
+ * -------------
+ * 요청한 cpu의 런큐에 있는 wake_list에 태스크를 추가한 후 IPI를 통해 
+ * 해당 cpu로 리스케줄 요청을 한다.
+ */
 	if (llist_add(&p->wake_entry, &cpu_rq(cpu)->wake_list)) {
+/* IAMROOT-12:
+ * -------------
+ * TIF_POLLING_NRFLAG가 설정되어 있는 경우에만 TIF_NEED_RESCHED 설정을 한다.
+ * 설정된 경우 IPI를 통해 해당 cpu에 리스케줄 요청을 한다.
+ */
 		if (!set_nr_if_polling(rq->idle))
 			smp_send_reschedule(cpu);
 		else
@@ -1843,12 +1893,23 @@ static void ttwu_queue(struct task_struct *p, int cpu)
  */
 	if (sched_feat(TTWU_QUEUE) && !cpus_share_cache(smp_processor_id(), cpu)) {
 		sched_clock_cpu(cpu); /* sync clocks x-cpu */
+
+/* IAMROOT-12:
+ * -------------
+ * 태스크를 요청한 cpu의 wake_list에 넣어둔 후 해당 cpu에 IPI를 통해 
+ * 리스케줄 요청을 하여 꺠운다. 
+ */
 		ttwu_queue_remote(p, cpu);
 		return;
 	}
 #endif
 
 	raw_spin_lock(&rq->lock);
+
+/* IAMROOT-12:
+ * -------------
+ * 태스크를 요청한 런큐에 엔큐한다.
+ */
 	ttwu_do_activate(rq, p, 0);
 	raw_spin_unlock(&rq->lock);
 }
@@ -2455,8 +2516,19 @@ prepare_task_switch(struct rq *rq, struct task_struct *prev,
 	trace_sched_switch(prev, next);
 	sched_info_switch(rq, prev, next);
 	perf_event_task_sched_out(prev, next);
+
+/* IAMROOT-12:
+ * -------------
+ * 태스크가 preemption 될 때 호출될 nb가 있는 경우 호출한다.
+ * (kvm이 사용한다.)
+ */
 	fire_sched_out_preempt_notifiers(prev, next);
 	prepare_lock_switch(rq, next);
+
+/* IAMROOT-12:
+ * -------------
+ * arm은 해당사항 없다.
+ */
 	prepare_arch_switch(next);
 }
 
@@ -2578,6 +2650,10 @@ context_switch(struct rq *rq, struct task_struct *prev,
 {
 	struct mm_struct *mm, *oldmm;
 
+/* IAMROOT-12:
+ * -------------
+ * 스위칭 전에 아키텍처에 따라 필요한 일들을 먼저 수행한다.
+ */
 	prepare_task_switch(rq, prev, next);
 
 	mm = next->mm;
@@ -2589,13 +2665,27 @@ context_switch(struct rq *rq, struct task_struct *prev,
 	 */
 	arch_start_context_switch(prev);
 
+/* IAMROOT-12:
+ * -------------
+ * 커널 태스크인 경우(!mm) active_mm에 기존 태스크의 active_mm을 복사해둔다.
+ * 기존 태스크의 active_mm의 참조 카운터를 1 증가시킨다.
+ */
 	if (!mm) {
 		next->active_mm = oldmm;
 		atomic_inc(&oldmm->mm_count);
+
+/* IAMROOT-12:
+ * -------------
+ * arm은 사용하지 않는다.
+ */
 		enter_lazy_tlb(oldmm, next);
 	} else
 		switch_mm(oldmm, mm, next);
 
+/* IAMROOT-12:
+ * -------------
+ * 기존 태스크가 커널인 경우 기존 태스크의 active_mm에 null로 클리어한다.
+ */
 	if (!prev->mm) {
 		prev->active_mm = NULL;
 		rq->prev_mm = oldmm;
@@ -2965,13 +3055,29 @@ pick_next_task(struct rq *rq, struct task_struct *prev)
 	 * Optimization: we know that if all tasks are in
 	 * the fair class we can call that function directly:
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * prev 태스크가 cfs 태스크이고 런큐에 cfs 태스들만 있는 경우 
+ *	pick_next_task_fair()를 호출한다.
+ */
 	if (likely(prev->sched_class == class &&
 		   rq->nr_running == rq->cfs.h_nr_running)) {
 		p = fair_sched_class.pick_next_task(rq, prev);
+
+/* IAMROOT-12:
+ * -------------
+ * cfs 태스크보다 우선 순위 높은 태스크가 발생한 경우 again 레이블로 이동한다.
+ */
 		if (unlikely(p == RETRY_TASK))
 			goto again;
 
 		/* assumes fair_sched_class->next == idle_sched_class */
+
+/* IAMROOT-12:
+ * -------------
+ * pick할 다음 cfs 태스크가 없는 경우 idle 태스크를 선택한다.
+ */
 		if (unlikely(!p))
 			p = idle_sched_class.pick_next_task(rq, prev);
 
@@ -2979,6 +3085,11 @@ pick_next_task(struct rq *rq, struct task_struct *prev)
 	}
 
 again:
+
+/* IAMROOT-12:
+ * -------------
+ * stop -> dl -> rt -> cfs -> idle 스케줄러까지 다음 태스크를 pick 시도한다.
+ */
 	for_each_class(class) {
 		p = class->pick_next_task(rq, prev);
 		if (p) {
@@ -2988,6 +3099,11 @@ again:
 		}
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * rq->idle에는 항상 idle 태스크가 존재하기 때문에 위의 루프를 벗어나는 
+ * 경우는 버그이다.
+ */
 	BUG(); /* the idle class will always have a runnable task */
 }
 
@@ -3083,7 +3199,7 @@ static void __sched __schedule(void)
 
 /* IAMROOT-12:
  * -------------
- * 락을 건 상태에서 다시 한 번 TASK_RUNNING 상태가 아니어야 하고,
+ * 락을 건 상태에서 다시 한 번 TASK_RUNNING(0) 상태가 아니어야 하고,
  * schedule() 함수에서 호출한 경우이다.
  */
 	if (prev->state && !(preempt_count() & PREEMPT_ACTIVE)) {
@@ -3092,10 +3208,14 @@ static void __sched __schedule(void)
  * -------------
  * 낮은 확률로 signal pending 상태인 경우 다시 TASK_RUNNING 상태로 바꾼다.
  */
-
 		if (unlikely(signal_pending_state(prev->state, prev))) {
 			prev->state = TASK_RUNNING;
 		} else {
+
+/* IAMROOT-12:
+ * -------------
+ * 런큐에서 동작하던 태스크를 디큐한다.
+ */
 			deactivate_task(rq, prev, DEQUEUE_SLEEP);
 			prev->on_rq = 0;
 
@@ -3104,6 +3224,11 @@ static void __sched __schedule(void)
 			 * whether it wants to wake up a task to maintain
 			 * concurrency.
 			 */
+
+/* IAMROOT-12:
+ * -------------
+ * 해당 태스크가 워커스레드인 경우 슬리핑 처리한다.
+ */
 			if (prev->flags & PF_WQ_WORKER) {
 				struct task_struct *to_wakeup;
 
@@ -3115,19 +3240,40 @@ static void __sched __schedule(void)
 		switch_count = &prev->nvcsw;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * prev 태스크가 런큐에 있는 경우 클럭 갱신을 한다.
+ */
 	if (task_on_rq_queued(prev))
 		update_rq_clock(rq);
 
+/* IAMROOT-12:
+ * -------------
+ * 다음 실행할 태스크를 선택한다. (skip, next, last 버디를 참고한다)
+ */
 	next = pick_next_task(rq, prev);
+
+/* IAMROOT-12:
+ * -------------
+ * 기존 태스크에 설정되었었던 리스케줄 요청 플래그를 클리어한다.
+ */
 	clear_tsk_need_resched(prev);
 	clear_preempt_need_resched();
 	rq->clock_skip_update = 0;
 
+/* IAMROOT-12:
+ * -------------
+ * 기존 태스크와 다음 태스크가 동일하지 않은 경우 스위칭을 시작한다.
+ */
 	if (likely(prev != next)) {
 		rq->nr_switches++;
 		rq->curr = next;
 		++*switch_count;
 
+/* IAMROOT-12:
+ * -------------
+ * 다음 태스크로 context 스위칭을 수행한다.
+ */
 		rq = context_switch(rq, prev, next); /* unlocks the rq */
 		cpu = cpu_of(rq);
 	} else
@@ -4570,6 +4716,15 @@ SYSCALL_DEFINE0(sched_yield)
 {
 	struct rq *rq = this_rq_lock();
 
+
+/* IAMROOT-12:
+ * -------------
+ * 현재 태스크를 슬립하고 양보처리한다.
+ *
+ * dl:	yield_task_dl()
+ * rt:	yield_task_rt()
+ * cfs:	yield_task_fair()
+ */
 	schedstat_inc(rq, yld_count);
 	current->sched_class->yield_task(rq);
 
@@ -4690,6 +4845,10 @@ int __sched yield_to(struct task_struct *p, bool preempt)
 	unsigned long flags;
 	int yielded = 0;
 
+/* IAMROOT-12:
+ * -------------
+ * kvm에서 호출되는 API
+ */
 	local_irq_save(flags);
 	rq = this_rq();
 

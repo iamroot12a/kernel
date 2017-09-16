@@ -45,6 +45,7 @@ static inline void a15_erratum_get_cpumask(int this_cpu, struct mm_struct *mm,
 static inline void check_and_switch_context(struct mm_struct *mm,
 					    struct task_struct *tsk)
 {
+
 	if (unlikely(mm->context.vmalloc_seq != init_mm.context.vmalloc_seq))
 		__check_vmalloc_seq(mm);
 
@@ -124,11 +125,23 @@ switch_mm(struct mm_struct *prev, struct mm_struct *next,
 	 * so check for possible thread migration and invalidate the I-cache
 	 * if we're new to this CPU.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * armv7 이상 아키텍처들은 캐시 조작에 브로드캐스트 방법이 필요 없다.
+ */
 	if (cache_ops_need_broadcast() &&
 	    !cpumask_empty(mm_cpumask(next)) &&
 	    !cpumask_test_cpu(cpu, mm_cpumask(next)))
 		__flush_icache_all();
 
+/* IAMROOT-12:
+ * -------------
+ * 같은 mm을 사용하지 않는 경우에만(프로세스 내부의 스레드들과 mm을 공유한다)
+ * 즉 프로세스가 다른 경우에만 mm이 다르므로 mm 스위칭을 수행한다. 
+ *
+ * (CONTEXTIDR, TTBR0 갱신)
+ */
 	if (!cpumask_test_and_set_cpu(cpu, mm_cpumask(next)) || prev != next) {
 		check_and_switch_context(next, tsk);
 		if (cache_is_vivt())

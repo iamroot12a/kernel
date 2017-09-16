@@ -3698,7 +3698,7 @@ dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 
 /* IAMROOT-12:
  * -------------
- * curr가 아닌 엔트리를 rb 트리에서 제거한다.
+ * curr가 아닌 엔트리를 rb 트리에서 제거하고 curr에 대입한다.
  */
 	if (se != cfs_rq->curr)
 		__dequeue_entity(cfs_rq, se);
@@ -3825,6 +3825,11 @@ static void
 set_next_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
 {
 	/* 'current' is not kept within the tree. */
+
+/* IAMROOT-12:
+ * -------------
+ * 엔티티가 rb 트리에 있는 경우 rb 트리에서 제거하고 curr에 대입한다.
+ */
 	if (se->on_rq) {
 		/*
 		 * Any task has to be enqueued before it get to execute on
@@ -3867,6 +3872,46 @@ pick_next_entity(struct cfs_rq *cfs_rq, struct sched_entity *curr)
 
 /* IAMROOT-12:
  * -------------
+ * left:	vruntime이 가장 작은 엔티티 
+ * second:	vruntime이 두 번째로 가장 작은 엔티티
+ *
+ * pick next 우선 순위 
+ * ====================
+ * 1) curr 하나만 있는 경우 다시 curr가 선택된다.
+ * 2) next 버디가 left에 gran 범위 이내로 인접한 경우 next 버디를 선택한다.
+ * 3) last 버디가 left에 gran 범위 이내로 인접한 경우 last 버디를 선택한다.
+ * 4) skip 버디가 left에 gran 범위 이내로 인접한 경우 skip 버디를 포기하고 
+ *    second 버디를 선택한다.
+ *
+ * A) curr가 left보다 뒤로 이동한 경우 
+ *
+ *                   RB                  curr
+ *                    |                   |
+ *        +-------+-------+-------+       |
+ *        |       |       |       |       |
+ *        |       |       |       |       |
+ *      left   second                    
+ *     (skip)           (next)  (last)
+ *
+ *        <------gran----->
+ *        <------gran------------->
+ *
+ * B) curr가 여전히 선두에 있는 경우 
+ *
+ *       curr                RB
+ *        |                  |
+ *        |       +-------+-------+-------+       
+ *        |       |       |       |       |
+ *        |       |       |       |       |
+ *       left   second                    
+ *     (skip)                   (next)  (last)
+ *
+ *        <------gran------------->
+ *        <------gran--------------------->
+ */
+
+/* IAMROOT-12:
+ * -------------
  * RB 트리에서 대기하는 첫 엔티티
  */
 	struct sched_entity *left = __pick_first_entity(cfs_rq);
@@ -3876,6 +3921,12 @@ pick_next_entity(struct cfs_rq *cfs_rq, struct sched_entity *curr)
 	 * If curr is set we have to see if its left of the leftmost entity
 	 * still in the tree, provided there was anything in the tree at all.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * RB 트리에서 대기하는 첫 번째 엔티티가 없거나 curr의 vruntime이 작은 경우 
+ * 그냥 curr를 선택한다.
+ */
 	if (!left || (curr && entity_before(curr, left)))
 		left = curr;
 
@@ -3889,9 +3940,18 @@ pick_next_entity(struct cfs_rq *cfs_rq, struct sched_entity *curr)
 	 * Avoid running the skip buddy, if running something else can
 	 * be done without getting too unfair.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 현재 선택한 엔티티가 skip 버디 엔티티인 경우
+ */
 	if (cfs_rq->skip == se) {
 		struct sched_entity *second;
 
+/* IAMROOT-12:
+ * -------------
+ * 러닝할 엔티티가 변경되지 않은 경우(curr가 다시 선택된 경우)
+ */
 		if (se == curr) {
 			second = __pick_first_entity(cfs_rq);
 		} else {
@@ -3900,6 +3960,22 @@ pick_next_entity(struct cfs_rq *cfs_rq, struct sched_entity *curr)
 				second = curr;
 		}
 
+/* IAMROOT-12:
+ * -------------
+ * skip 버디에 포함된 엔티티 대신 차선 엔티티가 left에 가까운 경우 차선 엔티티를 
+ * 선택한다.
+ *
+ *         cfs_rq
+ *           |
+ *        +-----+         |
+ *        |     |         |
+ *      left  second    curr
+ *       se
+ *     (skip)     
+ *
+ *   <--------->
+ *       gran 범위 이내인 경우 차선택 second를 채택한다.
+ */
 		if (second && wakeup_preempt_entity(second, left) < 1)
 			se = second;
 	}
@@ -3907,15 +3983,29 @@ pick_next_entity(struct cfs_rq *cfs_rq, struct sched_entity *curr)
 	/*
 	 * Prefer last buddy, try to return the CPU to a preempted task.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * last 버디가 left에 가까운 경우(gran 범위 이내) last 버디를 선택한다.
+ */
 	if (cfs_rq->last && wakeup_preempt_entity(cfs_rq->last, left) < 1)
 		se = cfs_rq->last;
 
 	/*
 	 * Someone really wants this to run. If it's not unfair, run it.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * next 버디가 left에 가까운 경우(gran 범위 이내) next 버디를 선택한다.
+ */
 	if (cfs_rq->next && wakeup_preempt_entity(cfs_rq->next, left) < 1)
 		se = cfs_rq->next;
 
+/* IAMROOT-12:
+ * -------------
+ * 선택한 엔티티가 버디에 설정된 경우 모두 제거한다.
+ */
 	clear_buddies(cfs_rq, se);
 
 	return se;
@@ -3929,13 +4019,28 @@ static void put_prev_entity(struct cfs_rq *cfs_rq, struct sched_entity *prev)
 	 * If still on the runqueue then deactivate_task()
 	 * was not called and update_curr() has to be done:
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 기존 엔티티가 런큐에 있는 경우 클럭 및 PELT 등 갱신한다.
+ */
 	if (prev->on_rq)
 		update_curr(cfs_rq);
 
 	/* throttle cfs_rqs exceeding runtime */
+
+/* IAMROOT-12:
+ * -------------
+ * cfs 밴드위드 스로틀 체크를 수행한다. (필요 시 스로틀)
+ */
 	check_cfs_rq_runtime(cfs_rq);
 
 	check_spread(cfs_rq, prev);
+
+/* IAMROOT-12:
+ * -------------
+ * 기존 엔티티를 rb 트리에 추가하고 PELT 갱신한다.
+ */
 	if (prev->on_rq) {
 		update_stats_wait_start(cfs_rq, prev);
 		/* Put 'current' back into the tree. */
@@ -3943,6 +4048,11 @@ static void put_prev_entity(struct cfs_rq *cfs_rq, struct sched_entity *prev)
 		/* in !on_rq case, update occurred at dequeue */
 		update_entity_load_avg(prev, 1);
 	}
+
+/* IAMROOT-12:
+ * -------------
+ * cfs 런큐의 curr는 null로 둔다.
+ */
 	cfs_rq->curr = NULL;
 }
 
@@ -4985,9 +5095,18 @@ static void check_enqueue_throttle(struct cfs_rq *cfs_rq)
 /* conditionally throttle active cfs_rq's from put_prev_entity() */
 static bool check_cfs_rq_runtime(struct cfs_rq *cfs_rq)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 밴드위드 설정이 없는 경우 false를 반환한다.
+ */
 	if (!cfs_bandwidth_used())
 		return false;
 
+/* IAMROOT-12:
+ * -------------
+ * cfs 런큐의 런타임 잔량이 있는 경우 false를 반환한다.
+ */
 	if (likely(!cfs_rq->runtime_enabled || cfs_rq->runtime_remaining > 0))
 		return false;
 
@@ -4995,9 +5114,18 @@ static bool check_cfs_rq_runtime(struct cfs_rq *cfs_rq)
 	 * it's possible for a throttled entity to be forced into a running
 	 * state (e.g. set_curr_task), in this case we're finished.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 이미 스로틀 상태인 경우 true를 반환한다.
+ */
 	if (cfs_rq_throttled(cfs_rq))
 		return true;
 
+/* IAMROOT-12:
+ * -------------
+ * 런타임이 없어 현재 cfs 런큐를 스로틀하고 true를 반환한다.
+ */
 	throttle_cfs_rq(cfs_rq);
 	return true;
 }
@@ -6227,6 +6355,7 @@ static void check_preempt_wakeup(struct rq *rq, struct task_struct *p, int wake_
  * -------------
  * NEXT_BUDDY 피처가 동작중이고(디폴트=0) 9개 이상의 엔티티가 있는데 
  * WF_FORK가 아닌 경우 요청한 엔티티를 next buddy에 설정한다.
+ * (가급적 빠른 wakeup이 가능하도록 설정한다)
  *
  * WF_FORK: wake_up_new_task() 함수에서 호출하는 경우 설정된다.
  */
@@ -6325,7 +6454,9 @@ preempt:
 /* IAMROOT-12:
  * -------------
  * LAST_BUDDY 피처를 사용하고 9개 이상의 엔티티가 있고 curr가 태스크인 경우 
- * last 버디로 설정한다.
+ * last 버디로 설정한다. 이러한 경우 pickup_next_entity() 함수에서 선택한 
+ * 다음 엔티티와 가까운(gran) 범위 이내인 경우에 new 태스크를 먼저 수행할 
+ * 수 있도록 한다.
  */
 	if (sched_feat(LAST_BUDDY) && scale && entity_is_task(se))
 		set_last_buddy(se);
@@ -6341,9 +6472,18 @@ pick_next_task_fair(struct rq *rq, struct task_struct *prev)
 
 again:
 #ifdef CONFIG_FAIR_GROUP_SCHED
+
+/* IAMROOT-12:
+ * -------------
+ * 동작시킬 cfs 엔티티가 하나도 없는 경우 idle 레이블로 이동한다.
+ */
 	if (!cfs_rq->nr_running)
 		goto idle;
 
+/* IAMROOT-12:
+ * -------------
+ * 기존 태스크가 cfs 태스크가 아닌 경우 simple 레이블로 이동한다.
+ */
 	if (prev->sched_class != &fair_sched_class)
 		goto simple;
 
@@ -6374,13 +6514,27 @@ again:
 		 * dequeue its entity in the parent(s). Therefore the 'simple'
 		 * nr_running test will indeed be correct.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 낮은 확률로 해당 cfs 런큐의 런타임이 소진된 경우 simple 레이블로 이동한다.
+ */
 		if (unlikely(check_cfs_rq_runtime(cfs_rq)))
 			goto simple;
 
+/* IAMROOT-12:
+ * -------------
+ * 다음 엔티티를 선택한다. (skip, next, last 버디를 참고하여 선택한다.)
+ */
 		se = pick_next_entity(cfs_rq, curr);
 		cfs_rq = group_cfs_rq(se);
 	} while (cfs_rq);
 
+/* IAMROOT-12:
+ * -------------
+ * 최상위 cfs 런큐부터 태스크가 소속된 cfs 런큐까지 루프를 돌고 최종 선택한 
+ * 엔티티는 태스크이다.
+ */
 	p = task_of(se);
 
 	/*
@@ -6391,20 +6545,40 @@ again:
 	if (prev != p) {
 		struct sched_entity *pse = &prev->se;
 
+
+/* IAMROOT-12:
+ * -------------
+ * 두 태스크가 같은 cfs 런큐를 보지 않는 경우 계속 up한다.
+ */
 		while (!(cfs_rq = is_same_group(se, pse))) {
 			int se_depth = se->depth;
 			int pse_depth = pse->depth;
 
+/* IAMROOT-12:
+ * -------------
+ * 기존 태스크가 하위 그룹에 있거나 동일한 경우 해당 엔티티를 rb 트리에 
+ * 추가한다. cfs 런큐는 null로 변경한다. 
+ */
 			if (se_depth <= pse_depth) {
 				put_prev_entity(cfs_rq_of(pse), pse);
 				pse = parent_entity(pse);
 			}
+
+/* IAMROOT-12:
+ * -------------
+ * 새로 실행할 태스크가 하위 그룹에 있거나 동일한 경우 해당 엔티티를 
+ * rb 트리에서 제거하고 cfs_rq->curr에 대입한다.
+ */
 			if (se_depth >= pse_depth) {
 				set_next_entity(cfs_rq_of(se), se);
 				se = parent_entity(se);
 			}
 		}
 
+/* IAMROOT-12:
+ * -------------
+ * 같은 cfs 런큐를 바라볼 때 마지막 처리를 한다.
+ */
 		put_prev_entity(cfs_rq, pse);
 		set_next_entity(cfs_rq, se);
 	}
@@ -6417,11 +6591,19 @@ simple:
 	cfs_rq = &rq->cfs;
 #endif
 
+/* IAMROOT-12:
+ * -------------
+ * cfs 엔티티가 하나도 없는 경우 idle로 이동한다.
+ */
 	if (!cfs_rq->nr_running)
 		goto idle;
 
 	put_prev_task(rq, prev);
 
+/* IAMROOT-12:
+ * -------------
+ * 최종 태스크 엔티티를 pick 한다.
+ */
 	do {
 		se = pick_next_entity(cfs_rq, NULL);
 		set_next_entity(cfs_rq, se);
@@ -6442,9 +6624,18 @@ idle:
 	 * possible for any higher priority task to appear. In that case we
 	 * must re-start the pick_next_entity() loop.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * stop, dl, rt 등의 태스크가 새롭게 진입한 경우 new_tasks는 -1이 된다.
+ */
 	if (new_tasks < 0)
 		return RETRY_TASK;
 
+/* IAMROOT-12:
+ * -------------
+ * cfs 태스크가 새롭게 진입한 경우 again 레이블로 이동하여 다시 시도한다.
+ */
 	if (new_tasks > 0)
 		goto again;
 
@@ -6484,6 +6675,10 @@ static void yield_task_fair(struct rq *rq)
 
 	clear_buddies(cfs_rq, se);
 
+/* IAMROOT-12:
+ * -------------
+ * SCHED_NORMAL 또는 SCHED_IDLE 태스크인 경우
+ */
 	if (curr->policy != SCHED_BATCH) {
 		update_rq_clock(rq);
 		/*
@@ -6498,6 +6693,11 @@ static void yield_task_fair(struct rq *rq)
 		rq_clock_skip_update(rq, true);
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 동작 중인 태스크에 대해 양보 요청이 온 경우 해당 엔티티를 skip 버디에 
+ * 설정한다.
+ */
 	set_skip_buddy(se);
 }
 
@@ -6505,6 +6705,10 @@ static bool yield_to_task_fair(struct rq *rq, struct task_struct *p, bool preemp
 {
 	struct sched_entity *se = &p->se;
 
+/* IAMROOT-12:
+ * -------------
+ * kvm에서 호출하는 yield_to() 함수를 사용할 때 진입한다.
+ */
 	/* throttled hierarchies are not runnable */
 	if (!se->on_rq || throttled_hierarchy(cfs_rq_of(se)))
 		return false;

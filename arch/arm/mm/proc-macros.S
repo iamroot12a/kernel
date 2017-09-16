@@ -41,6 +41,11 @@
  * note, this field is 64bit, so in big-endian the two words are swapped too.
  */
 	.macro	mmid, rd, rn
+
+/* IAMROOT-12:
+ * -------------
+ * mm->context.id 값을 1번째 인수 레지스터에 반환한다.
+ */
 #ifdef __ARMEB__
 	ldr	\rd, [\rn, #MM_CONTEXT_ID + 4 ]
 #else

@@ -68,6 +68,12 @@ static inline int tlb_ops_need_broadcast(void)
 #endif
 
 #if !defined(CONFIG_SMP) || __LINUX_ARM_ARCH__ >= 7
+
+/* IAMROOT-12:
+ * -------------
+ * UP 시스템이거나 armv7 이상인 경우 캐시 플러시를 위해 브로드캐스트할 
+ * 필요 없다.
+ */
 #define cache_ops_need_broadcast()	0
 #else
 static inline int cache_ops_need_broadcast(void)

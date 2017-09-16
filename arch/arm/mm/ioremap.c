@@ -124,6 +124,16 @@ void __check_vmalloc_seq(struct mm_struct *mm)
 {
 	unsigned int seq;
 
+
+/* IAMROOT-12:
+ * -------------
+ * vmalloc 시퀀스 값이 동일해질 때까지 커널 pgd 테이블을 유저의 mm에 있는
+ * pgd에 복사한다.(커널용 vmalloc 매핑이 다른 태스크에서 갱신된 경우 
+ * 시퀀스 값이 달라진다)
+ *
+ * vmalloc 크기는 최소 240M(arm)에 해당하며 pgd 엔트리 하나가 8바이트로 
+ * 2MB의 가상 환경을 관리할 수 있다. 따라서 120개의 pgd 엔트리를 복사한다. 
+ */
 	do {
 		seq = init_mm.context.vmalloc_seq;
 		memcpy(pgd_offset(mm, VMALLOC_START),

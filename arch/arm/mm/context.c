@@ -87,6 +87,12 @@ void a15_erratum_get_cpumask(int this_cpu, struct mm_struct *mm,
 #else
 static void cpu_set_reserved_ttbr0(void)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * TTBR1 레지스터 값을 TTBR0로 복사한다.
+ * (TTBR1에는 커널에서 사용하는 페이지 테이블(pgd)의 base 주소가 담겨있다.)
+ */
 	u32 ttb;
 	/*
 	 * Copy TTBR1 into TTBR0.
@@ -229,6 +235,11 @@ void check_and_switch_context(struct mm_struct *mm, struct task_struct *tsk)
 	unsigned int cpu = smp_processor_id();
 	u64 asid;
 
+/* IAMROOT-12:
+ * -------------
+ * vmalloc 매핑이 변경된 경우 vmalloc에 해당하는 커널용 pgd 엔트리(arm:120개)를
+ * 복사하여 현재 mm에 갱신한다.
+ */
 	if (unlikely(mm->context.vmalloc_seq != init_mm.context.vmalloc_seq))
 		__check_vmalloc_seq(mm);
 
@@ -237,6 +248,11 @@ void check_and_switch_context(struct mm_struct *mm, struct task_struct *tsk)
 	 * MMU, so switch exclusively to global mappings to avoid
 	 * speculative page table walking with the wrong TTBR.
 	 */
+/* IAMROOT-12:
+ * -------------
+ * TTBR1 레지스터 값을 TTBR0로 복사한다.
+ * (TTBR1에는 커널에서 사용하는 페이지 테이블(pgd)의 base 주소가 담겨있다.)
+ */
 	cpu_set_reserved_ttbr0();
 
 	asid = atomic64_read(&mm->context.id);
@@ -244,6 +260,10 @@ void check_and_switch_context(struct mm_struct *mm, struct task_struct *tsk)
 	    && atomic64_xchg(&per_cpu(active_asids, cpu), asid))
 		goto switch_mm_fastpath;
 
+/* IAMROOT-12:
+ * -------------
+ * mm 스위칭 slow-path
+ */
 	raw_spin_lock_irqsave(&cpu_asid_lock, flags);
 	/* Check that our ASID belongs to the current generation. */
 	asid = atomic64_read(&mm->context.id);
@@ -252,6 +272,10 @@ void check_and_switch_context(struct mm_struct *mm, struct task_struct *tsk)
 		atomic64_set(&mm->context.id, asid);
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * tlb 플러싱이 지연된 경우 branch predict 캐시와 tlb 캐시를 모두 플러시한다.
+ */
 	if (cpumask_test_and_clear_cpu(cpu, &tlb_flush_pending)) {
 		local_flush_bp_all();
 		local_flush_tlb_all();
@@ -262,5 +286,13 @@ void check_and_switch_context(struct mm_struct *mm, struct task_struct *tsk)
 	raw_spin_unlock_irqrestore(&cpu_asid_lock, flags);
 
 switch_mm_fastpath:
+
+/* IAMROOT-12:
+ * -------------
+ * 해당 아키텍처의 swtich_mm 함수를 호출한다. cpu_v7_switch_mm()
+ *
+ * CONTEXTIDR <- mm->context.id | asid (다음에 정리)
+ * TTBR0 <- mm->pgd | #TTB_FLAGS_SMP
+ */
 	cpu_switch_mm(mm->pgd, mm);
 }

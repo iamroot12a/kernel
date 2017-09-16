@@ -40,12 +40,27 @@
 ENTRY(cpu_v7_switch_mm)
 #ifdef CONFIG_MMU
 	mov	r2, #0
+
+/* IAMROOT-12:
+ * -------------
+ * mm->context.id -> r1
+ */
 	mmid	r1, r1				@ get mm->context.id
+
+/* IAMROOT-12:
+ * -------------
+ * r0(mm->pgd) |= #TTB_FLAGs_SMP 
+ */
 	ALT_SMP(orr	r0, r0, #TTB_FLAGS_SMP)
 	ALT_UP(orr	r0, r0, #TTB_FLAGS_UP)
 #ifdef CONFIG_ARM_ERRATA_430973
 	mcr	p15, 0, r2, c7, c5, 6		@ flush BTAC/BTB
 #endif
+
+/* IAMROOT-12:
+ * -------------
+ * rpi2의 경우 아래 커널 옵션은 사용하지 않는다.
+ */
 #ifdef CONFIG_PID_IN_CONTEXTIDR
 	mrc	p15, 0, r2, c13, c0, 1		@ read current context ID
 	lsr	r2, r2, #8			@ extract the PID
@@ -54,6 +69,12 @@ ENTRY(cpu_v7_switch_mm)
 #ifdef CONFIG_ARM_ERRATA_754322
 	dsb
 #endif
+
+/* IAMROOT-12:
+ * -------------
+ * CONTEXTIDR <- r1		(mm->context.id)
+ * TTBR0 <- r0			(mm->pgd | #TTB_FLAGS_SMP)
+ */
 	mcr	p15, 0, r1, c13, c0, 1		@ set context ID
 	isb
 	mcr	p15, 0, r0, c2, c0, 0		@ set TTB 0

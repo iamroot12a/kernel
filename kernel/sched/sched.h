@@ -367,6 +367,28 @@ struct cfs_bandwidth { };
  *      - 해당 cfs 런큐에 엔큐된 엔티티 수 (curr + rb 트리 대기)
  * h_nr_running:
  *      - cfs 런큐이하의 모든 태스크 수
+ *
+ * min_vruntime:
+ *      cfs 런큐에서 관리하는 엔티티 들 중 가장 낮은 vruntime 
+ * tasks_timeline:
+ *      RB 트리 루트
+ * *rb_left_most:
+ *      RB 트리 엔티티들 중 vruntime이 가장 작은 가장 좌측 엔티티 
+ * *curr:
+ *      현재 동작 중인 엔티티 
+ * *next:
+ *      next 버디
+ *      pick_next_entity할 때 선택한 다음 엔티티와 next 버디 엔티티가 
+ *      가까운(gran) 범위 이내인 경우 next 엔티티 선택 
+ * *last:
+ *      last 버디
+ *      pick_next_entity할 때 선택한 다음 엔티티와 last 버디 엔티티가 
+ *      가까운(gran) 범위 이내인 경우 last 엔티티 선택 
+ * *skip:
+ *      skip 버디 
+ *      pick_next_entity할 때 선택한 다음 엔티티가 skip 버디인 경우 
+ *      두 번째 대기 엔티티가 가까운(gran) 범위 이내인 경우 두 번째 
+ *      엔티티를 대신 선택 
  */
 
 /* CFS-related fields in a runqueue */
@@ -678,6 +700,16 @@ struct rq {
  */
 	u64 rt_avg;
 	u64 age_stamp;
+
+/* IAMROOT-12:
+ * ------------- 
+ * idle_stamp:
+ *      idle 시작 시각 
+ * avg_idle:
+ *      idle 밸런싱에 사용할 평균 idle 값
+ * max_idle_balance_cost 
+ *      idle 밸런싱에 사용할 최대 idle 평균 값 cost
+ */
 	u64 idle_stamp;
 	u64 avg_idle;
 
