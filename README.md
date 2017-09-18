@@ -558,4 +558,9 @@ page_address_init()
 ### 125주차
 - 2017.09.09, Kosslab (10명, 권경환, 김민호, 김종철, 문영일, 양유석, 윤창호, 임채훈, 정재준, 한대근, 한상종)
 - msleep()
-- wakeup_process() ~
+- wake_up_process() ~
+
+### 126주차
+- 2017.09.16, Kosslab (8명, 김민호, 김종철, 문영일, 윤창호, 임채훈, 조현철, 최영민, 한대근)
+- wake_up_process()
+- schedule() ~
