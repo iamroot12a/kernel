@@ -904,27 +904,70 @@ ENDPROC(__fiq_usr)
 ENTRY(__switch_to)
  UNWIND(.fnstart	)
  UNWIND(.cantunwind	)
+
+/* IAMROOT-12:
+ * -------------
+ * ip <- prev thread_info()->cpu_context 구조체 주소
+ */
 	add	ip, r1, #TI_CPU_SAVE
+
+/* IAMROOT-12:
+ * -------------
+ * 레지스터들을 백업한다.
+ */
  ARM(	stmia	ip!, {r4 - sl, fp, sp, lr} )	@ Store most regs on stack
  THUMB(	stmia	ip!, {r4 - sl, fp}	   )	@ Store most regs on stack
  THUMB(	str	sp, [ip], #4		   )
  THUMB(	str	lr, [ip], #4		   )
+
+/* IAMROOT-12:
+ * -------------
+ * TLS 레지스터
+ * r4 <- next thread_info()->tp_value[0] 주소
+ * r5 <- next thread_info()->tp_value[1] 주소
+ */
 	ldr	r4, [r2, #TI_TP_VALUE]
 	ldr	r5, [r2, #TI_TP_VALUE + 4]
+
+/* IAMROOT-12:
+ * -------------
+ * armv7: CONFIG_CPU_USE_DOMAINS를 사용하지 않는다.
+ */
 #ifdef CONFIG_CPU_USE_DOMAINS
 	ldr	r6, [r2, #TI_CPU_DOMAIN]
 #endif
+
+/* IAMROOT-12:
+ * -------------
+ * TLS(TPIDRURW)를 설정한다.
+ */
 	switch_tls r1, r4, r5, r3, r7
 #if defined(CONFIG_CC_STACKPROTECTOR) && !defined(CONFIG_SMP)
 	ldr	r7, [r2, #TI_TASK]
 	ldr	r8, =__stack_chk_guard
 	ldr	r7, [r7, #TSK_STACK_CANARY]
 #endif
+
+/* IAMROOT-12:
+ * -------------
+ * armv7: CONFIG_CPU_USE_DOMAINS를 사용하지 않는다.
+ */
 #ifdef CONFIG_CPU_USE_DOMAINS
 	mcr	p15, 0, r6, c3, c0, 0		@ Set domain register
 #endif
 	mov	r5, r0
+
+/* IAMROOT-12:
+ * -------------
+ * r4 <- next thread_info()->cpu_context 구조체 주소
+ */
 	add	r4, r2, #TI_CPU_SAVE
+
+/* IAMROOT-12:
+ * -------------
+ * 태스크 전환이 이뤄질 때 호출될 notify block의 callback을 호출한다.
+ * (vfp_notifier()가 등록되어 사용된다.)
+ */
 	ldr	r0, =thread_notify_head
 	mov	r1, #THREAD_NOTIFY_SWITCH
 	bl	atomic_notifier_call_chain
@@ -933,6 +976,12 @@ ENTRY(__switch_to)
 #endif
  THUMB(	mov	ip, r4			   )
 	mov	r0, r5
+
+/* IAMROOT-12:
+ * -------------
+ * next thread_info()->cpu_context 주소에 백업되어 있던 레지스터를 
+ * 현재 레지스터로 불러온다.(restore)
+ */
  ARM(	ldmia	r4, {r4 - sl, fp, sp, pc}  )	@ Load all regs saved previously
  THUMB(	ldmia	ip!, {r4 - sl, fp}	   )	@ Load all regs saved previously
  THUMB(	ldr	sp, [ip], #4		   )

@@ -645,6 +645,10 @@ struct mm_struct *mm_alloc(void)
  */
 void __mmdrop(struct mm_struct *mm)
 {
+/* IAMROOT-12:
+ * -------------
+ * mm 디스크립터를 할당 해제한다.
+ */
 	BUG_ON(mm == &init_mm);
 	mm_free_pgd(mm);
 	destroy_context(mm);

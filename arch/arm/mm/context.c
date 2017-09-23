@@ -44,6 +44,11 @@
 
 static DEFINE_RAW_SPINLOCK(cpu_asid_lock);
 static atomic64_t asid_generation = ATOMIC64_INIT(ASID_FIRST_VERSION);
+
+/* IAMROOT-12:
+ * -------------
+ * arm: 256 비트의 asid_map을 구성한다.
+ */
 static DECLARE_BITMAP(asid_map, NUM_USER_ASIDS);
 
 static DEFINE_PER_CPU(atomic64_t, active_asids);
@@ -173,6 +178,12 @@ static void flush_context(unsigned int cpu)
 
 static int is_reserved_asid(u64 asid)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * cpu에 이미 예약된 asid인 경우 true를 반환한다.
+ * 전체 cpu를 검색한다.
+ */
 	int cpu;
 	for_each_possible_cpu(cpu)
 		if (per_cpu(reserved_asids, cpu) == asid)
@@ -191,6 +202,15 @@ static u64 new_context(struct mm_struct *mm, unsigned int cpu)
 		 * If our current ASID was active during a rollover, we
 		 * can continue to use it and this was just a false alarm.
 		 */
+/* IAMROOT-12:
+ * -------------
+ * cpu에 이미 예약된 asid인 경우 대역번호만 바꿔서 반환한다.
+ *
+ * asid_generation      |     mm->context.id & 0xff
+ *   0x400              |              0x380 & 0xff
+ *   0x400              |               0x80
+ *                    0x480 
+ */
 		if (is_reserved_asid(asid))
 			return generation | (asid & ~ASID_MASK);
 
@@ -198,6 +218,14 @@ static u64 new_context(struct mm_struct *mm, unsigned int cpu)
 		 * We had a valid ASID in a previous life, so try to re-use
 		 * it if possible.,
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * asid_map에 해당 비트가 비어있어 배치가 가능한 asid인 경우 해당 비트를 
+ * 설정하고 bump_gen으로 이동
+ *
+ * 예) asid=0x380 -> asid_map에서 0x80 비트를 검사한다.
+ */
 		asid &= ~ASID_MASK;
 		if (!__test_and_set_bit(asid, asid_map))
 			goto bump_gen;
@@ -212,10 +240,30 @@ static u64 new_context(struct mm_struct *mm, unsigned int cpu)
 	 * overlapping level-1 descriptors used to map both the module
 	 * area and the userspace stack.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 비어있는 번호를 찾는다.
+ */
 	asid = find_next_zero_bit(asid_map, NUM_USER_ASIDS, cur_idx);
+
+/* IAMROOT-12:
+ * -------------
+ * 256개가 모두 할당되어 비어 있는 번호가 없으면 
+ */
 	if (asid == NUM_USER_ASIDS) {
+
+/* IAMROOT-12:
+ * -------------
+ * 최근 발급한 번호에 256을 더해 새로운 대역번호를 설정한다.
+ * 예) 0x300 -> 0x400
+ */
 		generation = atomic64_add_return(ASID_FIRST_VERSION,
 						 &asid_generation);
+/* IAMROOT-12:
+ * -------------
+ * tlb 및 icache(vivt 타입만) 플러싱을 수행한다.
+ */
 		flush_context(cpu);
 		asid = find_next_zero_bit(asid_map, NUM_USER_ASIDS, 1);
 	}
@@ -252,6 +300,15 @@ void check_and_switch_context(struct mm_struct *mm, struct task_struct *tsk)
  * -------------
  * TTBR1 레지스터 값을 TTBR0로 복사한다.
  * (TTBR1에는 커널에서 사용하는 페이지 테이블(pgd)의 base 주소가 담겨있다.)
+ *
+ * 최근 asid 대역번호와 스위칭될 태스크의 asid가 같은 대역(8비트)에 있는 경우 
+ * fastpath를 사용한다.
+ *
+ * 예) asid_generation=0x300, mm->context.id=0x340
+ *     -> 각각 8비트를 우측 shift한 결과가 같으므로 fastpath 
+ *
+ * 예) asid_generation=0x400, mm->context.id=0x3f0
+ *     -> 각각 8비트를 우측 shift한 결과가 다르므로 slowpath 
  */
 	cpu_set_reserved_ttbr0();
 
@@ -266,6 +323,13 @@ void check_and_switch_context(struct mm_struct *mm, struct task_struct *tsk)
  */
 	raw_spin_lock_irqsave(&cpu_asid_lock, flags);
 	/* Check that our ASID belongs to the current generation. */
+
+/* IAMROOT-12:
+ * -------------
+ * 최근 asid 대역 번호(asid_generation)와 태스크의 asid 대역이 다른 경우 
+ * 다시 asid를 발급받아 mm->context.id에 저장한다.
+ * (새로 받은 asid는 최근 발급한 대역대로 변경된다.)
+ */
 	asid = atomic64_read(&mm->context.id);
 	if ((asid ^ atomic64_read(&asid_generation)) >> ASID_BITS) {
 		asid = new_context(mm, cpu);
@@ -275,6 +339,7 @@ void check_and_switch_context(struct mm_struct *mm, struct task_struct *tsk)
 /* IAMROOT-12:
  * -------------
  * tlb 플러싱이 지연된 경우 branch predict 캐시와 tlb 캐시를 모두 플러시한다.
+ * - flush_context()함수에서 설정한다.
  */
 	if (cpumask_test_and_clear_cpu(cpu, &tlb_flush_pending)) {
 		local_flush_bp_all();
@@ -291,7 +356,7 @@ switch_mm_fastpath:
  * -------------
  * 해당 아키텍처의 swtich_mm 함수를 호출한다. cpu_v7_switch_mm()
  *
- * CONTEXTIDR <- mm->context.id | asid (다음에 정리)
+ * CONTEXTIDR <- mm->context.id 
  * TTBR0 <- mm->pgd | #TTB_FLAGS_SMP
  */
 	cpu_switch_mm(mm->pgd, mm);

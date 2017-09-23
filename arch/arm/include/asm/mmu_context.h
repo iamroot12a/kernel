@@ -42,6 +42,12 @@ static inline void a15_erratum_get_cpumask(int this_cpu, struct mm_struct *mm,
 
 #ifdef CONFIG_MMU
 
+/* IAMROOT-12:
+ * -------------
+ *  CONFIG_CPU_HAS_ASID 옵션이 없는 경우 아래 함수를 사용하지만,
+ * armv7 아키텍처는 디폴트로 CONFIG_CPU_HAS_ASID 커널 옵션을 사용하므로
+ * arch/arm/mm/context.c 파일에 있는 함수를 참고해야 한다.
+ */
 static inline void check_and_switch_context(struct mm_struct *mm,
 					    struct task_struct *tsk)
 {

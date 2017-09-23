@@ -575,6 +575,14 @@ do_work_pending(struct pt_regs *regs, unsigned int thread_flags, int syscall)
 {
 	do {
 		if (likely(thread_flags & _TIF_NEED_RESCHED)) {
+
+/* IAMROOT-12:
+ * -------------
+ * 스케줄 틱마다 리스케줄 요청이 있을 때 schedule() 함수를 호출하여 
+ * preemption 동작을 한다.
+ *	- 현재 태스크의 런타임이 모두 소진되어 다른 태스크로 전환이 
+ *	  요구 될 때 리스케줄 요청이 기록되어 있다.
+ */
 			schedule();
 		} else {
 			if (unlikely(!user_mode(regs)))

@@ -2000,6 +2000,10 @@ extern void __put_task_struct(struct task_struct *t);
 
 static inline void put_task_struct(struct task_struct *t)
 {
+/* IAMROOT-12:
+ * -------------
+ * task 디스크립터의 참조 카운터를 감소시키고 0이되면 할당 해제한다.
+ */
 	if (atomic_dec_and_test(&t->usage))
 		__put_task_struct(t);
 }
@@ -2565,6 +2569,11 @@ extern struct mm_struct * mm_alloc(void);
 extern void __mmdrop(struct mm_struct *);
 static inline void mmdrop(struct mm_struct * mm)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * mm 디스크립터의 참조 카운터를 1감소 시키고 0이되면 제거한다.
+ */
 	if (unlikely(atomic_dec_and_test(&mm->mm_count)))
 		__mmdrop(mm);
 }

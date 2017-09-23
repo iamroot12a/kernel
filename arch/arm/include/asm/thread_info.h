@@ -30,6 +30,10 @@ struct exec_domain;
 
 typedef unsigned long mm_segment_t;
 
+/* IAMROOT-12:
+ * -------------
+ * 태스크 context 스위칭에 사용한다.
+ */
 struct cpu_context_save {
 	__u32	r4;
 	__u32	r5;

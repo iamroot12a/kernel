@@ -98,6 +98,9 @@ extern void cpu_do_resume(void *);
 /* IAMROOT-12AB:
  * -------------
  * ARMv7은 MULTI_CPU가 정의되어 있어서 아래 매크로를 사용한다.
+ *
+ * cpu_do_switch_mm():
+ *      cpu_v7_switch_mm (arch/arm/mm/proc-v7-2level.S)
  */
 #define cpu_proc_init			processor._proc_init
 #define cpu_proc_fin			processor._proc_fin
@@ -118,6 +121,11 @@ extern void cpu_resume(void);
 
 #ifdef CONFIG_MMU
 
+/* IAMROOT-12:
+ * -------------
+ * armv7 아키텍처의 경우 cpu_do_switch_mm() 함수는 
+ * cpu_v7_switch_mm (arch/arm/mm/proc-v7-2level.S) 함수를 호출한다.
+ */
 #define cpu_switch_mm(pgd,mm) cpu_do_switch_mm(virt_to_phys(pgd),mm)
 
 #ifdef CONFIG_ARM_LPAE

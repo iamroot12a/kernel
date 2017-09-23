@@ -9,6 +9,11 @@
 	.macro switch_tls_none, base, tp, tpuser, tmp1, tmp2
 	.endm
 
+/* IAMROOT-12:
+ * -------------
+ * rpi2: TLS(Thread Local Storage) 
+ *       arm에서는 TPID용도로 사용하지 않는 TPIDRURW 레지스터를 사용한다.
+ */
 	.macro switch_tls_v6k, base, tp, tpuser, tmp1, tmp2
 	mrc	p15, 0, \tmp2, c13, c0, 2	@ get the user r/w register
 	mcr	p15, 0, \tp, c13, c0, 3		@ set TLS register

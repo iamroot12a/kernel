@@ -25,7 +25,9 @@ do {									\
 
 /* IAMROOT-12:
  * -------------
- * context switch
+ * context switch 
+ *
+ * last <- prev (그대로 다시 온다)
  */
 	last = __switch_to(prev,task_thread_info(prev), task_thread_info(next));	\
 } while (0)
