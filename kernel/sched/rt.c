@@ -7,6 +7,10 @@
 
 #include <linux/slab.h>
 
+/* IAMROOT-12:
+ * -------------
+ * 라운드 로빈 rt 태스크의 주기
+ */
 int sched_rr_timeslice = RR_TIMESLICE;
 
 static int do_sched_rt_period_timer(struct rt_bandwidth *rt_b, int overrun);
@@ -99,8 +103,16 @@ static void destroy_rt_bandwidth(struct rt_bandwidth *rt_b)
 	hrtimer_cancel(&rt_b->rt_period_timer);
 }
 
+/* IAMROOT-12:
+ * -------------
+ * rt 엔티티가 태스크인지 여부를 반환한다.
+ */
 #define rt_entity_is_task(rt_se) (!(rt_se)->my_q)
 
+/* IAMROOT-12:
+ * -------------
+ * 태스크형 rt 엔티티로 태스크를 반환한다.
+ */
 static inline struct task_struct *rt_task_of(struct sched_rt_entity *rt_se)
 {
 #ifdef CONFIG_SCHED_DEBUG
@@ -109,16 +121,28 @@ static inline struct task_struct *rt_task_of(struct sched_rt_entity *rt_se)
 	return container_of(rt_se, struct task_struct, rt);
 }
 
+/* IAMROOT-12:
+ * -------------
+ * rt 런큐로 런큐를 반환한다.
+ */
 static inline struct rq *rq_of_rt_rq(struct rt_rq *rt_rq)
 {
 	return rt_rq->rq;
 }
 
+/* IAMROOT-12:
+ * -------------
+ * rt 엔티티가 소속된 rt 런큐를 반환한다.
+ */
 static inline struct rt_rq *rt_rq_of_se(struct sched_rt_entity *rt_se)
 {
 	return rt_se->rt_rq;
 }
 
+/* IAMROOT-12:
+ * -------------
+ * rt 스케줄 엔티티로 런큐를 알아온다.
+ */
 static inline struct rq *rq_of_rt_se(struct sched_rt_entity *rt_se)
 {
 	struct rt_rq *rt_rq = rt_se->rt_rq;
@@ -150,6 +174,10 @@ void init_tg_rt_entry(struct task_group *tg, struct rt_rq *rt_rq,
 {
 	struct rq *rq = cpu_rq(cpu);
 
+/* IAMROOT-12:
+ * -------------
+ * 생성된 태스크 그룹과 rt 런큐를 서로 연결한다.
+ */
 	rt_rq->highest_prio.curr = MAX_RT_PRIO;
 	rt_rq->rt_nr_boosted = 0;
 	rt_rq->rq = rq;
@@ -177,6 +205,10 @@ int alloc_rt_sched_group(struct task_group *tg, struct task_group *parent)
 	struct sched_rt_entity *rt_se;
 	int i;
 
+/* IAMROOT-12:
+ * -------------
+ * 태스크 그룹이 생성될 때마다 rt 런큐와 rt 스케줄 엔티티를 cpu 수 만큼 생성.
+ */
 	tg->rt_rq = kzalloc(sizeof(rt_rq) * nr_cpu_ids, GFP_KERNEL);
 	if (!tg->rt_rq)
 		goto err;
@@ -184,6 +216,10 @@ int alloc_rt_sched_group(struct task_group *tg, struct task_group *parent)
 	if (!tg->rt_se)
 		goto err;
 
+/* IAMROOT-12:
+ * -------------
+ * 태스크 그룹에 해당하는 rt 밴드위드를 초기화한다.
+ */
 	init_rt_bandwidth(&tg->rt_bandwidth,
 			ktime_to_ns(def_rt_bandwidth.rt_period), 0);
 
@@ -213,6 +249,10 @@ err:
 
 #else /* CONFIG_RT_GROUP_SCHED */
 
+/* IAMROOT-12:
+ * -------------
+ * 그룹 스케줄링을 사용하지 않을 때만 사용한다.
+ */
 #define rt_entity_is_task(rt_se) (1)
 
 static inline struct task_struct *rt_task_of(struct sched_rt_entity *rt_se)
@@ -267,6 +307,10 @@ static inline void rt_set_overload(struct rq *rq)
 	if (!rq->online)
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * 해당 cpu의 rto비트를 설정하고, rto_count를 증가시킨다.
+ */
 	cpumask_set_cpu(rq->cpu, rq->rd->rto_mask);
 	/*
 	 * Make sure the mask is visible before we set
@@ -293,11 +337,20 @@ static inline void rt_clear_overload(struct rq *rq)
 
 static void update_rt_migration(struct rt_rq *rt_rq)
 {
+/* IAMROOT-12:
+ * -------------
+ * 2개 이상의 태스크가 있고, 마이그레이션이 가능하면 overloaded 설정한다.
+ */
 	if (rt_rq->rt_nr_migratory && rt_rq->rt_nr_total > 1) {
 		if (!rt_rq->overloaded) {
 			rt_set_overload(rq_of_rt_rq(rt_rq));
 			rt_rq->overloaded = 1;
 		}
+
+/* IAMROOT-12:
+ * -------------
+ * 위의 조건이 아니면 overload를 클리어한다.
+ */
 	} else if (rt_rq->overloaded) {
 		rt_clear_overload(rq_of_rt_rq(rt_rq));
 		rt_rq->overloaded = 0;
@@ -308,6 +361,10 @@ static void inc_rt_migration(struct sched_rt_entity *rt_se, struct rt_rq *rt_rq)
 {
 	struct task_struct *p;
 
+/* IAMROOT-12:
+ * -------------
+ * 태스크가 아닌 엔티티는 빠져나간다.
+ */
 	if (!rt_entity_is_task(rt_se))
 		return;
 
@@ -315,6 +372,11 @@ static void inc_rt_migration(struct sched_rt_entity *rt_se, struct rt_rq *rt_rq)
 	rt_rq = &rq_of_rt_rq(rt_rq)->rt;
 
 	rt_rq->rt_nr_total++;
+
+/* IAMROOT-12:
+ * -------------
+ * 태스크에 허용된 cpu가 2개 이상인 경우 rt_nr_migratory를 증가시킨다.
+ */
 	if (p->nr_cpus_allowed > 1)
 		rt_rq->rt_nr_migratory++;
 
@@ -354,11 +416,22 @@ static inline void set_post_schedule(struct rq *rq)
 
 static void enqueue_pushable_task(struct rq *rq, struct task_struct *p)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 올리기전에 삭제한 후 추가한다.
+ */
 	plist_del(&p->pushable_tasks, &rq->rt.pushable_tasks);
 	plist_node_init(&p->pushable_tasks, p->prio);
 	plist_add(&p->pushable_tasks, &rq->rt.pushable_tasks);
 
 	/* Update the highest prio pushable task */
+
+/* IAMROOT-12:
+ * -------------
+ * rt.highest_prio:
+ * i	pushable 태스크의 가장 우선 순위가 높은 번호가 담긴다.
+ */
 	if (p->prio < rq->rt.highest_prio.next)
 		rq->rt.highest_prio.next = p->prio;
 }
@@ -465,6 +538,11 @@ static inline struct rt_rq *group_rt_rq(struct sched_rt_entity *rt_se)
 static void enqueue_rt_entity(struct sched_rt_entity *rt_se, bool head);
 static void dequeue_rt_entity(struct sched_rt_entity *rt_se);
 
+/* IAMROOT-12:
+ * -------------
+ * 태스크가 엔큐된 후 rt 런큐가 상위 rt 런큐에 엔큐될 때 호출된다.
+ * (스로틀되었다가 다시 연결될 때도 호출된다)
+ */
 static void sched_rt_rq_enqueue(struct rt_rq *rt_rq)
 {
 	struct task_struct *curr = rq_of_rt_rq(rt_rq)->curr;
@@ -509,9 +587,19 @@ static int rt_se_boosted(struct sched_rt_entity *rt_se)
 	struct rt_rq *rt_rq = group_rt_rq(rt_se);
 	struct task_struct *p;
 
+/* IAMROOT-12:
+ * -------------
+ * 그룹 엔티티의 경우는 rt_nr_boosted 멤버가 1로 설정된 경우 pi 문제를 위해 
+ * boost된 것을 알 수 있다.
+ */
 	if (rt_rq)
 		return !!rt_rq->rt_nr_boosted;
 
+/* IAMROOT-12:
+ * -------------
+ * 태스크 엔티티의 경우는 태스크에 설정된 우선순위가 아니면 boost된 경우임을
+ * 알 수 있다.
+ */
 	p = rt_task_of(rt_se);
 	return p->prio != p->normal_prio;
 }
@@ -881,14 +969,33 @@ static inline int rt_se_prio(struct sched_rt_entity *rt_se)
 
 static int sched_rt_runtime_exceeded(struct rt_rq *rt_rq)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 로컬풀(rt 런큐)에 할당된 런타임을 알아온다.
+ */
 	u64 runtime = sched_rt_runtime(rt_rq);
 
+/* IAMROOT-12:
+ * -------------
+ * 이미 스로틀 상태인 경우이면서 rt 태스크가 pi-boost되지 않은 경우 1을 반환
+ */
 	if (rt_rq->rt_throttled)
 		return rt_rq_throttled(rt_rq);
 
+/* IAMROOT-12:
+ * -------------
+ * 로컬풀에 할당된 런타임이 태스크 그룹에 설정된 period 기간을 초과한 경우 
+ * 0을 반환
+ */
 	if (runtime >= sched_rt_period(rt_rq))
 		return 0;
 
+/* IAMROOT-12:
+ * -------------
+ * rt_time: 소모한 런타임 
+ * rt_runtime: 로컬풀에 배정된 런타임
+ */
 	balance_runtime(rt_rq);
 	runtime = sched_rt_runtime(rt_rq);
 	if (runtime == RUNTIME_INF)
@@ -935,6 +1042,10 @@ static void update_curr_rt(struct rq *rq)
 	if (curr->sched_class != &rt_sched_class)
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * rt delta 수행 시간
+ */
 	delta_exec = rq_clock_task(rq) - curr->se.exec_start;
 	if (unlikely((s64)delta_exec <= 0))
 		return;
@@ -948,11 +1059,20 @@ static void update_curr_rt(struct rq *rq)
 	curr->se.exec_start = rq_clock_task(rq);
 	cpuacct_charge(curr, delta_exec);
 
+/* IAMROOT-12:
+ * ------------
+ * rt_avg+=delta_exec하고 0.5초 지날때마다 절반씩 decay한다.
+ */
 	sched_rt_avg_update(rq, delta_exec);
 
 	if (!rt_bandwidth_enabled())
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * rt 밴드위드가 동작한 경우 설정된 런타임이 모두 소진된 경우 다른 태스크로 
+ * 리스케줄을 허용한다.
+ */
 	for_each_sched_rt_entity(rt_se) {
 		struct rt_rq *rt_rq = rt_rq_of_se(rt_se);
 
@@ -971,6 +1091,11 @@ dequeue_top_rt_rq(struct rt_rq *rt_rq)
 {
 	struct rq *rq = rq_of_rt_rq(rt_rq);
 
+/* IAMROOT-12:
+ * -------------
+ * 최상위 rt 런큐의 태스크 수에서 요청한(차순위) rt 런큐의 태스크 수를 
+ * 감소시키고, rt_queued=0으로 설정하여 분리되었음을 인식시킨다.
+ */
 	BUG_ON(&rq->rt != rt_rq);
 
 	if (!rt_rq->rt_queued)
@@ -1012,6 +1137,11 @@ inc_rt_prio_smp(struct rt_rq *rt_rq, int prio, int prev_prio)
 	if (&rq->rt != rt_rq)
 		return;
 #endif
+
+/* IAMROOT-12:
+ * -------------
+ * prev보다 더 높은 우선 순위인 경우 cpupri를 설정한다.
+ */
 	if (rq->online && prio < prev_prio)
 		cpupri_set(&rq->rd->cpupri, rq->cpu, prio);
 }
@@ -1050,6 +1180,10 @@ inc_rt_prio(struct rt_rq *rt_rq, int prio)
 	if (prio < prev_prio)
 		rt_rq->highest_prio.curr = prio;
 
+/* IAMROOT-12:
+ * -------------
+ * 내부에서 prio가 perv_prio보다 우선순위가 더 높은 경우 cpupri를 설정한다.
+ */
 	inc_rt_prio_smp(rt_rq, prio, prev_prio);
 }
 
@@ -1091,9 +1225,18 @@ static inline void dec_rt_prio(struct rt_rq *rt_rq, int prio) {}
 static void
 inc_rt_group(struct sched_rt_entity *rt_se, struct rt_rq *rt_rq)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * rt 엔티티가 부스트된 경우 rt_nr_boosted를 증가시킨다.
+ */
 	if (rt_se_boosted(rt_se))
 		rt_rq->rt_nr_boosted++;
 
+/* IAMROOT-12:
+ * -------------
+ * rt 밴드위드를 동작시킨다.
+ */
 	if (rt_rq->tg)
 		start_rt_bandwidth(&rt_rq->tg->rt_bandwidth);
 }
@@ -1139,8 +1282,22 @@ void inc_rt_tasks(struct sched_rt_entity *rt_se, struct rt_rq *rt_rq)
 	WARN_ON(!rt_prio(prio));
 	rt_rq->rt_nr_running += rt_se_nr_running(rt_se);
 
+/* IAMROOT-12:
+ * -------------
+ * 내부에서 prio가 perv_prio보다 우선순위가 더 높은 경우 cpupri를 설정한다.
+ */
 	inc_rt_prio(rt_rq, prio);
+
+/* IAMROOT-12:
+ * -------------
+ * 2개 이상의 rt 태스크 중 migration이 가능한 경우 오버로드 처리한다.
+ */
 	inc_rt_migration(rt_se, rt_rq);
+
+/* IAMROOT-12:
+ * -------------
+ * 부스트된 경우 카운터를 증가시키고, 태스크 그룹에서는 rt 밴드위드를 동작시킨다.
+ */
 	inc_rt_group(rt_se, rt_rq);
 }
 
@@ -1169,6 +1326,12 @@ static void __enqueue_rt_entity(struct sched_rt_entity *rt_se, bool head)
 	 * get throttled and the current group doesn't have any other
 	 * active members.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 그룹 rt 런큐가 이미 스로틀되었거나 rt 런큐 이하 계층 구조의 child 그룹들 
+ * 을 포함해서 동작중인 rt 태스크가 하나도 없는 경우 함수를 빠져나간다.
+ */
 	if (group_rq && (rt_rq_throttled(group_rq) || !group_rq->rt_nr_running))
 		return;
 
@@ -1178,6 +1341,11 @@ static void __enqueue_rt_entity(struct sched_rt_entity *rt_se, bool head)
 		list_add_tail(&rt_se->run_list, queue);
 	__set_bit(rt_se_prio(rt_se), array->bitmap);
 
+
+/* IAMROOT-12:
+ * -------------
+ * 태스크 enqueue 시 cpupri, overload, boost count, rt bandwidth 등 처리를 한다.
+ */
 	inc_rt_tasks(rt_se, rt_rq);
 }
 
@@ -1201,13 +1369,26 @@ static void dequeue_rt_stack(struct sched_rt_entity *rt_se)
 {
 	struct sched_rt_entity *back = NULL;
 
+/* IAMROOT-12:
+ * -------------
+ * back이라는 멤버를 rt 엔티티를 top-down으로 연결시키기 위한 고리로 사용한다.
+ */
 	for_each_sched_rt_entity(rt_se) {
 		rt_se->back = back;
 		back = rt_se;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 최상위 rt 런큐의 태스크 수에서 요청한(차순위) rt 런큐의 태스크 수를 
+ * 감소시키고, rt_queued=0으로 설정하여 분리되었음을 인식시킨다.
+ */
 	dequeue_top_rt_rq(rt_rq_of_se(back));
 
+/* IAMROOT-12:
+ * -------------
+ * 차순위 rt 런큐부터 top-down으로 내려가면서 dequeue한다.
+ */
 	for (rt_se = back; rt_se; rt_se = rt_se->back) {
 		if (on_rt_rq(rt_se))
 			__dequeue_rt_entity(rt_se);
@@ -1218,9 +1399,24 @@ static void enqueue_rt_entity(struct sched_rt_entity *rt_se, bool head)
 {
 	struct rq *rq = rq_of_rt_se(rt_se);
 
+/* IAMROOT-12:
+ * -------------
+ * 최상위 엔티티부터 top-down으로 dequeue한다.
+ * (우선 순위가 재설정되어야 하므로 무조건 dequeue 해둔다)
+ */
 	dequeue_rt_stack(rt_se);
+
+/* IAMROOT-12:
+ * -------------
+ * 최상위 엔티티까지 루프를 돌며 엔티티를 enqueue한다.
+ */
 	for_each_sched_rt_entity(rt_se)
 		__enqueue_rt_entity(rt_se, head);
+
+/* IAMROOT-12:
+ * -------------
+ * 최상위 rt 런큐에 해당 rt 런큐 이하의 태스크들 수를 더하고 enqueue한다.
+ */
 	enqueue_top_rt_rq(&rq->rt);
 }
 
@@ -1228,6 +1424,11 @@ static void dequeue_rt_entity(struct sched_rt_entity *rt_se)
 {
 	struct rq *rq = rq_of_rt_se(rt_se);
 
+/* IAMROOT-12:
+ * -------------
+ * enqueue와 동일하게 엔티티를 dequeue하는 경우 array가 변경되므로 dequeue후에
+ * 다시 엔큐한다.
+ */
 	dequeue_rt_stack(rt_se);
 
 	for_each_sched_rt_entity(rt_se) {
@@ -1247,11 +1448,20 @@ enqueue_task_rt(struct rq *rq, struct task_struct *p, int flags)
 {
 	struct sched_rt_entity *rt_se = &p->rt;
 
+/* IAMROOT-12:
+ * -------------
+ * rt 태스크의 깨어나서 enqueue된 경우
+ */
 	if (flags & ENQUEUE_WAKEUP)
 		rt_se->timeout = 0;
 
 	enqueue_rt_entity(rt_se, flags & ENQUEUE_HEAD);
 
+/* IAMROOT-12:
+ * -------------
+ * rt 태스크가 2개 이상인 경우이면서 
+ * 태스크에 허용된 cpu 수가 2개 이상인 경우에 한해 push를 try한다.
+ */
 	if (!task_current(rq, p) && p->nr_cpus_allowed > 1)
 		enqueue_pushable_task(rq, p);
 }
@@ -1310,6 +1520,13 @@ select_task_rq_rt(struct task_struct *p, int cpu, int sd_flag, int flags)
 	struct rq *rq;
 
 	/* For anything but wake ups, just return the task_cpu */
+
+/* IAMROOT-12:
+ * -------------
+ * 해당 스케줄링 도메인이 wake 또는 fork 태스크들을 허용하지 않으면 
+ * out으로 이동하여 기존 인수에 지정된 cpu를 반환한다.
+ * (로드밸런스가 되지 않은 상태로 반환된 것이다.)
+ */
 	if (sd_flag != SD_BALANCE_WAKE && sd_flag != SD_BALANCE_FORK)
 		goto out;
 
@@ -1340,15 +1557,34 @@ select_task_rq_rt(struct task_struct *p, int cpu, int sd_flag, int flags)
 	 * This test is optimistic, if we get it wrong the load-balancer
 	 * will have to sort it out.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 현재 동작하고 있는 태스크가 migration할 수 없는 상태이거나 요청한 태스크보다 
+ * 우선 순위가 높으면 요청한 태스크를 다른 cpu로 로드밸런싱할지 여부를 결정해야 
+ * 한다.
+ */
 	if (curr && unlikely(rt_task(curr)) &&
 	    (curr->nr_cpus_allowed < 2 ||
 	     curr->prio <= p->prio)) {
+
+/* IAMROOT-12:
+ * -------------
+ * 이동할만한 cpu를 알아온다.
+ */
 		int target = find_lowest_rq(p);
 
 		/*
 		 * Don't bother moving it if the destination CPU is
 		 * not running a lower priority task.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 마지막으로 찾아온 cpu에서 대기중인 최우선 순위보다 태스크의 우선순위가 
+ * 더 높은 경우에 tartget cpu로 이동하도록 반환한다.
+ */
+
 		if (target != -1 &&
 		    p->prio < cpu_rq(target)->rt.highest_prio.curr)
 			cpu = target;
@@ -1393,6 +1629,11 @@ static void check_preempt_equal_prio(struct rq *rq, struct task_struct *p)
  */
 static void check_preempt_curr_rt(struct rq *rq, struct task_struct *p, int flags)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 요청한 태스크의 우선순위가 curr보다 더 높은 경우 리스케줄 요청한다.
+ */
 	if (p->prio < rq->curr->prio) {
 		resched_curr(rq);
 		return;
@@ -1411,6 +1652,12 @@ static void check_preempt_curr_rt(struct rq *rq, struct task_struct *p, int flag
 	 * to move current somewhere else, making room for our non-migratable
 	 * task.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 우선 순위가 같은 경우 아래 함수에서 조건을 따져본 후 리스케줄 할지 
+ * 여부를 결정한다.
+ */
 	if (p->prio == rq->curr->prio && !test_tsk_need_resched(rq->curr))
 		check_preempt_equal_prio(rq, p);
 #endif
@@ -1439,6 +1686,10 @@ static struct task_struct *_pick_next_task_rt(struct rq *rq)
 	struct task_struct *p;
 	struct rt_rq *rt_rq  = &rq->rt;
 
+/* IAMROOT-12:
+ * -------------
+ * 그룹 엔티티가 선태되면 하위로 내려가 최종 태스크 엔티티를 선택한다.
+ */
 	do {
 		rt_se = pick_next_rt_entity(rq, rt_rq);
 		BUG_ON(!rt_se);
@@ -1446,6 +1697,11 @@ static struct task_struct *_pick_next_task_rt(struct rq *rq)
 	} while (rt_rq);
 
 	p = rt_task_of(rt_se);
+
+/* IAMROOT-12:
+ * -------------
+ * 선택한 태스크의 시작 시간을 설정한다.
+ */
 	p->se.exec_start = rq_clock_task(rq);
 
 	return p;
@@ -1457,6 +1713,10 @@ pick_next_task_rt(struct rq *rq, struct task_struct *prev)
 	struct task_struct *p;
 	struct rt_rq *rt_rq = &rq->rt;
 
+/* IAMROOT-12:
+ * -------------
+ * 요청한 런큐에서 pull할 태스크가 있으면 끌어온다.
+ */
 	if (need_pull_rt_task(rq, prev)) {
 		pull_rt_task(rq);
 		/*
@@ -1464,6 +1724,12 @@ pick_next_task_rt(struct rq *rq, struct task_struct *prev)
 		 * means a dl or stop task can slip in, in which case we need
 		 * to re-start task selection.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * pull해왔지만 stop 태스크가 지정된 경우 다시 시도하도록 RETRY_TASK를 
+ * 반환한다. (stop 스케줄러에 우선 권한을 줘야한다)
+ */
 		if (unlikely((rq->stop && task_on_rq_queued(rq->stop)) ||
 			     rq->dl.dl_nr_running))
 			return RETRY_TASK;
@@ -1479,11 +1745,24 @@ pick_next_task_rt(struct rq *rq, struct task_struct *prev)
 	if (!rt_rq->rt_queued)
 		return NULL;
 
+/* IAMROOT-12:
+ * -------------
+ * 기존 태스크에 대한 정리를 수행한다.
+ */
 	put_prev_task(rq, prev);
 
+/* IAMROOT-12:
+ * -------------
+ * 차순위 rt 태스크를 가져온다.
+ */
 	p = _pick_next_task_rt(rq);
 
 	/* The running task is never eligible for pushing */
+
+/* IAMROOT-12:
+ * -------------
+ * 혹시 pushable task 리스트에 등록되어 있으면 제거한다.
+ */
 	dequeue_pushable_task(rq, p);
 
 	set_post_schedule(rq);
@@ -1525,9 +1804,17 @@ static struct task_struct *pick_highest_pushable_task(struct rq *rq, int cpu)
 	struct plist_head *head = &rq->rt.pushable_tasks;
 	struct task_struct *p;
 
+/* IAMROOT-12:
+ * -------------
+ * 요청한 대상 런큐에 pushable 태스크가 없으면 null을 반환한다.
+ */
 	if (!has_pushable_tasks(rq))
 		return NULL;
 
+/* IAMROOT-12:
+ * -------------
+ * 해당 pushable 태스크 리스트에서 대기중인 태스크 중 하나를 반환한다.
+ */
 	plist_for_each_entry(p, head, pushable_tasks) {
 		if (pick_rt_task(rq, p, cpu))
 			return p;
@@ -1541,6 +1828,11 @@ static DEFINE_PER_CPU(cpumask_var_t, local_cpu_mask);
 static int find_lowest_rq(struct task_struct *task)
 {
 	struct sched_domain *sd;
+
+/* IAMROOT-12:
+ * -------------
+ * 이동 가능한 cpu (같은 노드에 속한 cpu들끼리 이동한다)
+ */
 	struct cpumask *lowest_mask = this_cpu_cpumask_var_ptr(local_cpu_mask);
 	int this_cpu = smp_processor_id();
 	int cpu      = task_cpu(task);
@@ -1552,6 +1844,11 @@ static int find_lowest_rq(struct task_struct *task)
 	if (task->nr_cpus_allowed == 1)
 		return -1; /* No other targets possible */
 
+/* IAMROOT-12:
+ * -------------
+ * 태스크의 우선 순위보다 느린 cpu가 없으면 빠져나간다.
+ * (대상 cpu들은 lowest_mask에 기록된다.)
+ */
 	if (!cpupri_find(&task_rq(task)->rd->cpupri, task, lowest_mask))
 		return -1; /* No targets found */
 
@@ -1563,6 +1860,12 @@ static int find_lowest_rq(struct task_struct *task)
 	 * We prioritize the last cpu that the task executed on since
 	 * it is most likely cache-hot in that location.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 찾은 cpu에 처음 요청한 cpu가 있는 경우는 로드 밸런싱이 필요 하지 않으므로 
+ * 그냥 그 cpu로 빠져나간다.
+ */
 	if (cpumask_test_cpu(cpu, lowest_mask))
 		return cpu;
 
@@ -1570,11 +1873,21 @@ static int find_lowest_rq(struct task_struct *task)
 	 * Otherwise, we consult the sched_domains span maps to figure
 	 * out which cpu is logically closest to our hot cache data.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 찾은 cpu 결과에서 현재 cpu가 없는 경우 현재 cpu를 skip하게 한다.
+ */
 	if (!cpumask_test_cpu(this_cpu, lowest_mask))
 		this_cpu = -1; /* Skip this_cpu opt if not among lowest */
 
 	rcu_read_lock();
 	for_each_domain(cpu, sd) {
+
+/* IAMROOT-12:
+ * -------------
+ * 스케줄링 도메인이 wake를 허용하는 경우이다.
+ */
 		if (sd->flags & SD_WAKE_AFFINE) {
 			int best_cpu;
 
@@ -1582,12 +1895,23 @@ static int find_lowest_rq(struct task_struct *task)
 			 * "this_cpu" is cheaper to preempt than a
 			 * remote processor.
 			 */
+
+/* IAMROOT-12:
+ * -------------
+ * 가능하면 현재 cpu에 우선권을 주기위해 스케줄링 도메인에 현재 cpu가 
+ * 포함되어 있는지 여부를 체크한다.
+ */
 			if (this_cpu != -1 &&
 			    cpumask_test_cpu(this_cpu, sched_domain_span(sd))) {
 				rcu_read_unlock();
 				return this_cpu;
 			}
 
+/* IAMROOT-12:
+ * -------------
+ * 스케줄링 도메인에 포함된 cpu들 중 lowest_mask도 허용하는 cpu들 중 
+ * 가장 처음 cpu를 찾아 반환한다.
+ */
 			best_cpu = cpumask_first_and(lowest_mask,
 						     sched_domain_span(sd));
 			if (best_cpu < nr_cpu_ids) {
@@ -1789,6 +2113,10 @@ static int pull_rt_task(struct rq *this_rq)
 	struct task_struct *p;
 	struct rq *src_rq;
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 런큐에 overload된 태스크가 없으면 그냥 빠져나간다.
+ */
 	if (likely(!rt_overloaded(this_rq)))
 		return 0;
 
@@ -1797,6 +2125,13 @@ static int pull_rt_task(struct rq *this_rq)
 	 * see overloaded we must also see the rto_mask bit.
 	 */
 	smp_rmb();
+
+
+/* IAMROOT-12:
+ * -------------
+ * rto_mask에 속한 cpu들 중 현재 cpu를 제외하고 해당 cpu에서 대기중인 차순위 
+ * 태스크의 우선 순위가 현재 cpu에서 동작하는 태스크보다 더 느린 경우 skip한다.
+ */
 
 	for_each_cpu(cpu, this_rq->rd->rto_mask) {
 		if (this_cpu == cpu)
@@ -1820,18 +2155,39 @@ static int pull_rt_task(struct rq *this_rq)
 		 * double_lock_balance, and another CPU could
 		 * alter this_rq
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 현재 cpu의 런큐와 src cpu의 런큐 두 개에 접근하기 위해 더블락을 건다.
+ * (각 런큐의 주소 값으로 락 실행 순서를 결정한다)
+ */
 		double_lock_balance(this_rq, src_rq);
 
 		/*
 		 * We can pull only a task, which is pushable
 		 * on its rq, and no others.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * src_rq의 pushable 태스크 리스트에서 대기중인 태스크를 하나 가져온다.
+ */
 		p = pick_highest_pushable_task(src_rq, this_cpu);
 
 		/*
 		 * Do we have an RT task that preempts
 		 * the to-be-scheduled task?
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 가져온 태스크가 현재 동작중인 rt 태스크의 우선 순위 보다 더 높은 경우 
+ * migration을 수행한다.
+ *
+ * 먼저 기존 src_rq에서 태스크를 deactivate한다.(dequeue)
+ * 현재 cpu에 해당 태스크를 activate한다.(enqueue)
+ */
+
 		if (p && (p->prio < this_rq->rt.highest_prio.curr)) {
 			WARN_ON(p == src_rq->curr);
 			WARN_ON(!task_on_rq_queued(p));
@@ -2075,17 +2431,36 @@ static void task_tick_rt(struct rq *rq, struct task_struct *p, int queued)
 {
 	struct sched_rt_entity *rt_se = &p->rt;
 
+/* IAMROOT-12:
+ * -------------
+ * 런타임 산출, rt 밴드위드에 따른 스로틀링 등을 수행한다.
+ */
 	update_curr_rt(rq);
 
+/* IAMROOT-12:
+ * -------------
+ * rt 태스크에 설정된 시간 제한을 초과했는지 여부를 체크한다.
+ * (RLIMIT_RTTIME)
+ */
 	watchdog(rq, p);
 
 	/*
 	 * RR tasks need a special form of timeslice management.
 	 * FIFO tasks have no timeslices.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * policy가 FIFO인 rt 태스크는 그냥 빠져나간다.
+ */
 	if (p->policy != SCHED_RR)
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * 라운드 로빈 주기가 만료되지 않으면 빠져나간다.
+ * (rt 태스크의 주기 100ms, HZ=100인 경우 time_slice=10) 
+ */
 	if (--p->rt.time_slice)
 		return;
 

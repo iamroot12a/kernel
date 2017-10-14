@@ -36,6 +36,13 @@
 /* Convert between a 140 based task->prio, and our 102 based cpupri */
 static int convert_prio(int prio)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * cpupri는 0번이 가장 느린 idle이 사용하고, 1번이 cfs 태스크가 사용한다.
+ * 마지막으로 2~101까지 사용하는데 가장 빠른 p->prio=0인 우선 순위는 
+ * 101번에 배치된다. 결국 cpupri는 숫자가 높을 수록 우선순위가 가장 높다.
+ */
 	int cpupri;
 
 	if (prio == CPUPRI_INVALID)
@@ -69,6 +76,11 @@ int cpupri_find(struct cpupri *cp, struct task_struct *p,
 		struct cpumask *lowest_mask)
 {
 	int idx = 0;
+
+/* IAMROOT-12:
+ * -------------
+ * 0(lowest) ~ 101(highest)까지의 우선 순위로 바뀐다.
+ */
 	int task_pri = convert_prio(p->prio);
 
 	BUG_ON(task_pri >= CPUPRI_NR_PRIORITIES);
@@ -77,6 +89,18 @@ int cpupri_find(struct cpupri *cp, struct task_struct *p,
 		struct cpupri_vec *vec  = &cp->pri_to_cpu[idx];
 		int skip = 0;
 
+/* IAMROOT-12:
+ * -------------
+ * 순회 중인 우선 순위에 대해 cpupri로 설정된 수가 0인 경우 skip=1 한다.
+ * 예) cpu#0=RT50, cpu#1=RT50, cpu#2=IDLE, cpu#3=NORMAL로 cpupri가 설정 
+ *     vec(IDLE)->count = 1 
+ *     vec(NORMAL)->count = 1
+ *     vec(RT99)->count = 0
+ *     ...
+ *     vec(RT50)->count = 2
+ *     ...
+ *     vec(RT0)->count = 0
+ */
 		if (!atomic_read(&(vec)->count))
 			skip = 1;
 		/*
@@ -100,12 +124,26 @@ int cpupri_find(struct cpupri *cp, struct task_struct *p,
 		smp_rmb();
 
 		/* Need to do the rmb for every iteration */
+
+/* IAMROOT-12:
+ * -------------
+ * cpupri가 설정되지 않은 우선 순위는 skip한다.
+ * (모든 cpu가 해당 우선 순위를 사용하지 않는 경우이다)
+ */
 		if (skip)
 			continue;
 
+/* IAMROOT-12:
+ * -------------
+ * 태스크가 허용하는 cpu가 없는 경우 skip한다.
+ */
 		if (cpumask_any_and(&p->cpus_allowed, vec->mask) >= nr_cpu_ids)
 			continue;
 
+/* IAMROOT-12:
+ * -------------
+ * lowest_mask가 지정된 경우 태스크가 허용하는 cpu들을 기록한다.
+ */
 		if (lowest_mask) {
 			cpumask_and(lowest_mask, &p->cpus_allowed, vec->mask);
 

@@ -128,6 +128,14 @@ dl_entity_preempt(struct sched_dl_entity *a, struct sched_dl_entity *b)
  * This is the priority-queue data structure of the RT scheduling class:
  */
 struct rt_prio_array {
+
+/* IAMROOT-12:
+ * -------------
+ * delimiter를 포함한 101개의 비트맵과 100개의 리스트
+ *
+ * bitmap은 rt 런큐에 엔티티가 있는지 여부를 한번에 알아낼 수 있도록 
+ * 하여 빠른 성능을 유도한다.
+ */
 	DECLARE_BITMAP(bitmap, MAX_RT_PRIO+1); /* include 1 bit for delimiter */
 	struct list_head queue[MAX_RT_PRIO];
 };
@@ -1474,6 +1482,11 @@ static inline int hrtick_enabled(struct rq *rq)
 extern void sched_avg_update(struct rq *rq);
 static inline void sched_rt_avg_update(struct rq *rq, u64 rt_delta)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * rt_avg를 증가시키고 0.5초 지날때마다 절반씩 decay한다.
+ */
 	rq->rt_avg += rt_delta;
 	sched_avg_update(rq);
 }
