@@ -119,6 +119,17 @@ static inline void dl_clear_overload(struct rq *rq)
 
 static void update_dl_migration(struct dl_rq *dl_rq)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 마이그레이션 가능한 태스크가 1개 이상이 있고 dl 태스크가 2개 이상이면 
+ * 오버로드 설정을 한다.
+ *
+ * rd->dlo_count: 
+ *	오버로드된 cpu의 수 
+ * rd->dlo_mask:
+ *	오버로드된 cpu 마스크
+ */
 	if (dl_rq->dl_nr_migratory && dl_rq->dl_nr_running > 1) {
 		if (!dl_rq->overloaded) {
 			dl_set_overload(rq_of_dl_rq(dl_rq));
@@ -144,6 +155,17 @@ static void dec_dl_migration(struct sched_dl_entity *dl_se, struct dl_rq *dl_rq)
 {
 	struct task_struct *p = dl_task_of(dl_se);
 
+
+/* IAMROOT-12:
+ * -------------
+ * 태스크가 2개 이상의 cpu에서 동작할 수 있게 설정된 경우 dl_nr_migratory가 
+ * 1 감소된다. 즉 migration 시킬 수 있는 태스크 수가 줄어든다.
+ *
+ * 4개의 SMP 시스템에서 디폴트로 태스크에 설정되는 nr_cpus_allowed는 cpu 수
+ * 만큼 즉 4이다.
+ *
+ * 특정 cpu 1개에서만 동작시키게 설정된 경우 이 값이 1로 설정된다.
+ */
 	if (p->nr_cpus_allowed > 1)
 		dl_rq->dl_nr_migratory--;
 
@@ -187,6 +209,10 @@ static void dequeue_pushable_dl_task(struct rq *rq, struct task_struct *p)
 {
 	struct dl_rq *dl_rq = &rq->dl;
 
+/* IAMROOT-12:
+ * -------------
+ * dequeue되는 태스크에 대해 pushable 트리에서도 존재하면 제거한다.
+ */
 	if (RB_EMPTY_NODE(&p->pushable_dl_tasks))
 		return;
 
@@ -285,6 +311,12 @@ static inline void setup_new_dl_entity(struct sched_dl_entity *dl_se,
 	 * future; in fact, we must consider execution overheads (time
 	 * spent on hardirq context, etc.).
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * new dl 태스크인 경우에는 pi 태스크의 deadline을 상속받는다.
+ * (refill)
+ */
 	dl_se->deadline = rq_clock(rq) + pi_se->dl_deadline;
 	dl_se->runtime = pi_se->dl_runtime;
 	dl_se->dl_new = 0;
@@ -320,6 +352,11 @@ static void replenish_dl_entity(struct sched_dl_entity *dl_se,
 	 * This could be the case for a !-dl task that is boosted.
 	 * Just go with full inherited parameters.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * deadline 설정이 없는 경우에는 
+ */
 	if (dl_se->dl_deadline == 0) {
 		dl_se->deadline = rq_clock(rq) + pi_se->dl_deadline;
 		dl_se->runtime = pi_se->dl_runtime;
@@ -331,6 +368,13 @@ static void replenish_dl_entity(struct sched_dl_entity *dl_se,
 	 * handling of situations where the runtime overrun is
 	 * arbitrary large.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 런타임이 소진된 경우 다시 재보충한다. 
+ * (pi가 있는 경우 pi 태스크의 값으로 한다)
+ */
+
 	while (dl_se->runtime <= 0) {
 		dl_se->deadline += pi_se->dl_period;
 		dl_se->runtime += pi_se->dl_runtime;
@@ -430,11 +474,19 @@ static void update_dl_entity(struct sched_dl_entity *dl_se,
 	 * The arrival of a new instance needs special treatment, i.e.,
 	 * the actual scheduling parameters have to be "renewed".
 	 */
+/* IAMROOT-12:
+ * -------------
+ * new dl 태스크인 경우에도 pi 태스크의 값으로 refill 한다.
+ */
 	if (dl_se->dl_new) {
 		setup_new_dl_entity(dl_se, pi_se);
 		return;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * deadline이 만료된 경우이거나 .... pi 태스크의 값으로 refill 한다.
+ */
 	if (dl_time_before(dl_se->deadline, rq_clock(rq)) ||
 	    dl_entity_overflow(dl_se, pi_se, rq_clock(rq))) {
 		dl_se->deadline = rq_clock(rq) + pi_se->dl_deadline;
@@ -611,6 +663,11 @@ static void update_curr_dl(struct rq *rq)
 	 * natural solution, but the full ramifications of this
 	 * approach need further study.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * dl 태스크가 동작한 delta 시간
+ */
 	delta_exec = rq_clock_task(rq) - curr->se.exec_start;
 	if (unlikely((s64)delta_exec <= 0))
 		return;
@@ -624,12 +681,32 @@ static void update_curr_dl(struct rq *rq)
 	curr->se.exec_start = rq_clock_task(rq);
 	cpuacct_charge(curr, delta_exec);
 
+/* IAMROOT-12:
+ * -------------
+ * cpu가 rt(dl 포함)에 기여하는 시간을 증가시키고, 0.5초마다 decay한다.
+ * 이 값은 cfs 로드밸런스에서 활용한다.
+ */
 	sched_rt_avg_update(rq, delta_exec);
 
+/* IAMROOT-12:
+ * -------------
+ * dl 태스크에 양보(yield) 요청된 경우 delta_exec를 뺄 필요 없다. 
+ * (이미 runtime이 0으로 변경되어 있다.)
+ */
 	dl_se->runtime -= dl_se->dl_yielded ? 0 : delta_exec;
+
+/* IAMROOT-12:
+ * -------------
+ * dl 엔티티(dl 태스크)에 부여된 런타임이 다 소진된 경우 엔티티가 스로틀한다.
+ */
 	if (dl_runtime_exceeded(rq, dl_se)) {
 		dl_se->dl_throttled = 1;
 		__dequeue_task_dl(rq, curr, 0);
+
+/* IAMROOT-12:
+ * -------------
+ * dequeue 하였지만 period 기간이 지난 dl 타이머인 경우 다시 엔큐한다.
+ */
 		if (unlikely(!start_dl_timer(dl_se, curr->dl.dl_boosted)))
 			enqueue_task_dl(rq, curr, ENQUEUE_REPLENISH);
 
@@ -708,6 +785,11 @@ static void dec_dl_deadline(struct dl_rq *dl_rq, u64 deadline)
 {
 	struct rq *rq = rq_of_dl_rq(dl_rq);
 
+/* IAMROOT-12:
+ * -------------
+ * 업데이트된 RB 트리로 인해 earliest_dl.curr와 next를 갱신한다.
+ * (cpudl에는 해당 cpu에서 deadline 값이 가장 작은 값으로 갱신한다)
+ */
 	/*
 	 * Since we may have removed our earliest (and/or next earliest)
 	 * task we must recompute them.
@@ -740,10 +822,18 @@ void inc_dl_tasks(struct sched_dl_entity *dl_se, struct dl_rq *dl_rq)
 	int prio = dl_task_of(dl_se)->prio;
 	u64 deadline = dl_se->deadline;
 
+/* IAMROOT-12:
+ * -------------
+ * dl 태스크 수를 증가시킨다.
+ */
 	WARN_ON(!dl_prio(prio));
 	dl_rq->dl_nr_running++;
 	add_nr_running(rq_of_dl_rq(dl_rq), 1);
 
+/* IAMROOT-12:
+ * -------------
+ * cpudl 및 오버로드 관련하여 갱신한다.
+ */
 	inc_dl_deadline(dl_rq, deadline);
 	inc_dl_migration(dl_se, dl_rq);
 }
@@ -755,10 +845,25 @@ void dec_dl_tasks(struct sched_dl_entity *dl_se, struct dl_rq *dl_rq)
 
 	WARN_ON(!dl_prio(prio));
 	WARN_ON(!dl_rq->dl_nr_running);
+
+/* IAMROOT-12:
+ * -------------
+ * dl 태스크 수를 1 감소 시킨다.
+ */
 	dl_rq->dl_nr_running--;
 	sub_nr_running(rq_of_dl_rq(dl_rq), 1);
 
+/* IAMROOT-12:
+ * -------------
+ * 업데이트된 RB 트리로 인해 earliest_dl.curr와 next를 갱신한다.
+ * 또한 cpudl에는 해당 cpu에서 deadline 값이 가장 작은 값으로 갱신한다.
+ */
 	dec_dl_deadline(dl_rq, dl_se->deadline);
+
+/* IAMROOT-12:
+ * -------------
+ * dlo(deadline overload 카운터와 비트마스크를 갱신한다.)
+ */
 	dec_dl_migration(dl_se, dl_rq);
 }
 
@@ -770,6 +875,10 @@ static void __enqueue_dl_entity(struct sched_dl_entity *dl_se)
 	struct sched_dl_entity *entry;
 	int leftmost = 1;
 
+/* IAMROOT-12:
+ * -------------
+ * RB 트리에 dl 엔티티를 추가한다.
+ */
 	BUG_ON(!RB_EMPTY_NODE(&dl_se->rb_node));
 
 	while (*link) {
@@ -789,6 +898,10 @@ static void __enqueue_dl_entity(struct sched_dl_entity *dl_se)
 	rb_link_node(&dl_se->rb_node, parent, link);
 	rb_insert_color(&dl_se->rb_node, &dl_rq->rb_root);
 
+/* IAMROOT-12:
+ * -------------
+ * dl 태스크 수를 증가시키고, cpudl 및 오버로드 관련하여 갱신한다.
+ */
 	inc_dl_tasks(dl_se, dl_rq);
 }
 
@@ -799,6 +912,10 @@ static void __dequeue_dl_entity(struct sched_dl_entity *dl_se)
 	if (RB_EMPTY_NODE(&dl_se->rb_node))
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * RB 트리에서 dl 엔티티(태스크)를 제거한다.
+ */
 	if (dl_rq->rb_leftmost == &dl_se->rb_node) {
 		struct rb_node *next_node;
 
@@ -823,11 +940,22 @@ enqueue_dl_entity(struct sched_dl_entity *dl_se,
 	 * parameters of the task might need updating. Otherwise,
 	 * we want a replenishment of its runtime.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 새 태스크나 wakeup된 태스크인 경우에 대해 refill한다. 또한 만료된 경우에도 
+ * refill한다 refill할 때 pi 태스크가 있으면 pi 태스크의 값으로 refill 한다.
+ */
 	if (dl_se->dl_new || flags & ENQUEUE_WAKEUP)
 		update_dl_entity(dl_se, pi_se);
 	else if (flags & ENQUEUE_REPLENISH)
 		replenish_dl_entity(dl_se, pi_se);
 
+/* IAMROOT-12:
+ * -------------
+ * RB 태스크에 dl 엔티티를 추가하고, dl 태스크 수를 증가시키고, cpudl 및 
+ * 오버로드 관련하여 갱신한다.
+ */
 	__enqueue_dl_entity(dl_se);
 }
 
@@ -847,6 +975,12 @@ static void enqueue_task_dl(struct rq *rq, struct task_struct *p, int flags)
 	 * smaller than our one... OTW we keep our runtime and
 	 * deadline.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * DI(deadline inheritance)로 인해 부트스된 경우 pi_se에 부스트 시킨 태스크의 
+ * 엔티티가 지정된다.
+ */
 	if (pi_task && p->dl.dl_boosted && dl_prio(pi_task->normal_prio)) {
 		pi_se = &pi_task->dl;
 	} else if (!dl_prio(p->normal_prio)) {
@@ -879,6 +1013,11 @@ static void enqueue_task_dl(struct rq *rq, struct task_struct *p, int flags)
 static void __dequeue_task_dl(struct rq *rq, struct task_struct *p, int flags)
 {
 	dequeue_dl_entity(&p->dl);
+
+/* IAMROOT-12:
+ * -------------
+ * dequeue되는 태스크에 대해 pushable 트리에서도 존재하면 제거한다.
+ */
 	dequeue_pushable_dl_task(rq, p);
 }
 
@@ -990,6 +1129,11 @@ static int pull_dl_task(struct rq *this_rq);
 static void check_preempt_curr_dl(struct rq *rq, struct task_struct *p,
 				  int flags)
 {
+/* IAMROOT-12:
+ * -------------
+ * 요청한 태스크이 deadline이 더 이른 경우 리스케줄 요청을 한다.
+ */
+
 	if (dl_entity_preempt(&p->dl, &rq->curr->dl)) {
 		resched_curr(rq);
 		return;

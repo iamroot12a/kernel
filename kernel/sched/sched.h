@@ -531,9 +531,18 @@ struct rt_rq {
 /* Deadline class' related fields in a runqueue */
 struct dl_rq {
 	/* runqueue is an rbtree, ordered by deadline */
+
+/* IAMROOT-12:
+ * -------------
+ * dl 태스크들이 deadline을 키로 RB 트리에 정렬되어 있다.
+ */
 	struct rb_root rb_root;
 	struct rb_node *rb_leftmost;
 
+/* IAMROOT-12:
+ * -------------
+ * dl 태스크 수
+ */
 	unsigned long dl_nr_running;
 
 #ifdef CONFIG_SMP
@@ -543,6 +552,12 @@ struct dl_rq {
 	 * the decision wether or not a ready but not running task
 	 * should migrate somewhere else.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * earliest deadline 값이 curr에 들어있고, next에는 다음 dealine 값이 
+ * 들어가 있다.
+ */
 	struct {
 		u64 curr;
 		u64 next;
@@ -556,6 +571,11 @@ struct dl_rq {
 	 * an rb-tree, ordered by tasks' deadlines, with caching
 	 * of the leftmost (earliest deadline) element.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * overload되어 대기하는 태스크가 RB 트리에서 관리되고 있다.
+ */
 	struct rb_root pushable_dl_tasks_root;
 	struct rb_node *pushable_dl_tasks_leftmost;
 #else
@@ -1486,6 +1506,11 @@ static inline void sched_rt_avg_update(struct rq *rq, u64 rt_delta)
 /* IAMROOT-12:
  * -------------
  * rt_avg를 증가시키고 0.5초 지날때마다 절반씩 decay한다.
+ *
+ * cfs 로드밸런스가 rt(with dl) 시간을 제외하여 cpu capacity를 적용하게 한다.
+ * rt_avg가 0인 경우 -> 로드 값 * cpu capacity * 100% 
+ * rt_avg가 적용되는 경우 -> 로드 값 * cpu capacity * 90%
+ *      (rt_avg가 cfs 태스크에 비해 10%를 사용한 경우)
  */
 	rq->rt_avg += rt_delta;
 	sched_avg_update(rq);

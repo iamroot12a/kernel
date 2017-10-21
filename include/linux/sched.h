@@ -1284,6 +1284,18 @@ struct sched_dl_entity {
 	 * during sched_setattr(), they will remain the same until
 	 * the next sched_setattr().
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 다음 3가지는 태스크에 주어지는 파라메터 값이다.
+ * -----------------------------------------------
+ * dl_runtime:
+ *      최대 런타임 설정 
+ * dl_deadline:
+ *      상대 deadline
+ * dl_period:
+ *      주기
+ */
 	u64 dl_runtime;		/* maximum runtime for each instance	*/
 	u64 dl_deadline;	/* relative deadline of each instance	*/
 	u64 dl_period;		/* separation of two instances (period) */
@@ -1294,7 +1306,18 @@ struct sched_dl_entity {
 	 * they are continously updated during task execution. Note that
 	 * the remaining runtime could be < 0 in case we are in overrun.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * runtime:
+ *      남은 런타임 잔량
+ */
 	s64 runtime;		/* remaining runtime for this instance	*/
+
+/* IAMROOT-12:
+ * -------------
+ * clock이 포함된 deadline
+ */
 	u64 deadline;		/* absolute deadline for this instance	*/
 	unsigned int flags;	/* specifying the scheduler behaviour	*/
 
@@ -1316,12 +1339,30 @@ struct sched_dl_entity {
 	 * @dl_yielded tells if task gave up the cpu before consuming
 	 * all its available runtime during the last job.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * dl_throttled:
+ *      런타임 소진으로 인해 스로틀된 상태가 담긴다.
+ * dl_new:
+ *      새로 생성된 dl 태스크는 full 런타임을 받아 동작하게 한다. 
+ * dl_boosted:
+ *      DI(Deadline inheritance)로 인해 boost된 경우 런타임이 소진되어 
+ *      스로틀된 경우에도 계속 수행할 수 있게 한다.
+ * dl_yielded:
+ *      양보된 태스크의 경우 설정된다.
+ */
 	int dl_throttled, dl_new, dl_boosted, dl_yielded;
 
 	/*
 	 * Bandwidth enforcement timer. Each -deadline task has its
 	 * own bandwidth to be enforced, thus we need one timer per task.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * deadline 타이머
+ */
 	struct hrtimer dl_timer;
 };
 

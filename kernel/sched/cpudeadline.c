@@ -139,6 +139,16 @@ void cpudl_set(struct cpudl *cp, int cpu, u64 dl, int is_valid)
 	int old_idx, new_cpu;
 	unsigned long flags;
 
+/* IAMROOT-12:
+ * -------------
+ * heap tree로 구성된 elements[]는 가장 상위인 elements[0]에 가장 느린 deadline 
+ * 값을 가진 cpu를 가리킨다.
+ *
+ * elements[0] -> cpu#0을 찾아가기 위한 elements[0].idx를 참고한다.
+ * elements[N] -> cpu#N을 찾아가기 위한 elements[N].idx를 참고한다.
+ *	예) elements[3].idx = 5
+ *	    -->cpu#3번에 해당하는 deadline 값은 elements[5].dl에 존재한다.
+ */
 	WARN_ON(!cpu_present(cpu));
 
 	raw_spin_lock_irqsave(&cp->lock, flags);
