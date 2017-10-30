@@ -314,8 +314,9 @@ static inline void setup_new_dl_entity(struct sched_dl_entity *dl_se,
 
 /* IAMROOT-12:
  * -------------
- * new dl 태스크인 경우에는 pi 태스크의 deadline을 상속받는다.
- * (refill)
+ * new dl 태스크인 경우에는 dl_deadline 값을 사용하여 deadline을 설정한다.
+ * 만일 pi 발생된 경우 가장 우선 순위가 높은 pi 태스크의 dl_deadline을 
+ * 사용하여 deadline을 설정한다.
  */
 	dl_se->deadline = rq_clock(rq) + pi_se->dl_deadline;
 	dl_se->runtime = pi_se->dl_runtime;
@@ -355,7 +356,8 @@ static void replenish_dl_entity(struct sched_dl_entity *dl_se,
 
 /* IAMROOT-12:
  * -------------
- * deadline 설정이 없는 경우에는 
+ * deadline 설정이 0으로 된 경우 현재 시각으로 deadline을 설정한다.
+ * 그런데 pi boost 된 경우는 pi 태스크의 dl_deadline 값을 사용한다.
  */
 	if (dl_se->dl_deadline == 0) {
 		dl_se->deadline = rq_clock(rq) + pi_se->dl_deadline;
@@ -389,6 +391,12 @@ static void replenish_dl_entity(struct sched_dl_entity *dl_se,
 	 * resetting the deadline and the budget of the
 	 * entity.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * deadline 만료된 경우 dl_deadline 값으로 재보충한다. (pi인 경우 ...)
+ * 런타임 잔량도 다시 dl_runtime으로 재보충한다.
+ */
 	if (dl_time_before(dl_se->deadline, rq_clock(rq))) {
 		printk_deferred_once("sched: DL replenish lagged to much\n");
 		dl_se->deadline = rq_clock(rq) + pi_se->dl_deadline;
@@ -566,6 +574,10 @@ static enum hrtimer_restart dl_task_timer(struct hrtimer *timer)
 	unsigned long flags;
 	struct rq *rq;
 
+/* IAMROOT-12:
+ * -------------
+ * deadline 타이머의 핸들러 시작 함수
+ */
 	rq = task_rq_lock(p, &flags);
 
 	/*
@@ -602,11 +614,25 @@ static enum hrtimer_restart dl_task_timer(struct hrtimer *timer)
 	 * We can be both throttled and !queued. Replenish the counter
 	 * but do not enqueue -- wait for our wakeup to do that.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 런타임 소진 후 태스크가 deactivate되는데 이 때부터 dl 타이머가 동작한다.
+ *
+ * 그런 후 타이머 만료에 의해 이 함수에 진입하게 된다.
+ */
 	if (!task_on_rq_queued(p)) {
 		replenish_dl_entity(dl_se, dl_se);
 		goto unlock;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 태스크보다 더 급한 태스크가 있는 경우 리스케줄한다.
+ *
+ * 이 타이머가 깨어났을 때 dl 태스크가 아닌 경우 그냥 리스케줄하여 
+ * 무조건 dl 태스크가 동작하게 한다.
+ */
 	enqueue_task_dl(rq, p, ENQUEUE_REPLENISH);
 	if (dl_task(rq->curr))
 		check_preempt_curr_dl(rq, p, 0);
@@ -617,6 +643,11 @@ static enum hrtimer_restart dl_task_timer(struct hrtimer *timer)
 	 * Queueing this task back might have overloaded rq,
 	 * check if we need to kick someone away.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 오버로드된 pushable 태스크들을 다른 cpu로 보낸다.
+ */
 	if (has_pushable_dl_tasks(rq))
 		push_dl_task(rq);
 #endif
@@ -1180,6 +1211,11 @@ struct task_struct *pick_next_task_dl(struct rq *rq, struct task_struct *prev)
 
 	dl_rq = &rq->dl;
 
+/* IAMROOT-12:
+ * -------------
+ * 기존 태스크가 dl 태스크인 경우(dl -> dl) 나보다 더 급한 dl 태스크를 
+ * 가져온다.
+ */
 	if (need_pull_dl_task(rq, prev)) {
 		pull_dl_task(rq);
 		/*
@@ -1187,6 +1223,12 @@ struct task_struct *pick_next_task_dl(struct rq *rq, struct task_struct *prev)
 		 * means a stop task can slip in, in which case we need to
 		 * re-start task selection.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * stop 스케줄러에 태스크가 발생하면 dl 보다 더 우선 순위를 가지므로 
+ * 다시 스케줄러를 선택하게 한다.
+ */
 		if (rq->stop && task_on_rq_queued(rq->stop))
 			return RETRY_TASK;
 	}
@@ -1201,8 +1243,17 @@ struct task_struct *pick_next_task_dl(struct rq *rq, struct task_struct *prev)
 	if (unlikely(!dl_rq->dl_nr_running))
 		return NULL;
 
+/* IAMROOT-12:
+ * -------------
+ * 기존 태스크에 대한 것들을 정리한다.
+ */
 	put_prev_task(rq, prev);
 
+
+/* IAMROOT-12:
+ * -------------
+ * 현재 dl 런큐에서 가장 급한 태스크를 가져온다.
+ */
 	dl_se = pick_next_dl_entity(rq, dl_rq);
 	BUG_ON(!dl_se);
 
@@ -1210,8 +1261,17 @@ struct task_struct *pick_next_task_dl(struct rq *rq, struct task_struct *prev)
 	p->se.exec_start = rq_clock_task(rq);
 
 	/* Running task will never be pushed. */
+
+/* IAMROOT-12:
+ * -------------
+ * 실행할 태스크가 pushable에 있으면 제거한다.
+ */
        dequeue_pushable_dl_task(rq, p);
 
+/* IAMROOT-12:
+ * -------------
+ * 해당 dl 태스크의 runtime 잔량만큼 hrtick을 프로그램한다.
+ */
 	if (hrtick_enabled(rq))
 		start_hrtick_dl(rq, p);
 
@@ -1296,6 +1356,10 @@ static struct task_struct *pick_next_earliest_dl_task(struct rq *rq, int cpu)
 	struct sched_dl_entity *dl_se;
 	struct task_struct *p = NULL;
 
+/* IAMROOT-12:
+ * -------------
+ * 차순위 earliest 태스크를 알아온다.
+ */
 next_node:
 	next_node = rb_next(next_node);
 	if (next_node) {
@@ -1570,6 +1634,10 @@ static int pull_dl_task(struct rq *this_rq)
 	 */
 	smp_rmb();
 
+/* IAMROOT-12:
+ * -------------
+ * 오버로드된 cpu들을 대상으로 순회한다.
+ */
 	for_each_cpu(cpu, this_rq->rd->dlo_mask) {
 		if (this_cpu == cpu)
 			continue;
@@ -1580,6 +1648,11 @@ static int pull_dl_task(struct rq *this_rq)
 		 * It looks racy, abd it is! However, as in sched_rt.c,
 		 * we are fine with this.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 현재 cpu에서 동작중인 dl의 만료시각보다 더 급한 태스크가 없으면 skip
+ */
 		if (this_rq->dl.dl_nr_running &&
 		    dl_time_before(this_rq->dl.earliest_dl.curr,
 				   src_rq->dl.earliest_dl.next))
@@ -1595,6 +1668,10 @@ static int pull_dl_task(struct rq *this_rq)
 		if (src_rq->dl.dl_nr_running <= 1)
 			goto skip;
 
+/* IAMROOT-12:
+ * -------------
+ * 오버로드된 cpu에서 차순위 dl 태스크를 알아온다.
+ */
 		p = pick_next_earliest_dl_task(src_rq, this_cpu);
 
 		/*
@@ -1602,6 +1679,13 @@ static int pull_dl_task(struct rq *this_rq)
 		 *  - it preempts our current (if there's one),
 		 *  - it will preempt the last one we pulled (if any).
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 가장 급한(dmin: 오버로드된 cpu의 차순위 dl 태스크들 중 earliest deadline)
+ * 태스크를 찾는다. dmin을 갱신하면서 그 값보다 작은 태스크들을 다 현재 
+ * cpu로 가져온다.
+ */
 		if (p && dl_time_before(p->dl.deadline, dmin) &&
 		    (!this_rq->dl.dl_nr_running ||
 		     dl_time_before(p->dl.deadline,

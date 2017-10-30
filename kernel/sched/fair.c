@@ -8915,6 +8915,10 @@ void set_cpu_sd_state_idle(void)
 	struct sched_domain *sd;
 	int cpu = smp_processor_id();
 
+/* IAMROOT-12:
+ * -------------
+ * 스케줄링 도메인에 현재 cpu가 idle로 진입함을 알린다.
+ */
 	rcu_read_lock();
 	sd = rcu_dereference(per_cpu(sd_busy, cpu));
 
@@ -8922,6 +8926,11 @@ void set_cpu_sd_state_idle(void)
 		goto unlock;
 	sd->nohz_idle = 1;
 
+/* IAMROOT-12:
+ * -------------
+ * nr_busy_cpus:
+ *      스케줄링 그룹내에서 idle 상태가 아닌 cpu 수
+ */
 	atomic_dec(&sd->groups->sgc->nr_busy_cpus);
 unlock:
 	rcu_read_unlock();

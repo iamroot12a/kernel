@@ -795,11 +795,19 @@ static void __tick_nohz_idle_enter(struct tick_sched *ts)
 
 	now = tick_nohz_start_idle(ts);
 
+/* IAMROOT-12:
+ * -------------
+ * nohz 컨트롤이 가능한 경우
+ */
 	if (can_stop_idle_tick(cpu, ts)) {
 		int was_stopped = ts->tick_stopped;
 
 		ts->idle_calls++;
 
+/* IAMROOT-12:
+ * -------------
+ * nohz로 인해 다음 깨어날 틱을 프로그램한다.
+ */
 		expires = tick_nohz_stop_sched_tick(ts, now, cpu);
 		if (expires.tv64 > 0LL) {
 			ts->idle_sleeps++;
@@ -835,6 +843,11 @@ void tick_nohz_idle_enter(void)
  	 * State will be updated to busy during the first busy tick after
  	 * exiting idle.
  	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 스케줄링 도메인 관련 idle 상태를 기록한다.
+ */
 	set_cpu_sd_state_idle();
 
 	local_irq_disable();

@@ -38,6 +38,11 @@ static int arm64_enter_idle_state(struct cpuidle_device *dev,
 	int ret;
 
 	if (!idx) {
+
+/* IAMROOT-12:
+ * -------------
+ * arm64의 wfi 명령을 호출하여 인터럽트가 올때까지 내부 cpu 클럭이 정지된다.
+ */
 		cpu_do_idle();
 		return idx;
 	}

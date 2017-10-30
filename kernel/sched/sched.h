@@ -939,6 +939,12 @@ struct sched_group_capacity {
 	/*
 	 * Number of busy cpus in this group.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * nr_busy_cpus:
+ *      스케줄링 그룹내에서 idle 상태가 아닌 cpu 수
+ */
 	atomic_t nr_busy_cpus;
 
 	unsigned long cpumask[0]; /* iteration mask */

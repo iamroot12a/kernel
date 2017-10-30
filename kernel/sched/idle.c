@@ -78,6 +78,10 @@ void __weak arch_cpu_idle(void)
  */
 static void cpuidle_idle_call(void)
 {
+/* IAMROOT-12:
+ * -------------
+ * cpuidle 드라이버를 알아온다.
+ */
 	struct cpuidle_device *dev = __this_cpu_read(cpuidle_devices);
 	struct cpuidle_driver *drv = cpuidle_get_cpu_driver(dev);
 	int next_state, entered_state;
@@ -106,6 +110,11 @@ static void cpuidle_idle_call(void)
 	 */
 	rcu_idle_enter();
 
+/* IAMROOT-12:
+ * -------------
+ * cpuidle 드라이버가 준비되어 있는지 확인한다. 없으면 use_default 레이블로 
+ * 이동해서 기본 동작을 수행한다.
+ */
 	if (cpuidle_not_available(drv, dev))
 		goto use_default;
 
@@ -227,17 +236,48 @@ static void cpu_idle_loop(void)
 		 * guaranteed to cause the cpu to reschedule.
 		 */
 
+/* IAMROOT-12:
+ * -------------
+ * TIF_POLLING_NRFLAG 플래그를 설정한다.
+ */
 		__current_set_polling();
+
+/* IAMROOT-12:
+ * -------------
+ * idle 진입 전에 nohz 관련한 설정들을 변경한다.
+ */
 		tick_nohz_idle_enter();
 
+/* IAMROOT-12:
+ * -------------
+ * 새로운 태스크가 생기기 전까지 계속 루프를 돈다.
+ */
 		while (!need_resched()) {
+
+/* IAMROOT-12:
+ * -------------
+ * 아래 함수는 arm에서는 아무런 동작도 하지 않는다.
+ */
 			check_pgt_cache();
 			rmb();
 
+/* IAMROOT-12:
+ * -------------
+ * cpu가 offline 상태에서 idle로 진입하는 경우 cpu_die()를 호출한다.
+ */
 			if (cpu_is_offline(smp_processor_id()))
 				arch_cpu_idle_dead();
 
+/* IAMROOT-12:
+ * -------------
+ * 인터럽트 요청을 받지 않도록 끈다.
+ */
 			local_irq_disable();
+
+/* IAMROOT-12:
+ * -------------
+ * 아키텍처에 따라 idle 진입 전에 수행할 코드를 아래 함수에서 처리한다.
+ */
 			arch_cpu_idle_enter();
 
 			/*
@@ -249,11 +289,23 @@ static void cpu_idle_loop(void)
 			 * know that the IPI is going to arrive right
 			 * away
 			 */
+
+/* IAMROOT-12:
+ * -------------
+ * tick broadcast 등을 확인해야 하는 경우 또는 강제로 idle을 spin 하라는 
+ * 설정이 있는 경우에는 함수 내부에서 spin한다.
+ *
+ * 일반적으로는 cpuidle_idle_call() 함수를 사용한다.
+ */
 			if (cpu_idle_force_poll || tick_check_broadcast_expired())
 				cpu_idle_poll();
 			else
 				cpuidle_idle_call();
 
+/* IAMROOT-12:
+ * -------------
+ * 아키텍처에 따라 idle 상태에서 빠질 때 수행할 루틴이 아래 함수에서 호출된다.
+ */
 			arch_cpu_idle_exit();
 		}
 
@@ -266,7 +318,17 @@ static void cpu_idle_loop(void)
 		 * not have had an IPI to fold the state for us.
 		 */
 		preempt_set_need_resched();
+
+/* IAMROOT-12:
+ * -------------
+ * nohz idle 상태를 벗어낫다는 것을 처리한다.
+ */
 		tick_nohz_idle_exit();
+
+/* IAMROOT-12:
+ * -------------
+ * TIF_POLLING_NRFLAG 플래그를 클리어한다.
+ */
 		__current_clr_polling();
 
 		/*
@@ -277,6 +339,10 @@ static void cpu_idle_loop(void)
 		 */
 		smp_mb__after_atomic();
 
+/* IAMROOT-12:
+ * -------------
+ * ttwu pending된 태스크들을 깨운다.
+ */
 		sched_ttwu_pending();
 		schedule_preempt_disabled();
 	}
@@ -299,6 +365,16 @@ void cpu_startup_entry(enum cpuhp_state state)
 	 */
 	boot_init_stack_canary();
 #endif
+
+/* IAMROOT-12:
+ * -------------
+ * 각 cpu들이 online 또는 offline될 때 호출되는 함수로 idle로 진입한다.
+ */
+
+/* IAMROOT-12:
+ * -------------
+ * arm에서는 fiq를 enable하고 idle 진입한다.
+ */
 	arch_cpu_idle_prepare();
 	cpu_idle_loop();
 }

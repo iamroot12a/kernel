@@ -989,6 +989,11 @@ struct sched_domain {
 	unsigned int forkexec_idx;
 	unsigned int smt_gain;
 
+/* IAMROOT-12:
+ * -------------
+ * nohz_idle:
+ *      idle 진입 시 1로 설정된다.
+ */
 	int nohz_idle;			/* NOHZ IDLE status */
 	int flags;			/* See SD_* */
 	int level;
@@ -1287,14 +1292,16 @@ struct sched_dl_entity {
 
 /* IAMROOT-12:
  * -------------
- * 다음 3가지는 태스크에 주어지는 파라메터 값이다.
+ * 다음 3가지는 태스크에 주어지는 파라메터 값(ns 단위의 시간)이다.
  * -----------------------------------------------
  * dl_runtime:
- *      최대 런타임 설정 
+ *      최대 런타임 설정(WCET(Worst Case Execution Time)
+ *      이 시간이 지나면 dl 스케줄러가 강제로 해당 태스크를 스로틀(dequeue) 한다.
  * dl_deadline:
- *      상대 deadline
+ *      상대 deadline으로 태스크가 작업을 만료해야 하는 시간
+ *      dl 태스크들 끼리 경쟁 시 우선 순위로 활용된다.
  * dl_period:
- *      주기
+ *      dl 태스크가 깨어날 주기(우선 순위에 밀리면 보류된다)
  */
 	u64 dl_runtime;		/* maximum runtime for each instance	*/
 	u64 dl_deadline;	/* relative deadline of each instance	*/
@@ -1310,13 +1317,13 @@ struct sched_dl_entity {
 /* IAMROOT-12:
  * -------------
  * runtime:
- *      남은 런타임 잔량
+ *      남은 런타임 잔량(0 이하 시 스로틀)
  */
 	s64 runtime;		/* remaining runtime for this instance	*/
 
 /* IAMROOT-12:
  * -------------
- * clock이 포함된 deadline
+ * clock이 포함된 deadline (절대 시간, 이 값으로 RB 트리에서 정렬된다)
  */
 	u64 deadline;		/* absolute deadline for this instance	*/
 	unsigned int flags;	/* specifying the scheduler behaviour	*/

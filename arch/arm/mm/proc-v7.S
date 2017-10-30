@@ -74,6 +74,11 @@ ENDPROC(cpu_v7_reset)
  *
  *	IRQs are already disabled.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * armv7에서 인터럽트가 들어올 때까지 클럭이 정지된다. (idle 진입 시 사용)
+ */
 ENTRY(cpu_v7_do_idle)
 	dsb					@ WFI may enter a low-power mode
 	wfi

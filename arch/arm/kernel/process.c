@@ -140,6 +140,12 @@ void (*arm_pm_idle)(void);
 
 void arch_cpu_idle(void)
 {
+/* IAMROOT-12:
+ * -------------
+ * arm에서 cpuidle 드라이버 없이 idle 진입 하면 이 함수를 사용한다.
+ *
+ * armv7 -> cpu_v7_do_idle() 함수 호출
+ */
 	if (arm_pm_idle)
 		arm_pm_idle();
 	else
@@ -149,6 +155,10 @@ void arch_cpu_idle(void)
 
 void arch_cpu_idle_prepare(void)
 {
+/* IAMROOT-12:
+ * -------------
+ * arm에서는 fiq를 enable하고 idle 진입한다.
+ */
 	local_fiq_enable();
 }
 

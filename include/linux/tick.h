@@ -59,12 +59,20 @@ struct tick_sched {
 /* IAMROOT-12:
  * -------------
  * nohz 모드(inactive, lowres, highres)
+ *
+ * inidle:
+ *      idle 진입 시 1로 변경된다.
  */
 	enum tick_nohz_mode		nohz_mode;
 	ktime_t				last_tick;
 	int				inidle;
 	int				tick_stopped;
 	unsigned long			idle_jiffies;
+
+/* IAMROOT-12:
+ * -------------
+ * no_hz idle에 진입한 횟수
+ */
 	unsigned long			idle_calls;
 	unsigned long			idle_sleeps;
 	int				idle_active;

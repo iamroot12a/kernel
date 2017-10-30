@@ -18,6 +18,11 @@ select_task_rq_idle(struct task_struct *p, int cpu, int sd_flag, int flags)
 /*
  * Idle tasks are unconditionally rescheduled:
  */
+
+/* IAMROOT-12:
+ * -------------
+ * 우선 순위 비교할 필요 없이 리스케줄한다.(idle보다 느린 우선 순위는 없다)
+ */
 static void check_preempt_curr_idle(struct rq *rq, struct task_struct *p, int flags)
 {
 	resched_curr(rq);
@@ -51,6 +56,11 @@ static void put_prev_task_idle(struct rq *rq, struct task_struct *prev)
 	rq_last_tick_reset(rq);
 }
 
+
+/* IAMROOT-12:
+ * -------------
+ * idle 태스크에 틱이 진입하는 경우 아무것도 하지 않는다.
+ */
 static void task_tick_idle(struct rq *rq, struct task_struct *curr, int queued)
 {
 }

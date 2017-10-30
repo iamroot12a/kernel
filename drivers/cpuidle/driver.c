@@ -84,6 +84,10 @@ static inline int __cpuidle_set_driver(struct cpuidle_driver *drv)
 
 #else
 
+/* IAMROOT-12:
+ * -------------
+ * cpuidle 드라이버가 지정된다.
+ */
 static struct cpuidle_driver *cpuidle_curr_driver;
 
 /**

@@ -16,6 +16,10 @@ static inline int dl_prio(int prio)
 	return 0;
 }
 
+/* IAMROOT-12:
+ * -------------
+ * prio가 0 이하 값이면 dl 태스크이다.
+ */
 static inline int dl_task(struct task_struct *p)
 {
 	return dl_prio(p->prio);
