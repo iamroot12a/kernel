@@ -6858,6 +6858,11 @@ sd_init(struct sched_domain_topology_level *tl, int cpu)
 /*
  * Topology list, bottom-up.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * arm64 및 대부분의 아키텍처에서는 아래의 default_topology를 사용한다.
+ */
 static struct sched_domain_topology_level default_topology[] = {
 #ifdef CONFIG_SCHED_SMT
 	{ cpu_smt_mask, cpu_smt_flags, SD_INIT_NAME(SMT) },

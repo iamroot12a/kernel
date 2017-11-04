@@ -917,6 +917,11 @@ enum cpu_idle_type {
 /*
  * Increase resolution of cpu_capacity calculations
  */
+
+/* IAMROOT-12:
+ * -------------
+ * arm에서는 capacity scale에 1024를 사용한다. (디폴트)
+ */
 #define SCHED_CAPACITY_SHIFT	10
 #define SCHED_CAPACITY_SCALE	(1L << SCHED_CAPACITY_SHIFT)
 
