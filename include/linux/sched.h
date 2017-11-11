@@ -928,6 +928,21 @@ enum cpu_idle_type {
 /*
  * sched-domains (multiprocessor balancing) declarations:
  */
+
+/* IAMROOT-12:
+ * -------------
+ * SD_LOAD_BALANCE:
+ *      로드밸런스 허용된 경우 사용 
+ * SD_SHARE_CPUCAPACITY:
+ *      h/w 스레드를 사용하는 경우
+ * SD_SHARE_POWERDOMAIN:
+ *      전원 공급을 같이 받는 cpu들에 대한 전력관리를 사용하는 경우
+ * SD_SHARE_PKG_RESOURCES:
+ *      같은 패키지에 구성된 cpu들에 (L2 등의 캐시 공유 효과) 대한 효과 
+ * SD_ASYM_PACKING:
+ *      powerpc에서 core간 성능 차이가 있을 때 구분하기 위해 사용 
+ */
+
 #ifdef CONFIG_SMP
 #define SD_LOAD_BALANCE		0x0001	/* Do load balancing on this domain. */
 #define SD_BALANCE_NEWIDLE	0x0002	/* Balance when about to become idle */
@@ -1051,6 +1066,10 @@ struct sched_domain {
 		struct rcu_head rcu;	/* used during destruction */
 	};
 
+/* IAMROOT-12:
+ * -------------
+ * 도메인에 구성된 cpu 수
+ */
 	unsigned int span_weight;
 	/*
 	 * Span of all CPUs in this domain.

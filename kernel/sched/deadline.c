@@ -59,6 +59,11 @@ void init_dl_bandwidth(struct dl_bandwidth *dl_b, u64 period, u64 runtime)
 
 void init_dl_bw(struct dl_bw *dl_b)
 {
+/* IAMROOT-12:
+ * -------------
+ * dl 밴드위드를 설정한다. (기본 95%를 설정하여 dl 역시 rt와 동일하게 
+ * 밴드위드를 설정한다. 남는 5%를 rt->cfs에 기회를 제공한다.)
+ */
 	raw_spin_lock_init(&dl_b->lock);
 	raw_spin_lock(&def_dl_bandwidth.dl_runtime_lock);
 	if (global_rt_runtime() == RUNTIME_INF)

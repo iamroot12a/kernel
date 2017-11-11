@@ -6193,6 +6193,12 @@ static int init_rootdomain(struct root_domain *rd)
 {
 	memset(rd, 0, sizeof(*rd));
 
+/* IAMROOT-12:
+ * -------------
+ * 루트 도메인을 생성한다.
+ *
+ * deadline, rt 스케줄러에 로드밸런싱을 위해 overload 기능을 제공한다.
+ */
 	if (!alloc_cpumask_var(&rd->span, GFP_KERNEL))
 		goto out;
 	if (!alloc_cpumask_var(&rd->online, GFP_KERNEL))
@@ -6202,6 +6208,10 @@ static int init_rootdomain(struct root_domain *rd)
 	if (!alloc_cpumask_var(&rd->rto_mask, GFP_KERNEL))
 		goto free_dlo_mask;
 
+/* IAMROOT-12:
+ * -------------
+ * 기본 95%의 dl 밴드위드를 설정한다.
+ */
 	init_dl_bw(&rd->dl_bw);
 
 /* IAMROOT-12:
@@ -6248,6 +6258,10 @@ static struct root_domain *alloc_rootdomain(void)
 {
 	struct root_domain *rd;
 
+/* IAMROOT-12:
+ * -------------
+ * 루트 도메인을 할당하고 초기화한다.
+ */
 	rd = kmalloc(sizeof(*rd), GFP_KERNEL);
 	if (!rd)
 		return NULL;
@@ -6410,6 +6424,10 @@ static int __init isolated_cpu_setup(char *str)
 	return 1;
 }
 
+/* IAMROOT-12:
+ * -------------
+ * 해당 cpu를 스케줄 도메인에서 제외시킨다.
+ */
 __setup("isolcpus=", isolated_cpu_setup);
 
 struct s_data {
@@ -6543,6 +6561,16 @@ static int get_group(int cpu, struct sd_data *sdd, struct sched_group **sg)
 	struct sched_domain *sd = *per_cpu_ptr(sdd->sd, cpu);
 	struct sched_domain *child = sd->child;
 
+/* IAMROOT-12:
+ * -------------
+ * cpu:		#0  #0  #2  #3  #4  #5  #6  #7
+ *		------------------------------
+ * span		FF  FF  FF  FF  FF  FF  FF  FF
+ *
+ * child->span	0F  0F  0F  0F  F0  F0  F0  F0
+ *
+ * 예) cpu=#5인 경우 child의 아래 cpu 값은 4가 된다. (그룹의 첫 번째)
+ */
 	if (child)
 		cpu = cpumask_first(sched_domain_span(child));
 
@@ -6571,7 +6599,17 @@ build_sched_groups(struct sched_domain *sd, int cpu)
 	struct cpumask *covered;
 	int i;
 
+/* IAMROOT-12:
+ * -------------
+ * 해당 cpu에 대한 하위 도메인의 첫 cpu를 그룹 cpu로 한다.
+ */
 	get_group(cpu, sdd, &sd->groups);
+
+/* IAMROOT-12:
+ * -------------
+ * 해당 그룹에 대한 참조 카운터를 증가시킨다.
+ *  (나중에 그룹에 포함된 cpu 수 만큼 증가된다.)
+ */
 	atomic_inc(&sd->groups->ref);
 
 	if (cpu != cpumask_first(span))
@@ -6582,6 +6620,10 @@ build_sched_groups(struct sched_domain *sd, int cpu)
 
 	cpumask_clear(covered);
 
+/* IAMROOT-12:
+ * -------------
+ * 도메인내의 각 그룹을 환형 리스트로 연결한다.
+ */
 	for_each_cpu(i, span) {
 		struct sched_group *sg;
 		int group, j;
@@ -6627,6 +6669,10 @@ static void init_sched_groups_capacity(int cpu, struct sched_domain *sd)
 
 	WARN_ON(!sg);
 
+/* IAMROOT-12:
+ * -------------
+ * group_weight: 그룹에 참여된 cpu 수를 갱신한다.
+ */
 	do {
 		sg->group_weight = cpumask_weight(sched_group_cpus(sg));
 		sg = sg->next;
@@ -6635,6 +6681,10 @@ static void init_sched_groups_capacity(int cpu, struct sched_domain *sd)
 	if (cpu != group_balance_cpu(sg))
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * 그룹의 첫 번째 cpu만 capacity를 갱신한다.
+ */
 	update_group_capacity(sd, cpu);
 	atomic_set(&sg->sgc->nr_busy_cpus, sg->group_weight);
 }
@@ -6645,6 +6695,11 @@ static void init_sched_groups_capacity(int cpu, struct sched_domain *sd)
  */
 
 static int default_relax_domain_level = -1;
+
+/* IAMROOT-12:
+ * -------------
+ * 최상위 도메인 레벨값(도메인 레벨이 3단계이면 아래 값은 2)
+ */
 int sched_domain_level_max;
 
 static int __init setup_relax_domain_level(char *str)
@@ -6668,6 +6723,17 @@ static void set_domain_attribute(struct sched_domain *sd,
 			request = default_relax_domain_level;
 	} else
 		request = attr->relax_domain_level;
+
+/* IAMROOT-12:
+ * -------------
+ * attr->relax_domain_level 요청 레벨을 초과하는 도메인에 대해서는 
+ * idle 밸런스를 제한한다.(off)
+ *
+ * 예) attr->relax_domain_level=1 
+ *
+ *	0, 1 도메인은 idle 밸런스 on 
+ *	2    도메인은 idle 밸런스 off
+ */
 	if (request < sd->level) {
 		/* turn off idle balance on this domain */
 		sd->flags &= ~(SD_BALANCE_WAKE|SD_BALANCE_NEWIDLE);
@@ -6701,12 +6767,33 @@ static enum s_alloc __visit_domain_allocation_hell(struct s_data *d,
 {
 	memset(d, 0, sizeof(*d));
 
+
+/* IAMROOT-12:
+ * -------------
+ * sched_domain, sched_group, sched_group_capacity 구조체를 active cpu - 
+ * isolated cpu 만큼 만든다.
+ */
 	if (__sdt_alloc(cpu_map))
 		return sa_sd_storage;
 	d->sd = alloc_percpu(struct sched_domain *);
+
+/* IAMROOT-12:
+ * -------------
+ * 스케줄링 도메인 생성이 실패한 경우 sa_sd_storage를 반환한다.
+ */
 	if (!d->sd)
 		return sa_sd_storage;
+
+/* IAMROOT-12:
+ * -------------
+ * 루트 도메인을 할당하고 초기화한다.
+ */
 	d->rd = alloc_rootdomain();
+
+/* IAMROOT-12:
+ * -------------
+ * 루트 도메인이 생성이 실패한 경우 sa_sd를 반환한다.
+ */
 	if (!d->rd)
 		return sa_sd;
 	return sa_rootdomain;
@@ -6721,6 +6808,12 @@ static void claim_allocations(int cpu, struct sched_domain *sd)
 {
 	struct sd_data *sdd = sd->private;
 
+/* IAMROOT-12:
+ * -------------
+ * 사용하는 것들은 null로 체크해둔다.
+ *
+ * (추후 null이 아닌 것들을 지운다)
+ */
 	WARN_ON_ONCE(*per_cpu_ptr(sdd->sd, cpu) != sd);
 	*per_cpu_ptr(sdd->sd, cpu) = NULL;
 
@@ -6771,8 +6864,31 @@ sd_init(struct sched_domain_topology_level *tl, int cpu)
 	sched_domains_curr_level = tl->numa_level;
 #endif
 
+/* IAMROOT-12:
+ * -------------
+ * 해당 cpu의 tl 레벨의 도메인에 대한 cpu 수)
+ *	(arm   - GMC: 1, MC: DIE내의 core 수, DIE: 해당 노드의 cpu 수)
+ *	  rpi2 -                              DIE: 해당 노드의 cpu 수)
+ *	(arm64 - SMT: 1, MC: DIE내의 core 수, DIE: 해당 노드의 cpu 수)
+ */
 	sd_weight = cpumask_weight(tl->mask(cpu));
 
+/* IAMROOT-12:
+ * -------------
+ * 토플로지 레벨에 플래그 후크 함수가 있는 경우 해당 함수를 호출하여 
+ * 플래그를 알아온다.
+ *	- arm (arm_topology)
+ *		GMC: cpu_corepower_flags()
+ *		MC: cpu_core_flags()
+ *		DIE: 없음
+ *	- arm64 (default_topology)
+ *		SMT: cpu_smt_flags()
+ *		MC: cpu_core_flags()
+ *		DIE: 없음
+ *
+ * imbalance의 값으로 100%가 기본이고 약간 수치를 높여 cpu간 로드가 비슷할 때 
+ * 핑퐁되는 효과를 없앤다.
+ */
 	if (tl->sd_flags)
 		sd_flags = (*tl->sd_flags)();
 	if (WARN_ONCE(sd_flags & ~TOPOLOGY_SD_FLAGS,
@@ -6820,10 +6936,24 @@ sd_init(struct sched_domain_topology_level *tl, int cpu)
 	 * Convert topological properties into behaviour.
 	 */
 
+
+/* IAMROOT-12:
+ * -------------
+ * cpu core 성능을 공유하게 되는 h/w 스레드는 성능 값을 위해 15% 향상된 값을 
+ * 준다. (1024 * 115%)
+ * imbalance의 값으로 100%가 기본이고 약간 수치를 높여 cpu간 로드가 비슷할 때 
+ * 핑퐁되는 효과를 없앤다.
+ */
 	if (sd->flags & SD_SHARE_CPUCAPACITY) {
 		sd->imbalance_pct = 110;
 		sd->smt_gain = 1178; /* ~15% */
 
+/* IAMROOT-12:
+ * -------------
+ * core에서는 캐시를 공유하여 사용하며 다음의 계수가 주어진다.
+ * busy_index=2를 사용하면 cpu_load[2]의 값을 사용하여 4 틱 주기의 cpu 로드를 
+ * 사용한다.
+ */
 	} else if (sd->flags & SD_SHARE_PKG_RESOURCES) {
 		sd->imbalance_pct = 117;
 		sd->cache_nice_tries = 1;
@@ -7183,9 +7313,17 @@ static int __sdt_alloc(const struct cpumask *cpu_map)
 	struct sched_domain_topology_level *tl;
 	int j;
 
+/* IAMROOT-12:
+ * -------------
+ * 스케줄링 도메인 토플로지 레벨 수 만큼 순회한다.
+ */
 	for_each_sd_topology(tl) {
 		struct sd_data *sdd = &tl->data;
 
+/* IAMROOT-12:
+ * -------------
+ * 스케줄 도메인과, 그룹, 그룹 캐패시티의 포인터만 per-cpu로 생성한다.
+ */
 		sdd->sd = alloc_percpu(struct sched_domain *);
 		if (!sdd->sd)
 			return -ENOMEM;
@@ -7198,6 +7336,10 @@ static int __sdt_alloc(const struct cpumask *cpu_map)
 		if (!sdd->sgc)
 			return -ENOMEM;
 
+/* IAMROOT-12:
+ * -------------
+ * 실제 구조체들은 active cpu - isolated cpu를 대상으로 생성한다.
+ */
 		for_each_cpu(j, cpu_map) {
 			struct sched_domain *sd;
 			struct sched_group *sg;
@@ -7215,6 +7357,10 @@ static int __sdt_alloc(const struct cpumask *cpu_map)
 			if (!sg)
 				return -ENOMEM;
 
+/* IAMROOT-12:
+ * -------------
+ * 스케줄링 그룹은 만들 때마다 next로 연결한다.
+ */
 			sg->next = sg;
 
 			*per_cpu_ptr(sdd->sg, j) = sg;
@@ -7267,11 +7413,26 @@ struct sched_domain *build_sched_domain(struct sched_domain_topology_level *tl,
 		const struct cpumask *cpu_map, struct sched_domain_attr *attr,
 		struct sched_domain *child, int cpu)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * tl 레벨의 cpu에 대한 스케줄 도메인 값을 초기화한다.
+ */
 	struct sched_domain *sd = sd_init(tl, cpu);
 	if (!sd)
 		return child;
 
+/* IAMROOT-12:
+ * -------------
+ * 도메인의 span 값을 설정한다.
+ */
 	cpumask_and(sched_domain_span(sd), cpu_map, tl->mask(cpu));
+
+/* IAMROOT-12:
+ * -------------
+ * 가장 하위 레벨은 child=0이다.
+ *	sd->level은 0부터 시작하여 1씩 증가한다.
+ */
 	if (child) {
 		sd->level = child->level + 1;
 		sched_domain_level_max = max(sched_domain_level_max, sd->level);
@@ -7292,6 +7453,11 @@ struct sched_domain *build_sched_domain(struct sched_domain_topology_level *tl,
 		}
 
 	}
+
+/* IAMROOT-12:
+ * -------------
+ * 처음 호출 시 attr=null, idle 밸런스 유무를 제어한다.
+ */
 	set_domain_attribute(sd, attr);
 
 	return sd;
@@ -7309,6 +7475,10 @@ static int build_sched_domains(const struct cpumask *cpu_map,
 	struct s_data d;
 	int i, ret = -ENOMEM;
 
+/* IAMROOT-12:
+ * -------------
+ * 스케줄링 도메인들과 루트 도메인을 할당한다. 
+ */
 	alloc_state = __visit_domain_allocation_hell(&d, cpu_map);
 	if (alloc_state != sa_rootdomain)
 		goto error;
@@ -7320,16 +7490,34 @@ static int build_sched_domains(const struct cpumask *cpu_map,
 		sd = NULL;
 		for_each_sd_topology(tl) {
 			sd = build_sched_domain(tl, cpu_map, attr, sd, i);
+
+/* IAMROOT-12:
+ * -------------
+ * 레벨이 첫 단계인 경우 
+ */
 			if (tl == sched_domain_topology)
 				*per_cpu_ptr(d.sd, i) = sd;
 			if (tl->flags & SDTL_OVERLAP || sched_feat(FORCE_SD_OVERLAP))
 				sd->flags |= SD_OVERLAP;
+
+/* IAMROOT-12:
+ * -------------
+ * active - isolated cpu 가 현재 도메인과 동일한 경우 더 이상 구성할 필요 
+ * 없으므로 break 한다.
+ *
+ * (cpu 마다 토플로지 레벨이 달라질 수 있다.)
+ */
 			if (cpumask_equal(cpu_map, sched_domain_span(sd)))
 				break;
 		}
 	}
 
 	/* Build the groups for the domains */
+
+/* IAMROOT-12:
+ * -------------
+ * 스케줄 그룹을 구성한다. (도메인내의 생성된 그룹을 환형 리스트로 연결)
+ */
 	for_each_cpu(i, cpu_map) {
 		for (sd = *per_cpu_ptr(d.sd, i); sd; sd = sd->parent) {
 			sd->span_weight = cpumask_weight(sched_domain_span(sd));
@@ -7344,6 +7532,12 @@ static int build_sched_domains(const struct cpumask *cpu_map,
 	}
 
 	/* Calculate CPU capacity for physical packages and nodes */
+
+/* IAMROOT-12:
+ * -------------
+ * online cpu의 마지막 번호부터 0번까지 역순으로 그룹 capacity를 초기화한다.
+ */
+
 	for (i = nr_cpumask_bits-1; i >= 0; i--) {
 		if (!cpumask_test_cpu(i, cpu_map))
 			continue;
@@ -7395,10 +7589,19 @@ cpumask_var_t *alloc_sched_domains(unsigned int ndoms)
 	int i;
 	cpumask_var_t *doms;
 
+/* IAMROOT-12:
+ * -------------
+ * 처음에 ndoms=1로 호출되어 1개이 비트마스크만 할당한다.
+ */
 	doms = kmalloc(sizeof(*doms) * ndoms, GFP_KERNEL);
 	if (!doms)
 		return NULL;
 	for (i = 0; i < ndoms; i++) {
+
+/* IAMROOT-12:
+ * -------------
+ * 동적할당이 실패한 경우 에러 처리 
+ */
 		if (!alloc_cpumask_var(&doms[i], GFP_KERNEL)) {
 			free_sched_domains(doms, i);
 			return NULL;
@@ -7424,12 +7627,31 @@ static int init_sched_domains(const struct cpumask *cpu_map)
 {
 	int err;
 
+/* IAMROOT-12:
+ * -------------
+ * arm은 아래 함수에서 n/a
+ */
 	arch_update_cpu_topology();
 	ndoms_cur = 1;
+
+/* IAMROOT-12:
+ * -------------
+ * kmalloc 실패시 fallback_doms 비트마스크를 사용한다.
+ */
 	doms_cur = alloc_sched_domains(ndoms_cur);
 	if (!doms_cur)
 		doms_cur = &fallback_doms;
+
+/* IAMROOT-12:
+ * -------------
+ * active된 cpu들에서 isolate된 cpu들을 제외시킨다.
+ */
 	cpumask_andnot(doms_cur[0], cpu_map, cpu_isolated_map);
+
+/* IAMROOT-12:
+ * -------------
+ * 스케줄 도메인과 그룹을 생성한다.
+ */
 	err = build_sched_domains(doms_cur[0], NULL);
 	register_sched_domain_sysctl();
 

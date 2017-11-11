@@ -44,6 +44,10 @@ static DEFINE_PER_CPU(unsigned long, cpu_scale);
 
 unsigned long arch_scale_cpu_capacity(struct sched_domain *sd, int cpu)
 {
+/* IAMROOT-12:
+ * -------------
+ * 32비트 arm에서 산출된 cpu_scale 값을 cpu capacity로 사용한다.
+ */
 	return per_cpu(cpu_scale, cpu);
 }
 
@@ -418,8 +422,8 @@ static inline int cpu_corepower_flags(void)
  * 32비트 arm 커널의 경우 default topology를 사용하지 않고, 
  * 별도로 제공되는 arm_topology[]를 사용한다.
  *
- * 기본 DIE 단계만 사용하고, 빅/리틀 클러스터 제어가 필요한 경우를 위해 
- * 두 개의 단계가 추가된다.
+ * 기본 DIE 단계만 사용하고, 빅/리틀 클러스터가 동시에 동작해야 하는 경우와
+ * 전원 클러스터 제어를 위해 두 개의 단계가 추가된다.
  *
  * GMC -> MC -> DIE 
  *

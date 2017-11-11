@@ -232,6 +232,10 @@ static inline const struct cpumask *cpu_smt_mask(int cpu)
 
 static inline const struct cpumask *cpu_cpu_mask(int cpu)
 {
+/* IAMROOT-12:
+ * -------------
+ * 해당 cpu가 있는 노드의 cpu를 반환한다.
+ */
 	return cpumask_of_node(cpu_to_node(cpu));
 }
 

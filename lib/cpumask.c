@@ -130,6 +130,14 @@ EXPORT_SYMBOL(zalloc_cpumask_var_node);
  *
  * See alloc_cpumask_var_node.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * alloc(동적)으로 만든 경우 아래 함수가 동작한다. 그 외의(offstack이 아니고 
+ * 컴파일 타임에 만들어지는 경우는 항상 1이다)
+ *
+ * 할당이 성공한 경우 true를 반환한다.
+ */
 bool alloc_cpumask_var(cpumask_var_t *mask, gfp_t flags)
 {
 	return alloc_cpumask_var_node(mask, flags, NUMA_NO_NODE);

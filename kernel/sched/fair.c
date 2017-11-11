@@ -7468,9 +7468,18 @@ unsigned long __weak arch_scale_freq_capacity(struct sched_domain *sd, int cpu)
 
 static unsigned long default_scale_cpu_capacity(struct sched_domain *sd, int cpu)
 {
+/* IAMROOT-12:
+ * -------------
+ * h/w 스레드를 사용하는 도메인이고, 도메인내에 cpu가 2개 이상 구성된 경우 
+ * 115%의 성능의 절반을 cpu capacity로 사용한다. (약 57.5%)
+ */
 	if ((sd->flags & SD_SHARE_CPUCAPACITY) && (sd->span_weight > 1))
 		return sd->smt_gain / sd->span_weight;
 
+/* IAMROOT-12:
+ * -------------
+ * h/w 스레드가 아닌 경우이면 1024를 default cpu capacity 값으로 반환한다.
+ */
 	return SCHED_CAPACITY_SCALE;
 }
 
@@ -7518,15 +7527,31 @@ static void update_cpu_capacity(struct sched_domain *sd, int cpu)
 	unsigned long capacity = SCHED_CAPACITY_SCALE;
 	struct sched_group *sdg = sd->groups;
 
+/* IAMROOT-12:
+ * -------------
+ * 32비트 arm에서 산출된 cpu_scale 값을 1024와 곱하여 cpu capacity로 사용한다.
+ */
 	if (sched_feat(ARCH_CAPACITY))
 		capacity *= arch_scale_cpu_capacity(sd, cpu);
 	else
 		capacity *= default_scale_cpu_capacity(sd, cpu);
 
+/* IAMROOT-12:
+ * -------------
+ * 다시 원래대로 단위를 낮춘다.
+ */
 	capacity >>= SCHED_CAPACITY_SHIFT;
 
+/* IAMROOT-12:
+ * -------------
+ * capacity_orig에는 산출된 값을 그대로 적용한다.
+ */
 	sdg->sgc->capacity_orig = capacity;
 
+/* IAMROOT-12:
+ * -------------
+ * freq에 대한 요율을 적용한다. (arm은 동일)
+ */
 	if (sched_feat(ARCH_CAPACITY))
 		capacity *= arch_scale_freq_capacity(sd, cpu);
 	else
@@ -7534,6 +7559,12 @@ static void update_cpu_capacity(struct sched_domain *sd, int cpu)
 
 	capacity >>= SCHED_CAPACITY_SHIFT;
 
+/* IAMROOT-12:
+ * -------------
+ * rt(rt 시간 + dl 시간 + 인터럽트) 요율을 곱한다.
+ *
+ * 예) rt 요율 90%가 적용된다.
+ */
 	capacity *= scale_rt_capacity(cpu);
 	capacity >>= SCHED_CAPACITY_SHIFT;
 
