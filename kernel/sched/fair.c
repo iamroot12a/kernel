@@ -7134,14 +7134,30 @@ static int detach_tasks(struct lb_env *env)
 	unsigned long load;
 	int detached = 0;
 
+/* IAMROOT-12:
+ * -------------
+ * 소스 런큐에서 마이그레이션 가능한 태스크들을 detach 한다.
+ */
 	lockdep_assert_held(&env->src_rq->lock);
 
+/* IAMROOT-12:
+ * -------------
+ * 이미 밸런스되어 있는 상태이면 함수를 빠져나간다.
+ */
 	if (env->imbalance <= 0)
 		return 0;
 
+/* IAMROOT-12:
+ * -------------
+ * 소스 런큐의 cfs 태스크들을 대상으로 순회한다.
+ */
 	while (!list_empty(tasks)) {
 		p = list_first_entry(tasks, struct task_struct, se.group_node);
 
+/* IAMROOT-12:
+ * -------------
+ * 최대 loop_max까지 수행하는데 중간에 loop_break에 도달하면 잠시 빠져나간다.
+ */
 		env->loop++;
 		/* We've more or less seen every task there is, call it quits */
 		if (env->loop > env->loop_max)
@@ -7154,14 +7170,31 @@ static int detach_tasks(struct lb_env *env)
 			break;
 		}
 
+/* IAMROOT-12:
+ * -------------
+ * 마이그레이션이 불가능한 경우 해당 태스크는 리스트의 뒤로 돌린다.
+ */
 		if (!can_migrate_task(p, env))
 			goto next;
 
+/* IAMROOT-12:
+ * -------------
+ * 태스크의 평균 로드 기여값을 알아온다.
+ */
 		load = task_h_load(p);
 
+/* IAMROOT-12:
+ * -------------
+ * 로드 값이 16보다 작은 값이고 밸런싱 실패가 없으면 해당 태스크는 
+ * 마이그레이션을 유보하기 위해 리스트의 뒤로 돌린다.
+ */
 		if (sched_feat(LB_MIN) && load < 16 && !env->sd->nr_balance_failed)
 			goto next;
 
+/* IAMROOT-12:
+ * -------------
+ * 로드의 절반 값이 imbalance보다 큰 경우 
+ */
 		if ((load / 2) > env->imbalance)
 			goto next;
 
@@ -7261,8 +7294,17 @@ static void __update_blocked_averages_cpu(struct task_group *tg, int cpu)
 	if (throttled_hierarchy(cfs_rq))
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * cfs 런큐에 대한 블럭드 로드를 갱신한다.
+ */
 	update_cfs_rq_blocked_load(cfs_rq, 1);
 
+/* IAMROOT-12:
+ * -------------
+ * 그룹인 경우 엔티티 로드 평균을 갱신하게하고 
+ * 그렇지 않은 경우 런큐의 러너블 로드 평균을 갱신한다.
+ */
 	if (se) {
 		update_entity_load_avg(se, 1);
 		/*
@@ -7294,6 +7336,11 @@ static void update_blocked_averages(int cpu)
 	 * Iterates the task_group tree in a bottom up fashion, see
 	 * list_add_leaf_cfs_rq() for details.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * leaf cfs 런큐들에 대해 blocked 평균을 갱신한다.
+ */
 	for_each_leaf_cfs_rq(rq, cfs_rq) {
 		/*
 		 * Note: We may want to consider periodically releasing
@@ -8341,10 +8388,20 @@ static int need_active_balance(struct lb_env *env)
 		 * higher numbered CPUs in order to pack all tasks in the
 		 * lowest numbered CPUs.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * powerpc만 해당
+ */
 		if ((sd->flags & SD_ASYM_PACKING) && env->src_cpu > env->dst_cpu)
 			return 1;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 작은 확률로 도메인별로 지정된 캐시 나이스 트라이+2 만큼을 더 실패한 경우 
+ * true를 반환한다.
+ */
 	return unlikely(sd->nr_balance_failed > sd->cache_nice_tries+2);
 }
 
@@ -8360,12 +8417,27 @@ static int should_we_balance(struct lb_env *env)
 	 * In the newly idle case, we will allow all the cpu's
 	 * to do the newly idle load balance.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 주기적인 밸런스 요청이 아닌 경우 밸런싱을 무조건 시도하게 한다.
+ * (idle_balance()에서 호출되는 case이다)
+ */
 	if (env->idle == CPU_NEWLY_IDLE)
 		return 1;
 
+/* IAMROOT-12:
+ * -------------
+ * 첫 그룹의 cpu 마스크를 알아온다.
+ */
 	sg_cpus = sched_group_cpus(sg);
 	sg_mask = sched_group_mask(sg);
 	/* Try to find first idle cpu */
+
+/* IAMROOT-12:
+ * -------------
+ * 첫 그룹의 cpu 들 중 idle cpu를 찾는다.
+ */
 	for_each_cpu_and(cpu, sg_cpus, env->cpus) {
 		if (!cpumask_test_cpu(cpu, sg_mask) || !idle_cpu(cpu))
 			continue;
@@ -8374,6 +8446,10 @@ static int should_we_balance(struct lb_env *env)
 		break;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 발견한 idle cpu가 없는 경우 그냥 그룹의 첫 cpu를 알아온다.
+ */
 	if (balance_cpu == -1)
 		balance_cpu = group_balance_cpu(sg);
 
@@ -8420,20 +8496,40 @@ static int load_balance(int this_cpu, struct rq *this_rq,
 
 	cpumask_copy(cpus, cpu_active_mask);
 
+/* IAMROOT-12:
+ * -------------
+ * 로드밸런스 요청이 들어올 때 idle 타입에 따른 카운터를 증가시킨다.
+ */
 	schedstat_inc(sd, lb_count[idle]);
 
 redo:
+
+/* IAMROOT-12:
+ * -------------
+ * 도메인의 첫 그룹에서 idle cpu(없는 경우 첫 번째 cpu)가 env->dst_cpu가 
+ * 아니면 로드밸런싱을 할 필요 없다.
+ */
 	if (!should_we_balance(&env)) {
 		*continue_balancing = 0;
 		goto out_balanced;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 도메인내의 그룹들 중 바쁜 그룹을 찾는다. 만일 없으면 로드밸런싱을 
+ * 할 필요 없다.
+ */
 	group = find_busiest_group(&env);
 	if (!group) {
 		schedstat_inc(sd, lb_nobusyg[idle]);
 		goto out_balanced;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * busiest 그룹내에서 busy cpu를 찾는다. 만일 없으면 로드밸런싱을 
+ * 할 필요 없다.
+ */
 	busiest = find_busiest_queue(&env, group);
 	if (!busiest) {
 		schedstat_inc(sd, lb_nobusyq[idle]);
@@ -8442,9 +8538,19 @@ redo:
 
 	BUG_ON(busiest == env.dst_rq);
 
+/* IAMROOT-12:
+ * -------------
+ * 불균형밸런스 상태라 로드밸런싱을 수행해야하는 경우 lb_imabalance[] 카운터를 
+ * 증가시킨다. (인덱스: CPU_IDLE or CPU_NOT_IDLE)
+ */
 	schedstat_add(sd, lb_imbalance[idle], env.imbalance);
 
 	ld_moved = 0;
+
+/* IAMROOT-12:
+ * -------------
+ * 2개 이상의 태스크가 동작하는 경우에만 migration을 시도한다.
+ */
 	if (busiest->nr_running > 1) {
 		/*
 		 * Attempt to move tasks. If find_busiest_group has found
@@ -8464,6 +8570,13 @@ more_balance:
 		 * cur_ld_moved - load moved in current iteration
 		 * ld_moved     - cumulative load moved across iterations
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 소스 런큐에 있는 태스크를 detach하여 .tasks에 연결하고, 그 수를 알아온다.
+ * (최대 loop_max까지 처리하되 중간에 loop_break 단위로 락을 빠져나올 수 
+ * 있게한다. -> busiest 런큐의 락을 너무 길게 잡지 못하게 제한한다)
+ */
 		cur_ld_moved = detach_tasks(&env);
 
 		/*
@@ -8476,6 +8589,10 @@ more_balance:
 
 		raw_spin_unlock(&busiest->lock);
 
+/* IAMROOT-12:
+ * -------------
+ * detatch한 태스크들이 있는 경우 dst_cpu로 attach한다.
+ */
 		if (cur_ld_moved) {
 			attach_tasks(&env);
 			ld_moved += cur_ld_moved;
@@ -8483,6 +8600,10 @@ more_balance:
 
 		local_irq_restore(flags);
 
+/* IAMROOT-12:
+ * -------------
+ * 락이 길어질 수 있으므로 중간에 32개 단위로 unlock하고 계속 처리하게 한다.
+ */
 		if (env.flags & LBF_NEED_BREAK) {
 			env.flags &= ~LBF_NEED_BREAK;
 			goto more_balance;
@@ -8507,6 +8628,12 @@ more_balance:
 		 * moreover subsequent load balance cycles should correct the
 		 * excess load moved.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 특정 cpu(affine set)가 지정되었고 imbalance 상태일 때 dst_cpu를 제외하고 
+ * 다시 new_dst_cpu로 재시도한다.
+ */
 		if ((env.flags & LBF_DST_PINNED) && env.imbalance > 0) {
 
 			/* Prevent to re-select dst_cpu via env's cpus */
@@ -8528,6 +8655,13 @@ more_balance:
 		/*
 		 * We failed to reach balance because of affinity.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 부모 도메인이 있는 경우 특정 태스크의 cpu 고정(affine)으로 인해 migration이
+ * 제한된 경우 여전히 imbalance한 경우 부모 도메인의 그룹도 imbalance로 
+ * 설정한다.
+ */
 		if (sd_parent) {
 			int *group_imbalance = &sd_parent->groups->sgc->imbalance;
 
@@ -8536,6 +8670,12 @@ more_balance:
 		}
 
 		/* All tasks on this runqueue were pinned by CPU affinity */
+
+/* IAMROOT-12:
+ * -------------
+ * 현재 선택된 busiest 런큐에서 동작하는 태스크들이 모두 cpu가 고정되어 
+ * 옮길 수 없는 상태인 경우 busiest cpu를 대상에서 제외시키고 다시 시도한다.
+ */
 		if (unlikely(env.flags & LBF_ALL_PINNED)) {
 			cpumask_clear_cpu(cpu_of(busiest), cpus);
 			if (!cpumask_empty(cpus)) {
@@ -8547,6 +8687,10 @@ more_balance:
 		}
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 마이그레이션된 태스크가 하나도 없는 경우
+ */
 	if (!ld_moved) {
 		schedstat_inc(sd, lb_failed[idle]);
 		/*
@@ -8555,9 +8699,19 @@ more_balance:
 		 * frequent, pollute the failure counter causing
 		 * excessive cache_hot migrations and active balances.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 주기적인 밸런싱(idle or not idle)에서만 아래 실패 카운터를 증가시킨다.
+ */
 		if (idle != CPU_NEWLY_IDLE)
 			sd->nr_balance_failed++;
 
+/* IAMROOT-12:
+ * -------------
+ * 낮은 확률로 특정(캐시 나이스 트라이+2) 횟수 이상 실패한 경우 
+ * 워크큐의 워커 스레드에서 active 밸런싱을 시도한다.
+ */
 		if (need_active_balance(&env)) {
 			raw_spin_lock_irqsave(&busiest->lock, flags);
 
@@ -8600,6 +8754,13 @@ more_balance:
 	} else
 		sd->nr_balance_failed = 0;
 
+
+/* IAMROOT-12:
+ * -------------
+ * active 밸런싱을 수행하지 않은 경우 balance 주기로 도메인의 min_interval
+ * 로 설정한다. 그 외의 경우 도메인의 max_interval을 초과하지 않은 경우 
+ * 2배 만큼 증가시킨다.
+ */
 	if (likely(!active_balance)) {
 		/* We were unbalanced, so reset the balancing interval */
 		sd->balance_interval = sd->min_interval;
@@ -8621,6 +8782,12 @@ out_balanced:
 	 * We reach balance although we may have faced some affinity
 	 * constraints. Clear the imbalance flag if it was set.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 이미 밸런싱된 상태에서 이 레이블로 이동해 왔다.
+ * (부모 도메인의 imbalance를 0으로 설정한다.)
+ */
 	if (sd_parent) {
 		int *group_imbalance = &sd_parent->groups->sgc->imbalance;
 
@@ -8640,6 +8807,12 @@ out_all_pinned:
 
 out_one_pinned:
 	/* tune up the balancing interval */
+
+/* IAMROOT-12:
+ * -------------
+ * 태스크들이 모두 pin되어 움직일 수 없는 상태이면 밸런싱 주기를 2배씩 
+ * 증가시켜간다.
+ */
 	if (((env.flags & LBF_ALL_PINNED) &&
 			sd->balance_interval < MAX_PINNED_INTERVAL) ||
 			(sd->balance_interval < sd->max_interval))
@@ -8653,12 +8826,29 @@ out:
 static inline unsigned long
 get_sd_balance_interval(struct sched_domain *sd, int cpu_busy)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 밸런싱 주기는 default 값으로 도메인 내의 cpu 수 만큼의 tick이다.
+ * 이 값은 로드밸런싱이 될 때마다 min_interval ~ max_interval tick 만큼 
+ * 계속 조정된다.
+ */
 	unsigned long interval = sd->balance_interval;
 
+/* IAMROOT-12:
+ * -------------
+ * cpu가 바쁘면 좀 더 interval 타임을 늦춘다.
+ */
 	if (cpu_busy)
 		interval *= sd->busy_factor;
 
 	/* scale ms to jiffies */
+
+/* IAMROOT-12:
+ * -------------
+ * 최소 interval은 1 tick이다.
+ * 최대 interval은 0.1초에 해당하는 tick이다.
+ */
 	interval = msecs_to_jiffies(interval);
 	interval = clamp(interval, 1UL, max_load_balance_interval);
 
@@ -9035,6 +9225,10 @@ static void rebalance_domains(struct rq *rq, enum cpu_idle_type idle)
 	int need_serialize, need_decay = 0;
 	u64 max_cost = 0;
 
+/* IAMROOT-12:
+ * -------------
+ * 블럭드 로드 평균을 갱신한다.
+ */
 	update_blocked_averages(cpu);
 
 	rcu_read_lock();
@@ -9043,6 +9237,11 @@ static void rebalance_domains(struct rq *rq, enum cpu_idle_type idle)
 		 * Decay the newidle max times here because this is a regular
 		 * visit to all the domains. Decay ~1% per second.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 1초마다 max_lb_cost를 약 1% decay한다.
+ */
 		if (time_after(jiffies, sd->next_decay_max_lb_cost)) {
 			sd->max_newidle_lb_cost =
 				(sd->max_newidle_lb_cost * 253) / 256;
@@ -9051,6 +9250,10 @@ static void rebalance_domains(struct rq *rq, enum cpu_idle_type idle)
 		}
 		max_cost += sd->max_newidle_lb_cost;
 
+/* IAMROOT-12:
+ * -------------
+ * 로드밸런싱을 허용한 도메인이 아니면 skip한다.
+ */
 		if (!(sd->flags & SD_LOAD_BALANCE))
 			continue;
 
@@ -9065,14 +9268,30 @@ static void rebalance_domains(struct rq *rq, enum cpu_idle_type idle)
 			break;
 		}
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 도메인에 대한 밸런스 주기값을 알아온다. CPU_IDLE이 아니면 
+ * 주기가 더 늦춰진다. 
+ * (busy_factor(default:32) 만큼 곱해져서 최대 0.1초에 대한 tick만큼)
+ */
 		interval = get_sd_balance_interval(sd, idle != CPU_IDLE);
 
+/* IAMROOT-12:
+ * -------------
+ * 모든 cpu들에 대해 NUMA 밸런싱에서는 락을 사용하여 시리얼하게 처리한다.
+ */
 		need_serialize = sd->flags & SD_SERIALIZE;
 		if (need_serialize) {
 			if (!spin_trylock(&balancing))
 				goto out;
 		}
 
+/* IAMROOT-12:
+ * -------------
+ * 인터벌 주기가 만료된 경우 로드 밸런스 함수를 호출한다.
+ *
+ * 로드 밸런싱은 하위 도메인부터 시도하고, 성공하면 루프를 빠져나간다.
+ */
 		if (time_after_eq(jiffies, sd->last_balance + interval)) {
 			if (load_balance(cpu, rq, sd, idle, &continue_balancing)) {
 				/*
@@ -9088,6 +9307,12 @@ static void rebalance_domains(struct rq *rq, enum cpu_idle_type idle)
 		if (need_serialize)
 			spin_unlock(&balancing);
 out:
+
+/* IAMROOT-12:
+ * -------------
+ * 도메인들에 대해 가장 이른 last_balance+intrval을 알아온다.
+ * 이 값으로 루틴 마지막에 런큐의 next_balance 값이 설정될 예정이다.
+ */
 		if (time_after(next_balance, sd->last_balance + interval)) {
 			next_balance = sd->last_balance + interval;
 			update_next_balance = 1;
@@ -9233,9 +9458,19 @@ static void nohz_idle_balance(struct rq *this_rq, enum cpu_idle_type idle) { }
  * run_rebalance_domains is triggered when needed from the scheduler tick.
  * Also triggered for nohz idle balancing (with nohz_balancing_kick set).
  */
+
+/* IAMROOT-12:
+ * -------------
+ * 주기적으로 로드밸런스를 위해 호출하는 softirq 함수이다.
+ */
 static void run_rebalance_domains(struct softirq_action *h)
 {
 	struct rq *this_rq = this_rq();
+
+/* IAMROOT-12:
+ * -------------
+ * idle 상태인지 busy 상태인지 여부를 알아온다.
+ */
 	enum cpu_idle_type idle = this_rq->idle_balance ?
 						CPU_IDLE : CPU_NOT_IDLE;
 
@@ -9258,6 +9493,11 @@ void trigger_load_balance(struct rq *rq)
 	if (unlikely(on_null_domain(rq)))
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * 런큐에 있는 next_balance 시각이 만료되었는지 확인하고 SCHED_SOFTIRQ를 
+ * 호출하여 로드밸런스 루틴을 수행시킨다.
+ */
 	if (time_after_eq(jiffies, rq->next_balance))
 		raise_softirq(SCHED_SOFTIRQ);
 #ifdef CONFIG_NO_HZ_COMMON

@@ -899,6 +899,10 @@ static inline struct sched_domain *highest_flag_domain(int cpu, int flag)
 {
 	struct sched_domain *sd, *hsd = NULL;
 
+/* IAMROOT-12:
+ * -------------
+ * 요청 플래그가 있는 최상위 도메인을 반환한다.
+ */
 	for_each_domain(cpu, sd) {
 		if (!(sd->flags & flag))
 			break;
@@ -912,6 +916,10 @@ static inline struct sched_domain *lowest_flag_domain(int cpu, int flag)
 {
 	struct sched_domain *sd;
 
+/* IAMROOT-12:
+ * -------------
+ * 요청 플래그가 있는 최하위 도메인을 반환한다.
+ */
 	for_each_domain(cpu, sd) {
 		if (sd->flags & flag)
 			break;

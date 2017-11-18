@@ -324,6 +324,12 @@ late_initcall(sched_init_debug);
  * Number of tasks to iterate in a single balance run.
  * Limited because this is done with IRQs disabled.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * 한 번의 로드밸런스를 수행 시 처리할 수 있는 태스크의 수를 제한한다.
+ * (너무 길면 irq 처리 기간이 길어진다)
+ */
 const_debug unsigned int sysctl_sched_nr_migrate = 32;
 
 /*
@@ -2930,6 +2936,11 @@ void scheduler_tick(void)
 
 #ifdef CONFIG_SMP
 	rq->idle_balance = idle_cpu(cpu);
+
+/* IAMROOT-12:
+ * -------------
+ * 주기적으로 로드밸런싱을 호출한다.
+ */
 	trigger_load_balance(rq);
 #endif
 	rq_last_tick_reset(rq);
@@ -5622,6 +5633,11 @@ static struct ctl_table sd_ctl_root[] = {
 
 static struct ctl_table *sd_alloc_ctl_entry(int n)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * "sched_domain"을 생성한다.
+ */
 	struct ctl_table *entry =
 		kcalloc(n, sizeof(struct ctl_table), GFP_KERNEL);
 
@@ -5757,6 +5773,11 @@ static void register_sched_domain_sysctl(void)
 		entry++;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * "/proc/sys/kernel/sched_domain"을 생성하고 하위에 cpu들과 
+ * 도메인 레벨들이 위치한다.
+ */
 	WARN_ON(sd_sysctl_header);
 	sd_sysctl_header = register_sysctl_table(sd_ctl_root);
 }
@@ -6087,9 +6108,19 @@ static inline bool sched_debug(void)
 
 static int sd_degenerate(struct sched_domain *sd)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 도메인에 속한 cpu가 하나밖에 없는 경우 도메인이 필요없어서 1을 반환
+ */
 	if (cpumask_weight(sched_domain_span(sd)) == 1)
 		return 1;
 
+/* IAMROOT-12:
+ * -------------
+ * 로드밸런싱 관련 플래그가 한 개 이상 있으면서 그룹이 2개 이상되면 
+ * ok (false 반환)
+ */
 	/* Following flags need at least 2 groups */
 	if (sd->flags & (SD_LOAD_BALANCE |
 			 SD_BALANCE_NEWIDLE |
@@ -6102,6 +6133,11 @@ static int sd_degenerate(struct sched_domain *sd)
 			return 0;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * wake affine 플래그를 사용하는 경우 무조건 ok (false 반환)
+ * 그룹을 사용하지 않는다.
+ */
 	/* Following flags don't use groups */
 	if (sd->flags & (SD_WAKE_AFFINE))
 		return 0;
@@ -6114,9 +6150,17 @@ sd_parent_degenerate(struct sched_domain *sd, struct sched_domain *parent)
 {
 	unsigned long cflags = sd->flags, pflags = parent->flags;
 
+/* IAMROOT-12:
+ * -------------
+ * 부모 도메인이 필요한지 여부를 알아온다. (true=도메인이 필요 없다)
+ */
 	if (sd_degenerate(parent))
 		return 1;
 
+/* IAMROOT-12:
+ * -------------
+ * 부모 도메인과 해당 도메인의 cpu가 서로 다른 경우 false 반환
+ */
 	if (!cpumask_equal(sched_domain_span(sd), sched_domain_span(parent)))
 		return 0;
 
@@ -6159,6 +6203,11 @@ static void rq_attach_root(struct rq *rq, struct root_domain *rd)
 
 	raw_spin_lock_irqsave(&rq->lock, flags);
 
+/* IAMROOT-12:
+ * -------------
+ * 런큐가 새 루트 도메인을 가리키도록 설정한다.
+ */
+
 	if (rq->rd) {
 		old_rd = rq->rd;
 
@@ -6185,6 +6234,10 @@ static void rq_attach_root(struct rq *rq, struct root_domain *rd)
 
 	raw_spin_unlock_irqrestore(&rq->lock, flags);
 
+/* IAMROOT-12:
+ * -------------
+ * 필요 없어진 old 루트 도메인은 rcu free 시킨다.
+ */
 	if (old_rd)
 		call_rcu_sched(&old_rd->rcu, free_rootdomain);
 }
@@ -6344,6 +6397,17 @@ static void update_top_cache_domain(int cpu)
 	int id = cpu;
 	int size = 1;
 
+/* IAMROOT-12:
+ * -------------
+ * sd_llc:
+ *	같은 패키지(l2 공유)를 사용하는 도메인들 중 최상위 도메인 
+ * sd_busy: 
+ *	sd_llc의 부모 도메인 
+ * sd_asym:
+ *	SD_ASYM_PACKING 플래그가 있는 최상위 도메인 (for powerpc)
+ * sd_numa:
+ *	최하위 누마 도메인
+ */
 	sd = highest_flag_domain(cpu, SD_SHARE_PKG_RESOURCES);
 	if (sd) {
 		id = cpumask_first(sched_domain_span(sd));
@@ -6379,6 +6443,10 @@ cpu_attach_domain(struct sched_domain *sd, struct root_domain *rd, int cpu)
 		if (!parent)
 			break;
 
+/* IAMROOT-12:
+ * -------------
+ * 부모 도메인이 필요 없다고 판단되면 부모 도메인을 생략시킨다.
+ */
 		if (sd_parent_degenerate(tmp, parent)) {
 			tmp->parent = parent->parent;
 			if (parent->parent)
@@ -6395,6 +6463,10 @@ cpu_attach_domain(struct sched_domain *sd, struct root_domain *rd, int cpu)
 			tmp = tmp->parent;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 도메인도 제거되어야 한다고 판단되면 생략시킨다.
+ */
 	if (sd && sd_degenerate(sd)) {
 		tmp = sd;
 		sd = sd->parent;
@@ -6405,7 +6477,16 @@ cpu_attach_domain(struct sched_domain *sd, struct root_domain *rd, int cpu)
 
 	sched_domain_debug(sd, cpu);
 
+/* IAMROOT-12:
+ * -------------
+ * 런큐에 새 루트 도메인을 연결시킨다.
+ */
 	rq_attach_root(rq, rd);
+
+/* IAMROOT-12:
+ * -------------
+ * 런큐에 스케줄링 도메인을 연결시킨다.
+ */
 	tmp = rq->sd;
 	rcu_assign_pointer(rq->sd, sd);
 	destroy_sched_domains(tmp, cpu);
@@ -7543,6 +7624,10 @@ static int build_sched_domains(const struct cpumask *cpu_map,
 			continue;
 
 		for (sd = *per_cpu_ptr(d.sd, i); sd; sd = sd->parent) {
+/* IAMROOT-12:
+ * -------------
+ * 사용하는 것들은 null로 체크해둔다.
+ */
 			claim_allocations(i, sd);
 			init_sched_groups_capacity(i, sd);
 		}
@@ -7653,6 +7738,12 @@ static int init_sched_domains(const struct cpumask *cpu_map)
  * 스케줄 도메인과 그룹을 생성한다.
  */
 	err = build_sched_domains(doms_cur[0], NULL);
+
+/* IAMROOT-12:
+ * -------------
+ * "/proc/sys/kernel/sched_domain"을 생성하고 하위에 cpu들과 
+ * 도메인 레벨들이 위치한다.
+ */
 	register_sched_domain_sysctl();
 
 	return err;
