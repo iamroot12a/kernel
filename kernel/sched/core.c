@@ -1237,6 +1237,10 @@ void set_task_cpu(struct task_struct *p, unsigned int new_cpu)
 	if (task_cpu(p) != new_cpu) {
 		struct task_migration_notifier tmn;
 
+/* IAMROOT-12:
+ * -------------
+ * 요청 태스크의 스케줄러의 migrate 함수를 호출한다.
+ */
 		if (p->sched_class->migrate_task_rq)
 			p->sched_class->migrate_task_rq(p, new_cpu);
 		p->se.nr_migrations++;
@@ -1246,6 +1250,11 @@ void set_task_cpu(struct task_struct *p, unsigned int new_cpu)
 		tmn.from_cpu = task_cpu(p);
 		tmn.to_cpu = new_cpu;
 
+/* IAMROOT-12:
+ * -------------
+ * 태스크가 migration할 때마다 등록되어 있는 nb를 호출한다.
+ * (현재 x86에서 사용)
+ */
 		atomic_notifier_call_chain(&task_migration_notifier, 0, &tmn);
 	}
 
@@ -1575,6 +1584,16 @@ out:
 static inline
 int select_task_rq(struct task_struct *p, int cpu, int sd_flags, int wake_flags)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 태스크에 특정 cpu에 dedicate된 상태가 아니면 각 스케줄러의 select_task_rq
+ * 후크에 연결된 함수를 수행한다.
+ * 예) cfs: select_task_rq_fair()
+ *
+ * 이 함수를 통해서 원래 사용하려던 cpu를 벗어나 다른 cpu가 선택될 수 있다.
+ * (passive load balancing)
+ */
 	if (p->nr_cpus_allowed > 1)
 		cpu = p->sched_class->select_task_rq(p, cpu, sd_flags, wake_flags);
 
@@ -2422,6 +2441,11 @@ void wake_up_new_task(struct task_struct *p)
 	unsigned long flags;
 	struct rq *rq;
 
+/* IAMROOT-12:
+ * -------------
+ * do_fork() 후에 새로운 태스크의 시작을 할 때 어떤 cpu에서 수행할 지 
+ * fork passive 로드밸런싱 루틴을 통해 알아온다.
+ */
 	raw_spin_lock_irqsave(&p->pi_lock, flags);
 #ifdef CONFIG_SMP
 	/*

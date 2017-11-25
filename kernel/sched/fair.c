@@ -5603,6 +5603,10 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 /* Used instead of source_load when we know the type == 0 */
 static unsigned long weighted_cpuload(const int cpu)
 {
+/* IAMROOT-12:
+ * -------------
+ * 요청한 cpu의 cfs 러너블 로드 평균 값을 알아온다.
+ */
 	return cpu_rq(cpu)->cfs.runnable_load_avg;
 }
 
@@ -5615,6 +5619,11 @@ static unsigned long weighted_cpuload(const int cpu)
  */
 static unsigned long source_load(int cpu, int type)
 {
+/* IAMROOT-12:
+ * -------------
+ * 요청한 cpu의 cfs 러너블 로드 평균 값과 cpu_load[] 평균 값 중 가장 작은 
+ * 소극적인 cpu 로드 값을 반환한다.
+ */
 	struct rq *rq = cpu_rq(cpu);
 	unsigned long total = weighted_cpuload(cpu);
 
@@ -5630,12 +5639,21 @@ static unsigned long source_load(int cpu, int type)
  */
 static unsigned long target_load(int cpu, int type)
 {
+/* IAMROOT-12:
+ * -------------
+ * 요청한 cpu의 cfs 러너블 로드 평균 값과 cpu_load[] 평균 값 중 가장 큰 
+ * 적극적인 cpu 로드 값을 반환한다.
+ */
 	struct rq *rq = cpu_rq(cpu);
 	unsigned long total = weighted_cpuload(cpu);
 
 	if (type == 0 || !sched_feat(LB_BIAS))
 		return total;
 
+/* IAMROOT-12:
+ * -------------
+ * 런큐에 있는 5개의 로드 중 type 
+ */
 	return max(rq->cpu_load[type-1], total);
 }
 
@@ -5936,6 +5954,12 @@ find_idlest_group(struct sched_domain *sd, struct task_struct *p,
 	struct sched_group *idlest = NULL, *group = sd->groups;
 	unsigned long min_load = ULONG_MAX, this_load = 0;
 	int load_idx = sd->forkexec_idx;
+
+/* IAMROOT-12:
+ * -------------
+ * 100%를 초과하는 imbalnce_pct의 값에서만 절반으로 줄인다.
+ * 예) 125% -> 112%,   110% -> 105%
+ */
 	int imbalance = 100 + (sd->imbalance_pct-100)/2;
 
 	if (sd_flag & SD_BALANCE_WAKE)
@@ -5996,11 +6020,20 @@ find_idlest_cpu(struct sched_group *group, struct task_struct *p, int this_cpu)
 	int shallowest_idle_cpu = -1;
 	int i;
 
+/* IAMROOT-12:
+ * -------------
+ * idle 상태에서 빠져나오는데 소모되는 비용을 고려하여 idlest cpu를 선택한다.
+ */
 	/* Traverse only the allowed CPUs */
 	for_each_cpu_and(i, sched_group_cpus(group), tsk_cpus_allowed(p)) {
 		if (idle_cpu(i)) {
 			struct rq *rq = cpu_rq(i);
 			struct cpuidle_state *idle = idle_get_state(rq);
+
+/* IAMROOT-12:
+ * -------------
+ * 가장 최소 idle을 벗어나기 위해 사용되는 exit_latency 값을 사용한다.
+ */
 			if (idle && idle->exit_latency < min_exit_latency) {
 				/*
 				 * We give priority to a CPU whose idle state
@@ -6041,31 +6074,65 @@ static int select_idle_sibling(struct task_struct *p, int target)
 	struct sched_group *sg;
 	int i = task_cpu(p);
 
+/* IAMROOT-12:
+ * -------------
+ * 목적 cpu가 idle 상태인 경우 목적 cpu를 반환한다.
+ */
 	if (idle_cpu(target))
 		return target;
 
 	/*
 	 * If the prevous cpu is cache affine and idle, don't be stupid.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 기존 cpu와 target cpu(원래 기존 cpu지만 함수 바깥에서 바뀌어서 들어오는 
+ * 경우가 있다)가 cache를 공유하는 cpu인 경우이고, 기존 cpu가 
+ * idle 상태이면 곧바로 기존 cpu를 반환한다.
+ */
 	if (i != target && cpus_share_cache(i, target) && idle_cpu(i))
 		return i;
 
 	/*
 	 * Otherwise, iterate the domains and find an elegible idle cpu.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 가장 하위 레벨의 도메인부터 캐시가 공유가능한 도메인까지 순회한다.
+ */
 	sd = rcu_dereference(per_cpu(sd_llc, target));
 	for_each_lower_domain(sd) {
 		sg = sd->groups;
 		do {
+
+/* IAMROOT-12:
+ * -------------
+ * 도메인에 포함된 스케줄링 그룹 수만큼 순회한다.
+ *
+ * 해당 스케줄링 그룹에 허용한 cpu들이 태스크에 허용하는 cpu가 하나도 없는 
+ * 경우 다음 그룹으로 skip한다. 
+ */
 			if (!cpumask_intersects(sched_group_cpus(sg),
 						tsk_cpus_allowed(p)))
 				goto next;
 
 			for_each_cpu(i, sched_group_cpus(sg)) {
+
+/* IAMROOT-12:
+ * -------------
+ * idle이 아닌 target cpu와 busy cpu는 제외한다.
+ */
 				if (i == target || !idle_cpu(i))
 					goto next;
 			}
 
+/* IAMROOT-12:
+ * -------------
+ * 해당 스케줄링 그룹에 허용한 cpu들과 태스크에 허용하는 cpu들 중 처음 cpu를 
+ * target으로 반환한다.
+ */
 			target = cpumask_first_and(sched_group_cpus(sg),
 					tsk_cpus_allowed(p));
 			goto done;
@@ -6098,10 +6165,21 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 	int want_affine = 0;
 	int sync = wake_flags & WF_SYNC;
 
+/* IAMROOT-12:
+ * -------------
+ * 4가지의 passive 로드밸런싱 중 wake 로드밸런싱 요청으로 온 경우이다.
+ * 태스크에 허용된 cpu인지 여부를 want_affine에 알아온다.
+ */
 	if (sd_flag & SD_BALANCE_WAKE)
 		want_affine = cpumask_test_cpu(cpu, tsk_cpus_allowed(p));
 
 	rcu_read_lock();
+
+/* IAMROOT-12:
+ * -------------
+ * 최하위 스케줄 도메인부터 순회하되 로드밸런싱을 허용하지 않는 도메인은 
+ * skip한다.
+ */
 	for_each_domain(cpu, tmp) {
 		if (!(tmp->flags & SD_LOAD_BALANCE))
 			continue;
@@ -6110,12 +6188,23 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 		 * If both cpu and prev_cpu are part of this domain,
 		 * cpu is a valid SD_WAKE_AFFINE target.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * DIE 스케줄링 도메인에서 현재 cpu가 태스크에 허용되어 있고, 
+ * 순회중인 도메인의 cpu에 기존 cpu가 포함된 경우 
+ * 이 도메인을 affine 스케줄도메인으로 선택한다.
+ */
 		if (want_affine && (tmp->flags & SD_WAKE_AFFINE) &&
 		    cpumask_test_cpu(prev_cpu, sched_domain_span(tmp))) {
 			affine_sd = tmp;
 			break;
 		}
 
+/* IAMROOT-12:
+ * -------------
+ * sd_flag가 존재하는 도메인 중 가장 상위 도메인을 결정한다.
+ */
 		if (tmp->flags & sd_flag)
 			sd = tmp;
 	}
@@ -6123,6 +6212,11 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 	if (affine_sd && cpu != prev_cpu && wake_affine(affine_sd, p, sync))
 		prev_cpu = cpu;
 
+/* IAMROOT-12:
+ * -------------
+ * wake 밸런싱으로 요청된 경우 캐시 공유 도메인 이하에서만 idle cpu를 
+ * 찾아 결정한다.
+ */
 	if (sd_flag & SD_BALANCE_WAKE) {
 		new_cpu = select_idle_sibling(p, prev_cpu);
 		goto unlock;
@@ -6137,12 +6231,20 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 			continue;
 		}
 
+/* IAMROOT-12:
+ * -------------
+ * 가장 한가한 그룹을 선택한다.
+ */
 		group = find_idlest_group(sd, p, cpu, sd_flag);
 		if (!group) {
 			sd = sd->child;
 			continue;
 		}
 
+/* IAMROOT-12:
+ * -------------
+ * 그룹내에서 가장 한가한 cpu를 선택한다.
+ */
 		new_cpu = find_idlest_cpu(group, p, cpu);
 		if (new_cpu == -1 || new_cpu == cpu) {
 			/* Now try balancing at a lower domain level of cpu */
@@ -6154,6 +6256,11 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 		cpu = new_cpu;
 		weight = sd->span_weight;
 		sd = NULL;
+
+/* IAMROOT-12:
+ * -------------
+ * 가장 낮은 도메인 레벨에서 찾은 new_cpu로 함수를 빠져나간다.
+ */
 		for_each_domain(cpu, tmp) {
 			if (weight <= tmp->span_weight)
 				break;
@@ -6180,6 +6287,10 @@ migrate_task_rq_fair(struct task_struct *p, int next_cpu)
 	struct sched_entity *se = &p->se;
 	struct cfs_rq *cfs_rq = cfs_rq_of(se);
 
+/* IAMROOT-12:
+ * -------------
+ * 해당 태스크를 migration 처리하기 때문에 처리해야 할 후속 작업들이다.
+ */
 	/*
 	 * Load tracking: accumulate removed load so that it can be processed
 	 * when we next update owning cfs_rq under rq->lock.  Tasks contribute
@@ -7084,8 +7195,17 @@ static void detach_task(struct task_struct *p, struct lb_env *env)
 {
 	lockdep_assert_held(&env->src_rq->lock);
 
+/* IAMROOT-12:
+ * -------------
+ * 소스 런큐에서 요청 태스크를 디큐하고 migration 플래그를 단다.
+ */
 	deactivate_task(env->src_rq, p, 0);
 	p->on_rq = TASK_ON_RQ_MIGRATING;
+
+/* IAMROOT-12:
+ * -------------
+ * 해당 태스크에 새로운 cpu로 지정한다.
+ */
 	set_task_cpu(p, env->dst_cpu);
 }
 
@@ -7198,7 +7318,16 @@ static int detach_tasks(struct lb_env *env)
 		if ((load / 2) > env->imbalance)
 			goto next;
 
+/* IAMROOT-12:
+ * -------------
+ * 해당 태스크를 소스 런큐에서 dequeue한다.
+ */
 		detach_task(p, env);
+
+/* IAMROOT-12:
+ * -------------
+ * 임시로 env->tasks 리스트에 옮긴다.
+ */
 		list_add(&p->se.group_node, &env->tasks);
 
 		detached++;
@@ -7269,6 +7398,11 @@ static void attach_tasks(struct lb_env *env)
 	struct list_head *tasks = &env->tasks;
 	struct task_struct *p;
 
+/* IAMROOT-12:
+ * -------------
+ * detach 하여 두었던 env->tasks 리스트에 있는 태스크들을 모두 목적 런큐에 
+ * enqueue한다.
+ */
 	raw_spin_lock(&env->dst_rq->lock);
 
 	while (!list_empty(tasks)) {
@@ -7412,10 +7546,16 @@ static unsigned long task_h_load(struct task_struct *p)
 
 /********** Helpers for find_busiest_group ************************/
 
+/* IAMROOT-12:
+ * -------------
+ * 로드 비교 시 오버로드가 먼저 우선하여 로드가 가장 큰 상태이고,
+ * 다음으로는 그룹 imbalance 상태인 경우이고, 그 외의 경우는 
+ * 그냥 로드 score로 비교한다.
+ */
 enum group_type {
 	group_other = 0,
 	group_imbalanced,
-	group_overloaded,
+	group_overloaded,	
 };
 
 /*
@@ -7487,6 +7627,10 @@ static inline int get_sd_load_idx(struct sched_domain *sd,
 {
 	int load_idx;
 
+/* IAMROOT-12:
+ * -------------
+ * 로드밸런싱 종류에 따라서 cpu_load[] 인덱스를 결정한다.
+ */
 	switch (idle) {
 	case CPU_NOT_IDLE:
 		load_idx = sd->busy_idx;
@@ -7757,6 +7901,11 @@ static inline int sg_imbalanced(struct sched_group *group)
  * first dividing out the smt factor and computing the actual number of cores
  * and limit unit capacity with that.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * 그룹의 cpu capacity 팩터는 성능에 따라 1부터 ...
+ */
 static inline int sg_capacity_factor(struct lb_env *env, struct sched_group *group)
 {
 	unsigned int capacity_factor, smt, cpus;
@@ -7767,26 +7916,62 @@ static inline int sg_capacity_factor(struct lb_env *env, struct sched_group *gro
 	cpus = group->group_weight;
 
 	/* smt := ceil(cpus / capacity), assumes: 1 < smt_capacity < 2 */
+
+/* IAMROOT-12:
+ * -------------
+ * smt는 1(평균 이상의 고성능) 또는 2
+ */
 	smt = DIV_ROUND_UP(SCHED_CAPACITY_SCALE * cpus, capacity_orig);
 	capacity_factor = cpus / smt; /* cores */
 
 	capacity_factor = min_t(unsigned,
 		capacity_factor, DIV_ROUND_CLOSEST(capacity, SCHED_CAPACITY_SCALE));
+
+/* IAMROOT-12:
+ * -------------
+ * capacity_factor가 0이되는 경우 fix_small_capacity() 평가를 해서 0또는 1을 
+ * 산출한다.
+ */
 	if (!capacity_factor)
 		capacity_factor = fix_small_capacity(env->sd, group);
 
+/* IAMROOT-12:
+ * -------------
+ * 저성능일 때 cpu의 절반 값을 사용한다.
+ */
 	return capacity_factor;
 }
 
 static enum group_type
 group_classify(struct sched_group *group, struct sg_lb_stats *sgs)
 {
+/* IAMROOT-12:
+ * -------------
+ * 그룹 타입: other, imbalance, overloaded
+ *
+ * overloaded: 그룹에 소속된 cpu 성능치에 비례하여 태스크를 오버로드 없이
+ * 돌릴 수 있는 경우를 판단한다.
+ *
+ * 예) cpu4개가 1024 평균 capacity를 가질 때 오버로드 없이 동작시킬 수 있는 
+ *     태스크의 수는 4이다.
+ *
+ *     cpu4개가 평균보다 낮은 800 capacity를 가질 때 오버로드 없이 동작시킬 수 
+ *     있는 태스크의 수는 cpu 수의 절반 값인 2이다.
+ */
 	if (sgs->sum_nr_running > sgs->group_capacity_factor)
 		return group_overloaded;
 
+/* IAMROOT-12:
+ * -------------
+ * 그룹이 불균형밸런스 상태인 경우
+ */
 	if (sg_imbalanced(group))
 		return group_imbalanced;
 
+/* IAMROOT-12:
+ * -------------
+ * 그 외의 경우 로드밸런스는 로드 스코어만으로 비교한다.
+ */
 	return group_other;
 }
 
@@ -7807,12 +7992,27 @@ static inline void update_sg_lb_stats(struct lb_env *env,
 	unsigned long load;
 	int i;
 
+/* IAMROOT-12:
+ * -------------
+ * 그룹의 평균 로드를 산출한다.
+ */
 	memset(sgs, 0, sizeof(*sgs));
 
 	for_each_cpu_and(i, sched_group_cpus(group), env->cpus) {
 		struct rq *rq = cpu_rq(i);
 
 		/* Bias balancing toward cpus of our domain */
+
+/* IAMROOT-12:
+ * -------------
+ * 로컬 그룹인 경우 적극적인(큰) 로드 값을 알아오고, 그렇지 않은 경우는 
+ * 소극적인(작은 값으로 보이는) 로드 값을 알아온다.
+ *
+ * 로컬 cpu 입장에서는 자신의 로드값이 과소 평가되지 않도록 가장 
+ * 높은 로드 값을 사용하고, 리모트 들은 과대 평가되지 않도록 가장 
+ * 낮은 로드 값을 사용하여 비교하여 쉽게 로드밸런싱되지 않도록 조정하는 
+ * 기능이 있다.
+ */
 		if (local_group)
 			load = target_load(i, load_idx);
 		else
@@ -7874,6 +8074,10 @@ static bool update_sd_pick_busiest(struct lb_env *env,
 	if (sgs->group_type < busiest->group_type)
 		return false;
 
+/* IAMROOT-12:
+ * -------------
+ * 요청한 그룹의 평균 로드가 가장 크면 갱신하도록 true를 반환한다.
+ */
 	if (sgs->avg_load <= busiest->avg_load)
 		return false;
 
@@ -7881,6 +8085,10 @@ static bool update_sd_pick_busiest(struct lb_env *env,
 	if (!(env->sd->flags & SD_ASYM_PACKING))
 		return true;
 
+/* IAMROOT-12:
+ * -------------
+ * 아래는 powerpc용 코드
+ */
 	/*
 	 * ASYM_PACKING needs to move all the work to the lowest
 	 * numbered CPUs in the group, therefore mark all groups
@@ -7949,6 +8157,10 @@ static inline void update_sd_lb_stats(struct lb_env *env, struct sd_lb_stats *sd
 		struct sg_lb_stats *sgs = &tmp_sgs;
 		int local_group;
 
+/* IAMROOT-12:
+ * -------------
+ * sg그룹에 env->dst_cpu가 소속된 경우 local_group=true
+ */
 		local_group = cpumask_test_cpu(env->dst_cpu, sched_group_cpus(sg));
 		if (local_group) {
 			sds->local = sg;
@@ -7959,6 +8171,10 @@ static inline void update_sd_lb_stats(struct lb_env *env, struct sd_lb_stats *sd
 				update_group_capacity(env->sd, env->dst_cpu);
 		}
 
+/* IAMROOT-12:
+ * -------------
+ * 스케줄링 그룹의 평균 로드등을 산출한다.
+ */
 		update_sg_lb_stats(env, sg, load_idx, local_group, sgs,
 						&overload);
 
@@ -7981,6 +8197,11 @@ static inline void update_sd_lb_stats(struct lb_env *env, struct sd_lb_stats *sd
 			sgs->group_type = group_classify(sg, sgs);
 		}
 
+/* IAMROOT-12:
+ * -------------
+ * 요청한 그룹에 대해 오버로드, 그룹 imabalance, 평균 로드 순으로 비교하여 
+ * 가장 busy한 그룹으로 갱신한다.
+ */
 		if (update_sd_pick_busiest(env, sds, sg, sgs)) {
 			sds->busiest = sg;
 			sds->busiest_stat = *sgs;
@@ -8221,6 +8442,11 @@ static struct sched_group *find_busiest_group(struct lb_env *env)
 	 * Compute the various statistics relavent for load balancing at
 	 * this level.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 도메인 내의 각 그룹의 평균 로드등을 산출한다.
+ */
 	update_sd_lb_stats(env, &sds);
 	local = &sds.local_stat;
 	busiest = &sds.busiest_stat;
@@ -8230,6 +8456,12 @@ static struct sched_group *find_busiest_group(struct lb_env *env)
 		return sds.busiest;
 
 	/* There is no busy sibling group to pull tasks from */
+
+/* IAMROOT-12:
+ * -------------
+ * 두 개 이상의 그룹을 비교하여 busiest 그룹이 없는 경우는 그룹의 
+ * 평균로드가 동일해야 하는 상황이므로 극히 드물다. (모두 놀고 있는 경우 등)
+ */
 	if (!sds.busiest || busiest->sum_nr_running == 0)
 		goto out_balanced;
 
@@ -8253,6 +8485,11 @@ static struct sched_group *find_busiest_group(struct lb_env *env)
 	 * If the local group is busier than the selected busiest group
 	 * don't try and pull any tasks.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 로컬이 바쁜 경우 로드밸런스를 할 필요 없다.
+ */
 	if (local->avg_load >= busiest->avg_load)
 		goto out_balanced;
 
@@ -8260,9 +8497,20 @@ static struct sched_group *find_busiest_group(struct lb_env *env)
 	 * Don't pull any tasks if this group is already above the domain
 	 * average load.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 도메인의 로드 평균보다 큰 경우에도 로드밸런스를 할 필요 없다.
+ */
 	if (local->avg_load >= sds.avg_load)
 		goto out_balanced;
 
+/* IAMROOT-12:
+ * -------------
+ * 주기적인 로드밸런스에서 cpu가 idle인 경우에 진입한 경우이다.
+ * busiest 그룹으로 선정되었지만 오버로드되지 않을 정도의 약한 로드 상태이면 
+ * 로드밸런스를 안할 수도 있다.
+ */
 	if (env->idle == CPU_IDLE) {
 		/*
 		 * This cpu is idle. If the busiest group is not overloaded
@@ -8279,6 +8527,19 @@ static struct sched_group *find_busiest_group(struct lb_env *env)
 		 * In the CPU_NEWLY_IDLE, CPU_NOT_IDLE cases, use
 		 * imbalance_pct to be conservative.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 주기적인 로드밸런스에 cpu가 busy이거나, idle passive 로드밸런싱으로 
+ * 진입한 경우 이곳까지 오면 imbalnce_pct 비율을 적용한 로드 평균을 비교하여 
+ * 로드밸런싱 여부를 결정한다.
+ *
+ * 로컬 그룹은 imbalance_pct 비율(125% 기본, 117%, 110%, ...)을 적용하고 
+ * busiest 그룹은 100% 비율을 적용하여 로드 평균을 비교한다.
+ *
+ * 로컬에 가중치를 더 주는 이유는 migration에 스레졸드를 적용하여 스레졸드 
+ * 이상을 초과하는 경우에만 migration을 하도록 한다.(핑퐁 방지)
+ */
 		if (100 * busiest->avg_load <=
 				env->sd->imbalance_pct * local->avg_load)
 			goto out_balanced;
@@ -8286,6 +8547,11 @@ static struct sched_group *find_busiest_group(struct lb_env *env)
 
 force_balance:
 	/* Looks like there is an imbalance. Compute it */
+
+/* IAMROOT-12:
+ * -------------
+ * imbalance 상태에 대한 평가를 수행한다.
+ */
 	calculate_imbalance(env, &sds);
 	return sds.busiest;
 
@@ -8330,6 +8596,12 @@ static struct rq *find_busiest_queue(struct lb_env *env,
 		 *
 		 * Both cases only affect the total convergence complexity.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 누마 시스템이 아닌 경우 조건을 항상 만족하지 못한다.
+ * 누마 시스템에서만 skip 조건에 들 수 있다.
+ */
 		if (rt > env->fbq_type)
 			continue;
 
@@ -8358,6 +8630,11 @@ static struct rq *find_busiest_queue(struct lb_env *env,
 		 * to: wl_i * capacity_j > wl_j * capacity_i;  where j is
 		 * our previous maximum.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 그룹내에 cpu들 중 로드 값이 더 높은 cpu를 찾아 갱신한다.
+ */
 		if (wl * busiest_capacity > busiest_load * capacity) {
 			busiest_load = wl;
 			busiest_capacity = capacity;
@@ -8475,6 +8752,13 @@ static int load_balance(int this_cpu, struct rq *this_rq,
 	unsigned long flags;
 	struct cpumask *cpus = this_cpu_cpumask_var_ptr(load_balance_mask);
 
+/* IAMROOT-12:
+ * -------------
+ * load_balance() 함수는 주기적인 밸런스와 passive 밸런스 중 idle 밸런스에서 
+ * 호출된다.
+ *
+ * 요청한 스케줄링 도메인내에서 현재 cpu로 가져오기 위한 요청 사항이 담겨있다.
+ */
 	struct lb_env env = {
 		.sd		= sd,
 		.dst_cpu	= this_cpu,
@@ -8739,6 +9023,14 @@ more_balance:
 			}
 			raw_spin_unlock_irqrestore(&busiest->lock, flags);
 
+/* IAMROOT-12:
+ * -------------
+ * 액티브 밸런스가 필요한 경우 active_load_balance_cpu_stop() 함수를 워커 
+ * 스레드에서 동작시킨다. (busiest cpu에서)
+ *
+ * 로컬이 pull 해올 수 없는 상황이면 busiest cpu의 워커스레드를 동작시켜서 
+ * busiest cpu에서 push를 하게한다.
+ */
 			if (active_balance) {
 				stop_one_cpu_nowait(cpu_of(busiest),
 					active_load_balance_cpu_stop, busiest,
@@ -8879,6 +9171,10 @@ static int idle_balance(struct rq *this_rq)
 	int pulled_task = 0;
 	u64 curr_cost = 0;
 
+/* IAMROOT-12:
+ * -------------
+ * idle 밸런싱을 위해 로드평균을 갱신한다.
+ */
 	idle_enter_fair(this_rq);
 
 	/*
@@ -8887,6 +9183,14 @@ static int idle_balance(struct rq *this_rq)
 	 */
 	this_rq->idle_stamp = rq_clock(this_rq);
 
+/* IAMROOT-12:
+ * -------------
+ * 평균 idle 시간이 아주 짧거나 오버로드된 경우가 아니면 idle 밸런싱을 
+ * 시도하지 않는다. (default: 500us)
+ *
+ * 해당 cpu의 루트도메인에 소속한 cpu들 모두 오버로드된 상태가 아닌 경우에도 
+ * idle 밸런싱을 시도하지 않는다.
+ */
 	if (this_rq->avg_idle < sysctl_sched_migration_cost ||
 	    !this_rq->rd->overload) {
 		rcu_read_lock();
@@ -8903,20 +9207,39 @@ static int idle_balance(struct rq *this_rq)
 	 */
 	raw_spin_unlock(&this_rq->lock);
 
+/* IAMROOT-12:
+ * -------------
+ * idle 기간에 대한 블럭드 로드 평균을 갱신하게 한다.
+ */
 	update_blocked_averages(this_cpu);
 	rcu_read_lock();
 	for_each_domain(this_cpu, sd) {
 		int continue_balancing = 1;
 		u64 t0, domain_cost;
 
+/* IAMROOT-12:
+ * -------------
+ * 로드밸런싱을 허용하지 않는 도메인은 skip한다.
+ */
 		if (!(sd->flags & SD_LOAD_BALANCE))
 			continue;
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 cpu의 idle 평균 시간이 하위 도메인을 포함한 현재 도메인의 로드 밸런싱 
+ * 코스트 보다 작은 값이면 아예 로드밸런싱을 포기한다.
+ */
 		if (this_rq->avg_idle < curr_cost + sd->max_newidle_lb_cost) {
 			update_next_balance(sd, 0, &next_balance);
 			break;
 		}
 
+/* IAMROOT-12:
+ * -------------
+ * newidle 밸런싱을 허용하는 도메인의 경우에만 로드 밸런싱을 시도하여 
+ * busiest 그룹의 busiest cpu에서 task들을 pull해온다. (경우에 따라서는 
+ * 액티브가 밸런스가 동작하여 워커스레드를 이용하여 push하게 할 수도 있다)
+ */
 		if (sd->flags & SD_BALANCE_NEWIDLE) {
 			t0 = sched_clock_cpu(this_cpu);
 
@@ -8924,7 +9247,18 @@ static int idle_balance(struct rq *this_rq)
 						   sd, CPU_NEWLY_IDLE,
 						   &continue_balancing);
 
+
+/* IAMROOT-12:
+ * -------------
+ * domain_cost: 현재 스케줄 도메인을 대상으로 로드밸런싱을 시도하여 
+ * 수행된 시간(delta ns)
+ */
 			domain_cost = sched_clock_cpu(this_cpu) - t0;
+
+/* IAMROOT-12:
+ * -------------
+ * 해당 도메인의 max cost를 갱신한다.
+ */
 			if (domain_cost > sd->max_newidle_lb_cost)
 				sd->max_newidle_lb_cost = domain_cost;
 
@@ -8944,6 +9278,10 @@ static int idle_balance(struct rq *this_rq)
 
 	raw_spin_lock(&this_rq->lock);
 
+/* IAMROOT-12:
+ * -------------
+ * 현재런큐의 최대 cost 값도 갱신한다.
+ */
 	if (curr_cost > this_rq->max_idle_balance_cost)
 		this_rq->max_idle_balance_cost = curr_cost;
 
@@ -8952,6 +9290,12 @@ static int idle_balance(struct rq *this_rq)
 	 * have been enqueued in the meantime. Since we're not going idle,
 	 * pretend we pulled a task.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 로드밸런스에 의해 마이그레이션은 실패했지만 lock 해재 후 그 틈을 타서 
+ * 태스크가 엔큐된 경우 pulled_task가 있는 것 처럼 설정한다.
+ */
 	if (this_rq->cfs.h_nr_running && !pulled_task)
 		pulled_task = 1;
 
@@ -8961,9 +9305,19 @@ out:
 		this_rq->next_balance = next_balance;
 
 	/* Is there a task of a high priority class? */
+
+/* IAMROOT-12:
+ * -------------
+ * 새롭게 가져온 태스크가 cfs 태스크보다 우선 순위가 높은 태스크가 
+ * 존재하는 경우이다.
+ */
 	if (this_rq->nr_running != this_rq->cfs.h_nr_running)
 		pulled_task = -1;
 
+/* IAMROOT-12:
+ * -------------
+ * 최종적으로 idle 상태에 진입하지 않게 처리한다.
+ */
 	if (pulled_task) {
 		idle_exit_fair(this_rq);
 		this_rq->idle_stamp = 0;
@@ -8982,6 +9336,11 @@ static int active_load_balance_cpu_stop(void *data)
 {
 	struct rq *busiest_rq = data;
 	int busiest_cpu = cpu_of(busiest_rq);
+
+/* IAMROOT-12:
+ * -------------
+ * push할 cpu를 알아온다.
+ */
 	int target_cpu = busiest_rq->push_cpu;
 	struct rq *target_rq = cpu_rq(target_cpu);
 	struct sched_domain *sd;
@@ -8994,6 +9353,10 @@ static int active_load_balance_cpu_stop(void *data)
 		     !busiest_rq->active_balance))
 		goto out_unlock;
 
+/* IAMROOT-12:
+ * -------------
+ * 태스크가 두 개 이하인 경우 액티브 로드밸런싱을 할 필요없다.
+ */
 	/* Is there any task to move? */
 	if (busiest_rq->nr_running <= 1)
 		goto out_unlock;
@@ -9007,6 +9370,12 @@ static int active_load_balance_cpu_stop(void *data)
 
 	/* Search for an sd spanning us and the target CPU. */
 	rcu_read_lock();
+
+/* IAMROOT-12:
+ * -------------
+ * 액티브 로드밸런싱을 할 cpu가 있는 도메인이고 로드밸런싱을 허용하는 
+ * 도메인을 찾는다.
+ */
 	for_each_domain(target_cpu, sd) {
 		if ((sd->flags & SD_LOAD_BALANCE) &&
 		    cpumask_test_cpu(busiest_cpu, sched_domain_span(sd)))
@@ -9025,6 +9394,10 @@ static int active_load_balance_cpu_stop(void *data)
 
 		schedstat_inc(sd, alb_count);
 
+/* IAMROOT-12:
+ * -------------
+ * 태스크 하나만 디태치하고 대상 cpu의 런큐에 어태치한다.
+ */
 		p = detach_one_task(&env);
 		if (p)
 			schedstat_inc(sd, alb_pushed);

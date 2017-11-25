@@ -601,6 +601,11 @@ struct root_domain {
 	cpumask_var_t online;
 
 	/* Indicate more than one runnable task for any CPU */
+
+/* IAMROOT-12:
+ * -------------
+ * 2개 이상의 태스크가 동작하는 cpu가 있는 경우 1로 된다.
+ */
 	bool overload;
 
 	/*
