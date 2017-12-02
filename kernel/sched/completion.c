@@ -30,8 +30,18 @@ void complete(struct completion *x)
 {
 	unsigned long flags;
 
+/* IAMROOT-12:
+ * -------------
+ * completion 대기큐에 매달려있는 모든 태스크를 깨운다.
+ * (func 멤버에는 디폴트로 default_wake_function() 함수가 사용된다)
+ */
 	spin_lock_irqsave(&x->wait.lock, flags);
 	x->done++;
+
+/* IAMROOT-12:
+ * -------------
+ * TASK_NORMAL: TASK_INTERRUPTIBLE | TASK_UNINTERRUPTIBLE
+ */
 	__wake_up_locked(&x->wait, TASK_NORMAL, 1);
 	spin_unlock_irqrestore(&x->wait.lock, flags);
 }
@@ -52,6 +62,11 @@ void complete_all(struct completion *x)
 
 	spin_lock_irqsave(&x->wait.lock, flags);
 	x->done += UINT_MAX/2;
+
+/* IAMROOT-12:
+ * -------------
+ * 모든 대기 스레드들을 깨운다.
+ */
 	__wake_up_locked(&x->wait, TASK_NORMAL, 0);
 	spin_unlock_irqrestore(&x->wait.lock, flags);
 }
@@ -62,8 +77,19 @@ do_wait_for_common(struct completion *x,
 		   long (*action)(long), long timeout, int state)
 {
 	if (!x->done) {
+
+/* IAMROOT-12:
+ * -------------
+ * 대기 instance (waiter instance)
+ */
 		DECLARE_WAITQUEUE(wait, current);
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 스레드(waiter)를 completion 구조체에있는 wait 리스트에 추가하여 
+ * 대기하게 한다.  completion() 함수를 사용하여 여러 waiter들을 
+ * 한꺼번에 깨울 수 있다.
+ */
 		__add_wait_queue_tail_exclusive(&x->wait, &wait);
 		do {
 			if (signal_pending_state(state, current)) {
@@ -72,6 +98,11 @@ do_wait_for_common(struct completion *x,
 			}
 			__set_current_state(state);
 			spin_unlock_irq(&x->wait.lock);
+
+/* IAMROOT-12:
+ * -------------
+ * schedule_timeout() 함수가 호출된다.
+ */
 			timeout = action(timeout);
 			spin_lock_irq(&x->wait.lock);
 		} while (!x->done && timeout);
@@ -98,6 +129,11 @@ __wait_for_common(struct completion *x,
 static long __sched
 wait_for_common(struct completion *x, long timeout, int state)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * sleep 동작에 수행될 함수는 schedule_timeout() 함수이다.
+ */
 	return __wait_for_common(x, schedule_timeout, timeout, state);
 }
 
@@ -119,6 +155,12 @@ wait_for_common_io(struct completion *x, long timeout, int state)
  */
 void __sched wait_for_completion(struct completion *x)
 {
+/* IAMROOT-12:
+ * -------------
+ * completion을 사용하여 대기에 들어간다.
+ * 이 태스크는 외부에서 completion() 함수를 호출하여 깨울 때 까지
+ * sleep한다.
+ */
 	wait_for_common(x, MAX_SCHEDULE_TIMEOUT, TASK_UNINTERRUPTIBLE);
 }
 EXPORT_SYMBOL(wait_for_completion);

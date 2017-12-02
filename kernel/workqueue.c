@@ -136,6 +136,23 @@ enum {
 
 /* struct worker is defined in workqueue_internal.h */
 
+
+/* IAMROOT-12:
+ * -------------
+ * cpu: 
+ *	바운드 워커풀인 경우 cpu 번호가 지정된다.
+ * worklists:
+ *	지연된 워크들 
+ * nr_workers:
+ *	워커풀내의 모든 워커 수
+ * nr_idle:
+ *	idle 워커 수
+ * idle_list:
+ *	idle 워커들이 대기하는 리스트
+ * busy_hash:
+ *	busy 워커들이 있는 64개의 해시 리스트
+ */
+
 struct worker_pool {
 	spinlock_t		lock;		/* the pool lock */
 	int			cpu;		/* I: the associated cpu */
@@ -757,6 +774,11 @@ static bool too_many_workers(struct worker_pool *pool)
 	int nr_idle = pool->nr_idle + managing; /* manager is considered idle */
 	int nr_busy = pool->nr_workers - nr_idle;
 
+/* IAMROOT-12:
+ * -------------
+ * 1) idle 워커 수가 2개 이하는 항상 false 이다.
+ * 2) idle 워커 수에서 2를 뺀 수가 busy 워커 수의 25%를 초과하면 true이다.
+ */
 	return nr_idle > 2 && (nr_idle - 2) * MAX_IDLE_WORKERS_RATIO >= nr_busy;
 }
 
@@ -1547,6 +1569,11 @@ static void worker_enter_idle(struct worker *worker)
 	/* idle_list is LIFO */
 	list_add(&worker->entry, &pool->idle_list);
 
+/* IAMROOT-12:
+ * -------------
+ * idle 워커 스레드가 너무 많으면 
+ * idle 워커 스레드를 줄이기 위한 타이머를 설정한다. (5분)
+ */
 	if (too_many_workers(pool) && !timer_pending(&pool->idle_timer))
 		mod_timer(&pool->idle_timer, jiffies + IDLE_WORKER_TIMEOUT);
 
@@ -1585,6 +1612,10 @@ static struct worker *alloc_worker(int node)
 {
 	struct worker *worker;
 
+/* IAMROOT-12:
+ * -------------
+ * 워커 구조체를 할당하고 초기화한다.
+ */
 	worker = kzalloc_node(sizeof(*worker), GFP_KERNEL, node);
 	if (worker) {
 		INIT_LIST_HEAD(&worker->entry);
@@ -1675,10 +1706,19 @@ static struct worker *create_worker(struct worker_pool *pool)
 	char id_buf[16];
 
 	/* ID is needed to determine kthread name */
+
+/* IAMROOT-12:
+ * -------------
+ * 워커 id 발급
+ */
 	id = ida_simple_get(&pool->worker_ida, 0, 0, GFP_KERNEL);
 	if (id < 0)
 		goto fail;
 
+/* IAMROOT-12:
+ * -------------
+ * 워커 구조체를 할당하고 초기화한다.
+ */
 	worker = alloc_worker(pool->node);
 	if (!worker)
 		goto fail;
@@ -1686,6 +1726,11 @@ static struct worker *create_worker(struct worker_pool *pool)
 	worker->pool = pool;
 	worker->id = id;
 
+/* IAMROOT-12:
+ * -------------
+ * 워커 스레드를 만든다. cpu bound   = kworker/<cpu>:<id>[H]
+ *                       cpu unbound = kworker/u<pool-id>/<id>
+ */
 	if (pool->cpu >= 0)
 		snprintf(id_buf, sizeof(id_buf), "%d:%d%s", pool->cpu, id,
 			 pool->attrs->nice < 0  ? "H" : "");
@@ -1703,12 +1748,27 @@ static struct worker *create_worker(struct worker_pool *pool)
 	worker->task->flags |= PF_NO_SETAFFINITY;
 
 	/* successful, attach the worker to the pool */
+
+/* IAMROOT-12:
+ * -------------
+ * 만들어진 워커 스레드를 워커풀에 등록한다.
+ */
 	worker_attach_to_pool(worker, pool);
 
 	/* start the newly created worker */
 	spin_lock_irq(&pool->lock);
 	worker->pool->nr_workers++;
+
+/* IAMROOT-12:
+ * -------------
+ * 처음 만들어진 워커 스레드는 idle 리스트에 추가해둔다.
+ */
 	worker_enter_idle(worker);
+
+/* IAMROOT-12:
+ * -------------
+ * 워커 스레드를 깨운다.
+ */
 	wake_up_process(worker->task);
 	spin_unlock_irq(&pool->lock);
 
@@ -3413,6 +3473,10 @@ static int init_worker_pool(struct worker_pool *pool)
 	mutex_init(&pool->attach_mutex);
 	INIT_LIST_HEAD(&pool->workers);
 
+/* IAMROOT-12:
+ * -------------
+ * 워커 관리(정수)
+ */
 	ida_init(&pool->worker_ida);
 	INIT_HLIST_NODE(&pool->hash_node);
 	pool->refcnt = 1;
@@ -4878,6 +4942,12 @@ static void __init wq_numa_init(void)
 
 static int __init init_workqueues(void)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * cpu 마다 2개의 워커풀을 만들기 위해 2개의 nice 값을 준비한다.
+ * (normal 우선순위용과 높은 우선 순위용)
+ */
 	int std_nice[NR_STD_WORKER_POOLS] = { 0, HIGHPRI_NICE_LEVEL };
 	int i, cpu;
 
@@ -4885,6 +4955,10 @@ static int __init init_workqueues(void)
 
 	pwq_cache = KMEM_CACHE(pool_workqueue, SLAB_PANIC);
 
+/* IAMROOT-12:
+ * -------------
+ * cpu online/offline 시마다 작업들을 옮기기 위해 notifier 함수를 준비한다.
+ */
 	cpu_notifier(workqueue_cpu_up_callback, CPU_PRI_WORKQUEUE_UP);
 	hotcpu_notifier(workqueue_cpu_down_callback, CPU_PRI_WORKQUEUE_DOWN);
 
@@ -4895,7 +4969,17 @@ static int __init init_workqueues(void)
 		struct worker_pool *pool;
 
 		i = 0;
+
+/* IAMROOT-12:
+ * -------------
+ * 디폴트로 cpu마다 2개의 워커풀을 사용한다.(normal, high)
+ */
 		for_each_cpu_worker_pool(pool, cpu) {
+
+/* IAMROOT-12:
+ * -------------
+ * 각 cpu의 워커풀을 초기화한다.
+ */
 			BUG_ON(init_worker_pool(pool));
 			pool->cpu = cpu;
 			cpumask_copy(pool->attrs->cpumask, cpumask_of(cpu));
@@ -4910,6 +4994,11 @@ static int __init init_workqueues(void)
 	}
 
 	/* create the initial worker */
+
+/* IAMROOT-12:
+ * -------------
+ * cpu 수 만큼 각 워커풀(2개)에서 워커 스레드를 1개 만들어둔다.
+ */
 	for_each_online_cpu(cpu) {
 		struct worker_pool *pool;
 
@@ -4938,6 +5027,10 @@ static int __init init_workqueues(void)
 		ordered_wq_attrs[i] = attrs;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 시스템이 만드는 기본 워크큐
+ */
 	system_wq = alloc_workqueue("events", 0, 0);
 	system_highpri_wq = alloc_workqueue("events_highpri", WQ_HIGHPRI, 0);
 	system_long_wq = alloc_workqueue("events_long", 0, 0);

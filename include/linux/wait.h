@@ -17,6 +17,12 @@ int default_wake_function(wait_queue_t *wait, unsigned mode, int flags, void *ke
 #define WQ_FLAG_EXCLUSIVE	0x01
 #define WQ_FLAG_WOKEN		0x02
 
+
+/* IAMROOT-12:
+ * -------------
+ * 대기큐: func에는 디폴트로 default_wake_function() 함수가 사용된다.
+ */
+
 struct __wait_queue {
 	unsigned int		flags;
 	void			*private;

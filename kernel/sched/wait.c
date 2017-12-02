@@ -75,6 +75,21 @@ static void __wake_up_common(wait_queue_head_t *q, unsigned int mode,
 /* IAMROOT-12:
  * -------------
  * autoremove_wake_function()
+ *
+ * 대기큐에 매달려있는 태스크들을 순차적으로 깨워나가는데 중간에 
+ * exclusive 플래그가 설정된 n개를 만나면 종료한다. 
+ *
+ * nr_exclusive=3
+ *
+ * ----A----B----C----D-----E-----F-----G---------
+ *     E         E          E
+ *
+ *     ^    ^    ^    ^     ^
+ *     |    |    |    |     |
+ *     +--------------------+ 
+ *            wakeup
+ *
+ * (func 멤버에는 디폴트로 default_wake_function() 함수가 사용된다)
  */
 	list_for_each_entry_safe(curr, next, &q->task_list, task_list) {
 		unsigned flags = curr->flags;

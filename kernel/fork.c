@@ -1703,6 +1703,11 @@ long do_fork(unsigned long clone_flags,
 
 		put_pid(pid);
 	} else {
+
+/* IAMROOT-12:
+ * -------------
+ * p에 음수 (-1 ~ -4095까지 에러)가 담긴 case
+ */
 		nr = PTR_ERR(p);
 	}
 	return nr;

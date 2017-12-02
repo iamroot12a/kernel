@@ -18,6 +18,10 @@
 
 #ifndef __ASSEMBLY__
 
+/* IAMROOT-12:
+ * -------------
+ * x가 -4095 ~ -1 까지 에러로 true가 된다.
+ */
 #define IS_ERR_VALUE(x) unlikely((x) >= (unsigned long)-MAX_ERRNO)
 
 static inline void * __must_check ERR_PTR(long error)

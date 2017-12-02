@@ -19,13 +19,28 @@ struct worker_pool;
  *
  * Only to be used in workqueue and async.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * 
+ */
 struct worker {
 	/* on idle list while idle, on busy hash table while busy */
+
+/* IAMROOT-12:
+ * -------------
+ * 워커풀에서 hash로 관리되는 busy 리스트와 하나의 idle 리스트가 있는데 
+ * 아래의 엔트리로 이 곳에 등록되어 사용된다.
+ */
 	union {
 		struct list_head	entry;	/* L: while idle */
 		struct hlist_node	hentry;	/* L: while busy */
 	};
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 처리중인 작업, 함수, 연결되어 있는 풀워크큐
+ */
 	struct work_struct	*current_work;	/* L: work being processed */
 	work_func_t		current_func;	/* L: current_work's fn */
 	struct pool_workqueue	*current_pwq; /* L: current_work's pwq */
@@ -34,6 +49,10 @@ struct worker {
 
 	/* 64 bytes boundary on 64bit, 32 on 32bit */
 
+/* IAMROOT-12:
+ * -------------
+ * 워커에 연결된 태스크, 워커풀
+ */
 	struct task_struct	*task;		/* I: worker task */
 	struct worker_pool	*pool;		/* I: the associated pool */
 						/* L: for rescuers */

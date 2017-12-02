@@ -24,6 +24,10 @@ static DEFINE_SPINLOCK(kthread_create_lock);
 static LIST_HEAD(kthread_create_list);
 struct task_struct *kthreadd_task;
 
+/* IAMROOT-12:
+ * -------------
+ * 커널 스레드 생성 시 사용할 자료 구조
+ */
 struct kthread_create_info
 {
 	/* Information passed to kthread() from kthreadd. */
@@ -32,6 +36,11 @@ struct kthread_create_info
 	int node;
 
 	/* Result passed back to kthread_create() from kthreadd. */
+
+/* IAMROOT-12:
+ * -------------
+ * kthreadd가 만들어준 task_struct *가 결과로 온다.
+ */
 	struct task_struct *result;
 	struct completion *done;
 
@@ -174,6 +183,12 @@ void kthread_parkme(void)
 
 static int kthread(void *_create)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * kthreadd가 만드는 스레드들은 항상 이 함수가 먼저 실행되고,
+ * 요청한 함수가 동작한다.
+ */
 	/* Copy data: it's on kthread's stack */
 	struct kthread_create_info *create = _create;
 	int (*threadfn)(void *data) = create->threadfn;
@@ -195,6 +210,12 @@ static int kthread(void *_create)
 		do_exit(-EINTR);
 	}
 	/* OK, tell user we're spawned, wait for stop or wakeup */
+
+/* IAMROOT-12:
+ * -------------
+ * 만들어진 스레드의 상태를 uninterruptible로 바꾸고 complete하여 
+ * 만들어진 결과를 요청 스레드에 전달한다. 그런 후 sleep 한다.
+ */
 	__set_current_state(TASK_UNINTERRUPTIBLE);
 	create->result = current;
 	complete(done);
@@ -229,6 +250,11 @@ static void create_kthread(struct kthread_create_info *create)
 #endif
 	/* We want our own signal handler (we take no signals by default). */
 	pid = kernel_thread(kthread, create, CLONE_FS | CLONE_FILES | SIGCHLD);
+
+/* IAMROOT-12:
+ * -------------
+ * 에러 처리 (정상인 경우의 completion은 kthread() 함수에서 처리한다.
+ */
 	if (pid < 0) {
 		/* If user was SIGKILLed, I release the structure. */
 		struct completion *done = xchg(&create->done, NULL);
@@ -269,6 +295,10 @@ struct task_struct *kthread_create_on_node(int (*threadfn)(void *data),
 					   const char namefmt[],
 					   ...)
 {
+/* IAMROOT-12:
+ * -------------
+ * completion 구조체를 로컬 스택에 만든다.
+ */
 	DECLARE_COMPLETION_ONSTACK(done);
 	struct task_struct *task;
 	struct kthread_create_info *create = kmalloc(sizeof(*create),
@@ -281,10 +311,18 @@ struct task_struct *kthread_create_on_node(int (*threadfn)(void *data),
 	create->node = node;
 	create->done = &done;
 
+/* IAMROOT-12:
+ * -------------
+ * 요청 사항을 kthread_create_list에 추가한다.
+ */
 	spin_lock(&kthread_create_lock);
 	list_add_tail(&create->list, &kthread_create_list);
 	spin_unlock(&kthread_create_lock);
 
+/* IAMROOT-12:
+ * -------------
+ * kthreadd 태스크를 깨운다.
+ */
 	wake_up_process(kthreadd_task);
 	/*
 	 * Wait for completion in killable state, for I might be chosen by
@@ -307,6 +345,12 @@ struct task_struct *kthread_create_on_node(int (*threadfn)(void *data),
 	}
 	task = create->result;
 	if (!IS_ERR(task)) {
+
+/* IAMROOT-12:
+ * -------------
+ * 커널 스레드 생성 후 normal 태스크를 사용하려는 경우 sched_priority는 항상 
+ * 0번으로 요청해야 한다.
+ */
 		static const struct sched_param param = { .sched_priority = 0 };
 		va_list args;
 
@@ -317,6 +361,13 @@ struct task_struct *kthread_create_on_node(int (*threadfn)(void *data),
 		 * root may have changed our (kthreadd's) priority or CPU mask.
 		 * The kernel thread should not inherit these properties.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * cfs 스케줄러를 사용하는 normal 타입으로 태스를 설정한다.
+ *
+ * 모든 cpu에서 동작하도록 허용한다.
+ */
 		sched_setscheduler_nocheck(task, SCHED_NORMAL, &param);
 		set_cpus_allowed_ptr(task, cpu_all_mask);
 	}
@@ -485,6 +536,12 @@ int kthreadd(void *unused)
 	struct task_struct *tsk = current;
 
 	/* Setup a clean context for our children to inherit. */
+
+/* IAMROOT-12:
+ * -------------
+ * kthreadd는 시그널을 무시하게 설정하고, 모든 cpu와 모든 메모리 노드에서 
+ * 동작 가능하게 설정한다. (freeze되지 않도록)
+ */
 	set_task_comm(tsk, "kthreadd");
 	ignore_signals(tsk);
 	set_cpus_allowed_ptr(tsk, cpu_all_mask);
@@ -493,11 +550,20 @@ int kthreadd(void *unused)
 	current->flags |= PF_NOFREEZE;
 
 	for (;;) {
+
+/* IAMROOT-12:
+ * -------------
+ * 먼저 sleep 한다.
+ */
 		set_current_state(TASK_INTERRUPTIBLE);
 		if (list_empty(&kthread_create_list))
 			schedule();
 		__set_current_state(TASK_RUNNING);
 
+/* IAMROOT-12:
+ * -------------
+ * 리스트에 있는 태스크 생성 요청을 하나씩 수행한다.
+ */
 		spin_lock(&kthread_create_lock);
 		while (!list_empty(&kthread_create_list)) {
 			struct kthread_create_info *create;

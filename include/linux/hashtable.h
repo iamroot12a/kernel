@@ -16,6 +16,12 @@
 	struct hlist_head name[1 << (bits)] =					\
 			{ [0 ... ((1 << (bits)) - 1)] = HLIST_HEAD_INIT }
 
+
+/* IAMROOT-12:
+ * -------------
+ * 예) DECLARE_HASHTABLE(abc, 8)
+ *      -> struct hlist_head abc[256];
+ */
 #define DECLARE_HASHTABLE(name, bits)                                   	\
 	struct hlist_head name[1 << (bits)]
 
