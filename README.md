@@ -603,3 +603,9 @@ page_address_init()
 - 2017.11.25, 토즈 선릉점 (9명, 김민호, 김종철, 문영일, 양유석, 임채훈, 정재준, 조현철, 최영민, 한상종)
 - load_balance()
 - select_task_rq()
+
+### 137주차
+- 2017.12.02, Kosslab (8명, 김민호, 김종철, 문영일, 임채훈, 정재준, 조현철, 최영민, 한상종)
+- wait_for_completion()
+- kernel_thread()
+- init_workqueues() ~
