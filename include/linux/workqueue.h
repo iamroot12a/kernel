@@ -158,6 +158,10 @@ struct execute_work {
 #define __WORK_INIT_LOCKDEP_MAP(n, k)
 #endif
 
+/* IAMROOT-12:
+ * -------------
+ * no-pool & static 조건으로 work를 만든다.
+ */
 #define __WORK_INITIALIZER(n, f) {					\
 	.data = WORK_DATA_STATIC_INIT(),				\
 	.entry	= { &(n).entry, &(n).entry },				\
@@ -172,6 +176,10 @@ struct execute_work {
 				     (tflags) | TIMER_IRQSAFE),		\
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 워크를 컴파일 타임에 생성한다. (할당 및 초기화)
+ */
 #define DECLARE_WORK(n, f)						\
 	struct work_struct n = __WORK_INITIALIZER(n, f)
 
@@ -202,6 +210,11 @@ static inline unsigned int work_static(struct work_struct *work) { return 0; }
  * NOTE! No point in using "atomic_long_set()": using a direct
  * assignment of the work data initializer allows the compiler
  * to generate better code.
+ */
+
+/* IAMROOT-12:
+ * -------------
+ * 워크를 초기화한다. (할당은 이미 되어 있어야한다.)
  */
 #ifdef CONFIG_LOCKDEP
 #define __INIT_WORK(_work, _func, _onstack)				\
@@ -322,6 +335,12 @@ enum {
 };
 
 /* unbound wq's aren't per-cpu, scale max_active according to #cpus */
+
+/* IAMROOT-12:
+ * -------------
+ * unbound용 최대 active 워커 값으로 512 또는 possible cpus * 4개 값 중 
+ * 큰 값으로 결정한다.
+ */
 #define WQ_UNBOUND_MAX_ACTIVE	\
 	max_t(int, WQ_MAX_ACTIVE, num_possible_cpus() * WQ_MAX_UNBOUND_PER_CPU)
 
@@ -469,9 +488,18 @@ extern void print_worker_info(const char *log_lvl, struct task_struct *task);
  * We queue the work to the CPU on which it was submitted, but if the CPU dies
  * it can be processed by another CPU.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * 작업을 워크큐에 의뢰한다.
+ */
 static inline bool queue_work(struct workqueue_struct *wq,
 			      struct work_struct *work)
 {
+/* IAMROOT-12:
+ * -------------
+ * 
+ */
 	return queue_work_on(WORK_CPU_UNBOUND, wq, work);
 }
 

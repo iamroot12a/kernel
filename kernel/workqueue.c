@@ -206,6 +206,12 @@ struct worker_pool {
  * point to the pwq; thus, pwqs need to be aligned at two's power of the
  * number of flag bits.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * 풀워크큐 생성 시 마다 8~9비트 align되어 생성되게 제한되어 있다.
+ */
+
 struct pool_workqueue {
 	struct worker_pool	*pool;		/* I: the associated pool */
 	struct workqueue_struct *wq;		/* I: the owning workqueue */
@@ -680,10 +686,19 @@ static struct worker_pool *get_work_pool(struct work_struct *work)
 
 	assert_rcu_or_pool_mutex();
 
+/* IAMROOT-12:
+ * -------------
+ * data의 WORK_STRUCT_PWQ 비트가 설정된 경우 풀워크큐 포인터를 반환한다.
+ */
 	if (data & WORK_STRUCT_PWQ)
 		return ((struct pool_workqueue *)
 			(data & WORK_STRUCT_WQ_DATA_MASK))->pool;
 
+/* IAMROOT-12:
+ * -------------
+ * pool_id가 저장된 비트를 시프트하여 알아온 후 idr_find로 워커풀 주소를 
+ * 검색하여 찾는다.
+ */
 	pool_id = data >> WORK_OFFQ_POOL_SHIFT;
 	if (pool_id == WORK_OFFQ_POOL_NONE)
 		return NULL;
@@ -1280,6 +1295,10 @@ static void insert_work(struct pool_workqueue *pwq, struct work_struct *work,
 	 */
 	smp_mb();
 
+/* IAMROOT-12:
+ * -------------
+ * 동작중(busy)인 워커가 없는 경우 idle 워커를 wakeup한다.
+ */
 	if (__need_more_worker(pool))
 		wake_up_worker(pool);
 }
@@ -1328,6 +1347,12 @@ retry:
 		cpu = raw_smp_processor_id();
 
 	/* pwq which will be used unless @work is executing elsewhere */
+
+/* IAMROOT-12:
+ * -------------
+ * 바운드용 풀워크큐는 wq->cpu_pwqs를 사용하고 
+ * 언바운드용은 numa_pwq_tbl[]을 사용한다.
+ */
 	if (!(wq->flags & WQ_UNBOUND))
 		pwq = per_cpu_ptr(wq->cpu_pwqs, cpu);
 	else
@@ -1338,10 +1363,26 @@ retry:
 	 * running there, in which case the work needs to be queued on that
 	 * pool to guarantee non-reentrancy.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 전에 처리했었던 적이 있으면 워커풀을 알아온다.
+ * (워크 자료 구조는 삭제되지 않고 계속 재활용 되며 work->data 멤버를 
+ * 사용하여 워커풀 id 또는 워커풀 주소를 저장해둘 수 있다)
+ */
 	last_pool = get_work_pool(work);
 	if (last_pool && last_pool != pwq->pool) {
 		struct worker *worker;
 
+/* IAMROOT-12:
+ * -------------
+ * 전에 사용한 워커풀이 아닌 경우는 마지막 처리하였었던 워커를 알아오고 
+ * 워커가 현재 사용중인 풀워크큐의 워크큐가 요청한 워크큐와 동일한 경우 
+ * 워커의 현재 풀워크큐를 알아온다. (동일작업이 계속된 경우이다)
+ *
+ * 동일 작업은 동시에 수행되지 않도록 하였다.
+ * (같은 작업이 현재 현재 돌고 있으면 그 cpu 워커풀을 선택한다)
+ */
 		spin_lock(&last_pool->lock);
 
 		worker = find_worker_executing_work(last_pool, work);
@@ -1365,6 +1406,12 @@ retry:
 	 * work items are executing on it, so the retrying is guaranteed to
 	 * make forward-progress.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 풀워크큐의 참조 카운터가 0이되어 사용하지 못하는경우에 다시 한 번 
+ * pwq를 찾도록 시도한다.
+ */
 	if (unlikely(!pwq->refcnt)) {
 		if (wq->flags & WQ_UNBOUND) {
 			spin_unlock(&pwq->pool->lock);
@@ -1384,9 +1431,22 @@ retry:
 		return;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 풀워크에서 현재 work_color로 접수된 워크의 수를 증가시킨다.
+ * (워커가 처리하면 감소시킨다)
+ */
 	pwq->nr_in_flight[pwq->work_color]++;
 	work_flags = work_color_to_flags(pwq->work_color);
 
+/* IAMROOT-12:
+ * -------------
+ * 풀워크큐별로 제한된 최대 동시 처리 수에 다다르면 작업을 풀워크큐의 
+ * 대기 리스트에 추가한다. 
+ *
+ * 정상적으로 제한 범위 내에 도달하지 않은 경우에는 워커풀의 작업 대기 리스트에 
+ * 추가한다.
+ */
 	if (likely(pwq->nr_active < pwq->max_active)) {
 		trace_workqueue_activate_work(work);
 		pwq->nr_active++;
@@ -1418,6 +1478,10 @@ bool queue_work_on(int cpu, struct workqueue_struct *wq,
 	bool ret = false;
 	unsigned long flags;
 
+/* IAMROOT-12:
+ * -------------
+ * cpu 인수에 NR_CPUS가 주어지면 어떠한 cpu를 사용해도 상관이 없다는 뜻이다.
+ */
 	local_irq_save(flags);
 
 	if (!test_and_set_bit(WORK_STRUCT_PENDING_BIT, work_data_bits(work))) {
@@ -1430,6 +1494,12 @@ bool queue_work_on(int cpu, struct workqueue_struct *wq,
 }
 EXPORT_SYMBOL(queue_work_on);
 
+/* IAMROOT-12:
+ * -------------
+ * delayed work를 처리하는 타이머에 의해 호출된다.
+ *
+ * 인수 전달 받은 데이터를 워크큐에 요청한다.
+ */
 void delayed_work_timer_fn(unsigned long __data)
 {
 	struct delayed_work *dwork = (struct delayed_work *)__data;
@@ -1811,6 +1881,13 @@ static void destroy_worker(struct worker *worker)
 	wake_up_process(worker->task);
 }
 
+
+/* IAMROOT-12:
+ * -------------
+ * 워커가 너무 많다고 판단하면 워커스레드를 줄인다.
+ * 줄이는 비율은 2개의 기본 idle 워커스레드를 제외한 idle 워커 스레드가 
+ * 전체 busy 워커스레드의 25% 이내가 될 때까지 줄인다.
+ */
 static void idle_worker_timeout(unsigned long __pool)
 {
 	struct worker_pool *pool = (void *)__pool;
@@ -2177,6 +2254,11 @@ recheck:
 		goto sleep;
 
 	/* do we need to manage? */
+
+/* IAMROOT-12:
+ * -------------
+ * idle 워커가 없는 경우 워커를 생성한다.
+ */
 	if (unlikely(!may_start_working(pool)) && manage_workers(worker))
 		goto recheck;
 
@@ -3582,6 +3664,11 @@ static struct worker_pool *get_unbound_pool(const struct workqueue_attrs *attrs)
 	lockdep_assert_held(&wq_pool_mutex);
 
 	/* do we already have a matching pool? */
+
+/* IAMROOT-12:
+ * -------------
+ * 같은 속성을 가진 워커풀이 이미 있는 경우 이를 그대로 이용한다.
+ */
 	hash_for_each_possible(unbound_pool_hash, pool, hash_node, hash) {
 		if (wqattrs_equal(pool->attrs, attrs)) {
 			pool->refcnt++;
@@ -3590,6 +3677,11 @@ static struct worker_pool *get_unbound_pool(const struct workqueue_attrs *attrs)
 	}
 
 	/* nope, create a new one */
+
+/* IAMROOT-12:
+ * -------------
+ * 아직 언바운드용 워커풀이 없는 경우 워커풀을 할당하고 초기화한다.
+ */
 	pool = kzalloc(sizeof(*pool), GFP_KERNEL);
 	if (!pool || init_worker_pool(pool) < 0)
 		goto fail;
@@ -3614,6 +3706,10 @@ static struct worker_pool *get_unbound_pool(const struct workqueue_attrs *attrs)
 		}
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 워커풀 id를 부여한다.
+ */
 	if (worker_pool_assign_id(pool) < 0)
 		goto fail;
 
@@ -3749,6 +3845,12 @@ static void link_pwq(struct pool_workqueue *pwq)
 		return;
 
 	/* set the matching work_color */
+
+/* IAMROOT-12:
+ * -------------
+ * 워크큐에 있는 work color 번호를 풀워크큐에 연동한다.
+ * (워크큐를 flush할 때마다 증가되는 번호이다.)
+ */
 	pwq->work_color = wq->work_color;
 
 	/* sync max_active to the current setting */
@@ -3767,6 +3869,10 @@ static struct pool_workqueue *alloc_unbound_pwq(struct workqueue_struct *wq,
 
 	lockdep_assert_held(&wq_pool_mutex);
 
+/* IAMROOT-12:
+ * -------------
+ * 속성이 같은 언바운드 워커풀을 알아온다. 없는 경우 새로 생성한다.
+ */
 	pool = get_unbound_pool(attrs);
 	if (!pool)
 		return NULL;
@@ -3777,6 +3883,10 @@ static struct pool_workqueue *alloc_unbound_pwq(struct workqueue_struct *wq,
 		return NULL;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * 워크큐에 언바운드용 풀워크큐를 초기화한다.
+ */
 	init_pwq(pwq, wq, pool);
 	return pwq;
 }
@@ -3916,6 +4026,11 @@ int apply_workqueue_attrs(struct workqueue_struct *wq,
 	 * the default pwq covering whole @attrs->cpumask.  Always create
 	 * it even if we don't use it immediately.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * unbound용 풀워크큐를 할당한다.
+ */
 	dfl_pwq = alloc_unbound_pwq(wq, new_attrs);
 	if (!dfl_pwq)
 		goto enomem_pwq;
@@ -4074,6 +4189,12 @@ static int alloc_and_link_pwqs(struct workqueue_struct *wq)
 	bool highpri = wq->flags & WQ_HIGHPRI;
 	int cpu, ret;
 
+
+/* IAMROOT-12:
+ * -------------
+ * 언바운드용 워크큐가 아닌 경우에는 모두 cpu에 bound된 워커풀과 연동하기 
+ * 위해 풀워크큐를 할당하고 연결한다.
+ */
 	if (!(wq->flags & WQ_UNBOUND)) {
 		wq->cpu_pwqs = alloc_percpu(struct pool_workqueue);
 		if (!wq->cpu_pwqs)
@@ -4128,6 +4249,11 @@ struct workqueue_struct *__alloc_workqueue_key(const char *fmt,
 	struct pool_workqueue *pwq;
 
 	/* see the comment above the definition of WQ_POWER_EFFICIENT */
+
+/* IAMROOT-12:
+ * -------------
+ * 절전에 사용되는 워크큐를 만들 때에는 cpu와 관계없는 unbound용으로 만든다.
+ */
 	if ((flags & WQ_POWER_EFFICIENT) && wq_power_efficient)
 		flags |= WQ_UNBOUND;
 
@@ -4135,6 +4261,10 @@ struct workqueue_struct *__alloc_workqueue_key(const char *fmt,
 	if (flags & WQ_UNBOUND)
 		tbl_size = nr_node_ids * sizeof(wq->numa_pwq_tbl[0]);
 
+/* IAMROOT-12:
+ * -------------
+ * 워크큐 구조체를 할당한다.
+ */
 	wq = kzalloc(sizeof(*wq) + tbl_size, GFP_KERNEL);
 	if (!wq)
 		return NULL;
