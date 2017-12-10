@@ -609,3 +609,8 @@ page_address_init()
 - wait_for_completion()
 - kernel_thread()
 - init_workqueues() ~
+
+### 138주차
+- 2017.12.09, 토즈 선릉점 (9명, 김민호, 김종철, 문영일, 양유석, 윤창호, 정재준, 조현철, 최영민, 한상종)
+- init_workqueues()
+- queue_work()
