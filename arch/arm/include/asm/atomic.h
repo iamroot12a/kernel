@@ -231,6 +231,16 @@ ATOMIC_OPS(sub, -=, sub)
 #define atomic_inc(v)		atomic_add(1, v)
 #define atomic_dec(v)		atomic_sub(1, v)
 
+/* IAMROOT-12:
+ * -------------
+ * 증가시킨 후 0이면 true
+ */
+#define atomic_inc_and_test(v)	(atomic_add_return(1, v) == 0)
+
+/* IAMROOT-12:
+ * -------------
+ * 감소시킨 후 0이면 true
+ */
 #define atomic_inc_and_test(v)	(atomic_add_return(1, v) == 0)
 #define atomic_dec_and_test(v)	(atomic_sub_return(1, v) == 0)
 #define atomic_inc_return(v)    (atomic_add_return(1, v))

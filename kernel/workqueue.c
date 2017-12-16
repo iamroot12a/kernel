@@ -591,6 +591,11 @@ static int get_work_color(struct work_struct *work)
 
 static int work_next_color(int color)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 다음 color 번호 & 0xf(컬러 비트가 4개인 경우)를 반환한다.
+ */
 	return (color + 1) % WORK_NR_COLORS;
 }
 
@@ -2564,6 +2569,11 @@ static bool flush_workqueue_prep_pwqs(struct workqueue_struct *wq,
 		if (flush_color >= 0) {
 			WARN_ON_ONCE(pwq->flush_color != -1);
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 flush_color에서 아직 처리되지 않은 워크들이 있는 경우 wait=true가 
+ * 된다.
+ */
 			if (pwq->nr_in_flight[flush_color]) {
 				pwq->flush_color = flush_color;
 				atomic_inc(&wq->nr_pwqs_to_flush);
@@ -2579,6 +2589,10 @@ static bool flush_workqueue_prep_pwqs(struct workqueue_struct *wq,
 		spin_unlock_irq(&pool->lock);
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * nr_pwqs_to_flush를 감소시켜 0이된 경우 done을 complete 처리한다.
+ */
 	if (flush_color >= 0 && atomic_dec_and_test(&wq->nr_pwqs_to_flush))
 		complete(&wq->first_flusher->done);
 
@@ -2609,6 +2623,12 @@ void flush_workqueue(struct workqueue_struct *wq)
 	/*
 	 * Start-to-wait phase
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 워크들이 처리될 다음 work_color 번호를 발급한다.
+ * work_color는 플러쉬될 때마다 증가되고 회전한다.
+ */
 	next_color = work_next_color(wq->work_color);
 
 	if (next_color != wq->flush_color) {
@@ -2617,7 +2637,19 @@ void flush_workqueue(struct workqueue_struct *wq)
 		 * becomes our flush_color and work_color is advanced
 		 * by one.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * 정상적으로 work_color가 현재 처리중인 flush_color와 다른 경우(not overflow)
+ */
 		WARN_ON_ONCE(!list_empty(&wq->flusher_overflow));
+
+/* IAMROOT-12:
+ * -------------
+ * 현재 사용하던 work_color를 flush_color로 사용한다.
+ * 그리고 워크큐의 work_color는 새로 증가시킨 next_color 값을 사용한다.
+ * (새로 진입하는 워크들의 분류는 wq->work_color로 결정된다)
+ */
 		this_flusher.flush_color = wq->work_color;
 		wq->work_color = next_color;
 
@@ -2625,8 +2657,17 @@ void flush_workqueue(struct workqueue_struct *wq)
 			/* no flush in progress, become the first flusher */
 			WARN_ON_ONCE(wq->flush_color != this_flusher.flush_color);
 
+/* IAMROOT-12:
+ * -------------
+ * 그 전에 flush를 하는 중이 아니면 this_flusher를 wq->first_flusher로 
+ * 선정한다.
+ */
 			wq->first_flusher = &this_flusher;
 
+/* IAMROOT-12:
+ * -------------
+ * 풀워크큐에 처리해야 할 워크가 더 이상 없는 경우이다.
+ */
 			if (!flush_workqueue_prep_pwqs(wq, wq->flush_color,
 						       wq->work_color)) {
 				/* nothing to flush, done */
@@ -2637,6 +2678,12 @@ void flush_workqueue(struct workqueue_struct *wq)
 		} else {
 			/* wait in queue */
 			WARN_ON_ONCE(wq->flush_color == this_flusher.flush_color);
+
+/* IAMROOT-12:
+ * -------------
+ * this_flusher를 워크큐의 flusher_queue 리스트에 추가한다.
+ * (단 풀워크큐의 work_color를 새 work_color로 갱신한다.
+ */
 			list_add_tail(&this_flusher.list, &wq->flusher_queue);
 			flush_workqueue_prep_pwqs(wq, -1, wq->work_color);
 		}
@@ -2651,6 +2698,10 @@ void flush_workqueue(struct workqueue_struct *wq)
 
 	mutex_unlock(&wq->mutex);
 
+/* IAMROOT-12:
+ * -------------
+ * flush가 완료될 때까지 기다린다.
+ */
 	wait_for_completion(&this_flusher.done);
 
 	/*
@@ -2662,6 +2713,10 @@ void flush_workqueue(struct workqueue_struct *wq)
 	if (wq->first_flusher != &this_flusher)
 		return;
 
+/* IAMROOT-12:
+ * -------------
+ * first flush의 작업이 끝난 경우에만 아래 로직을 수행한다.
+ */
 	mutex_lock(&wq->mutex);
 
 	/* we might have raced, check again with mutex held */
@@ -2677,6 +2732,11 @@ void flush_workqueue(struct workqueue_struct *wq)
 		struct wq_flusher *next, *tmp;
 
 		/* complete all the flushers sharing the current flush color */
+
+/* IAMROOT-12:
+ * -------------
+ * 완료된 flush_color를 가진 플러셔들을 모두 풀어준다.
+ */
 		list_for_each_entry_safe(next, tmp, &wq->flusher_queue, list) {
 			if (next->flush_color != wq->flush_color)
 				break;
@@ -2688,6 +2748,11 @@ void flush_workqueue(struct workqueue_struct *wq)
 			     wq->flush_color != work_next_color(wq->work_color));
 
 		/* this flush_color is finished, advance by one */
+
+/* IAMROOT-12:
+ * -------------
+ * 다음 flush_color를 발급받는다.
+ */
 		wq->flush_color = work_next_color(wq->flush_color);
 
 		/* one color has been freed, handle overflow queue */
@@ -2720,6 +2785,10 @@ void flush_workqueue(struct workqueue_struct *wq)
 		WARN_ON_ONCE(wq->flush_color == wq->work_color);
 		WARN_ON_ONCE(wq->flush_color != next->flush_color);
 
+/* IAMROOT-12:
+ * -------------
+ * 리스트에서 대기 중인 다음 flush를 first_flush로 선정한다.
+ */
 		list_del_init(&next->list);
 		wq->first_flusher = next;
 
@@ -2759,11 +2828,17 @@ void drain_workqueue(struct workqueue_struct *wq)
 	 * hotter than drain_workqueue() and already looks at @wq->flags.
 	 * Use __WQ_DRAINING so that queue doesn't have to check nr_drainers.
 	 */
+
 	mutex_lock(&wq->mutex);
 	if (!wq->nr_drainers++)
 		wq->flags |= __WQ_DRAINING;
 	mutex_unlock(&wq->mutex);
 reflush:
+
+/* IAMROOT-12:
+ * -------------
+ * 워크큐를 비운다.
+ */
 	flush_workqueue(wq);
 
 	mutex_lock(&wq->mutex);
