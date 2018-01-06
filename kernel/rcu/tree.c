@@ -3799,6 +3799,10 @@ static void __init rcu_init_one(struct rcu_state *rsp,
 
 	/* Initialize the elements themselves, starting from the leaves. */
 
+/* IAMROOT-12:
+ * -------------
+ * state에 있는 각 rcu 노드들을 레벨별로 초기화한다.
+ */
 	for (i = rcu_num_lvls - 1; i >= 0; i--) {
 		cpustride *= rsp->levelspread[i];
 		rnp = rsp->level[i];
@@ -3842,6 +3846,11 @@ static void __init rcu_init_one(struct rcu_state *rsp,
 		per_cpu_ptr(rsp->rda, i)->mynode = rnp;
 		rcu_boot_init_percpu_data(i, rsp);
 	}
+
+/* IAMROOT-12:
+ * -------------
+ * rcu_struct_flavors 리스트에 초기화가 완료된 rcu_state를 추가한다.
+ */
 	list_add(&rsp->flavors, &rcu_struct_flavors);
 }
 
@@ -3865,6 +3874,12 @@ static void __init rcu_init_geometry(void)
 	 * value, which is a function of HZ, then adding one for each
 	 * RCU_JIFFIES_FQS_DIV CPUs that might be on the system.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 100HZ=1 부터 시작하고, 1000HZ=3부터 시작하되 cpu가 256대 이상일 때 마다 
+ * 1씩 추가된다.
+ */
 	d = RCU_JIFFIES_TILL_FORCE_QS + nr_cpu_ids / RCU_JIFFIES_FQS_DIV;
 	if (jiffies_till_first_fqs == ULONG_MAX)
 		jiffies_till_first_fqs = d;
@@ -3872,6 +3887,12 @@ static void __init rcu_init_geometry(void)
 		jiffies_till_next_fqs = d;
 
 	/* If the compile-time values are accurate, just leave. */
+
+/* IAMROOT-12:
+ * -------------
+ * online cpu 수와 커널이 빌드되었을 때 당시의 cpu 수가 동일하고, 
+ * 관리 leaf 수도 동일하면 geometry(rcu 관리 자료 구조)를 변경할 필요가 없다.
+ */
 	if (rcu_fanout_leaf == CONFIG_RCU_FANOUT_LEAF &&
 	    nr_cpu_ids == NR_CPUS)
 		return;
@@ -3883,6 +3904,16 @@ static void __init rcu_init_geometry(void)
 	 * with the given number of levels.  Setting rcu_capacity[0] makes
 	 * some of the arithmetic easier.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 48개 arm cpu 기준:
+ *	rcu_capacity[0]=1
+ *	rcu_capacity[1]=16
+ *	rcu_capacity[2]=16 x 32
+ *	rcu_capacity[3]=16 x 32 x 32
+ *	rcu_capacity[4]=16 x 32 x 32 x 32
+ */
 	rcu_capacity[0] = 1;
 	rcu_capacity[1] = rcu_fanout_leaf;
 	for (i = 2; i <= MAX_RCU_LVLS; i++)
@@ -3904,6 +3935,18 @@ static void __init rcu_init_geometry(void)
 	}
 
 	/* Calculate the number of rcu_nodes at each level of the tree. */
+
+/* IAMROOT-12:
+ * ------------- 
+ * 48개 online 기준으로 geometry를 구성한다.
+ *
+ * rcu_num_lvls=2
+ * num_rcu_lvl[0]=1
+ * num_rcu_lvl[1]=3
+ * num_rcu_lvl[2]=48
+ * num_rcu_lvl[3]=0
+ * num_rcu_lvl[4]=0
+ */
 	for (i = 1; i <= MAX_RCU_LVLS; i++)
 		if (n <= rcu_capacity[i]) {
 			for (j = 0; j <= i; j++)
@@ -3915,6 +3958,10 @@ static void __init rcu_init_geometry(void)
 			break;
 		}
 
+/* IAMROOT-12:
+ * -------------
+ * rcu 구성에 필요한 노드 수는 4이다. (leaf는 제외)
+ */
 	/* Calculate the total number of rcu_node structures. */
 	rcu_num_nodes = 0;
 	for (i = 0; i <= MAX_RCU_LVLS; i++)
@@ -3927,7 +3974,27 @@ void __init rcu_init(void)
 	int cpu;
 
 	rcu_bootup_announce();
+
+/* IAMROOT-12:
+ * ------------- 
+ * 예) 48개 online 기준으로 geometry를 구성한다.
+ *
+ * rcu_num_lvls=2
+ * num_rcu_lvl[0]=1
+ * num_rcu_lvl[1]=3
+ * num_rcu_lvl[2]=48
+ * num_rcu_lvl[3]=0
+ * num_rcu_lvl[4]=0
+
+ * rcu 구성에 필요한 노드 수는 4이다. (leaf는 제외)
+ * rcu_num_nodes=1+3+48-n(48)=4
+ */
 	rcu_init_geometry();
+
+/* IAMROOT-12:
+ * -------------
+ * 산출된 노드 구성 수를 사용하여 3가지 rcu_state를 구성한다.
+ */
 	rcu_init_one(&rcu_bh_state, &rcu_bh_data);
 	rcu_init_one(&rcu_sched_state, &rcu_sched_data);
 	__rcu_init_preempt();

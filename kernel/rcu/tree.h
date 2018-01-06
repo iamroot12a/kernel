@@ -35,12 +35,29 @@
  * In practice, this did work well going from three levels to four.
  * Of course, your mileage may vary.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * default 설정 값: (rpi2 기준)
+ * RCU_FANOUT_1: 16
+ * RCU_FANOUT_2: 16 x 32 
+ * RCU_FANOUT_3: 16 x 32 x 32 
+ * RCU_FANOUT_4: 16 x 32 x 32 x 32
+ */
 #define MAX_RCU_LVLS 4
 #define RCU_FANOUT_1	      (CONFIG_RCU_FANOUT_LEAF)
 #define RCU_FANOUT_2	      (RCU_FANOUT_1 * CONFIG_RCU_FANOUT)
 #define RCU_FANOUT_3	      (RCU_FANOUT_2 * CONFIG_RCU_FANOUT)
 #define RCU_FANOUT_4	      (RCU_FANOUT_3 * CONFIG_RCU_FANOUT)
 
+/* IAMROOT-12:
+ * -------------
+ * NR_CPUS=48인 경우 예:
+ *      RCU_NUM_LVLS=2 
+ *      NUM_RCU_LVL_0=1
+ *      NUM_RCU_LVL_1=3
+ *      NUM_RCU_LVL_2=48
+ */
 #if NR_CPUS <= RCU_FANOUT_1
 #  define RCU_NUM_LVLS	      1
 #  define NUM_RCU_LVL_0	      1
@@ -379,6 +396,13 @@ struct rcu_data {
 #define RCU_NOGP_WAKE		1
 #define RCU_NOGP_WAKE_FORCE	2
 
+/* IAMROOT-12:
+ * -------------
+ * HZ=100 
+ *      RCU_JIFFIES_TILL_FORCE_QS=1
+ * HZ=1000 
+ *      RCU_JIFFIES_TILL_FORCE_QS=3
+ */
 #define RCU_JIFFIES_TILL_FORCE_QS (1 + (HZ > 250) + (HZ > 500))
 					/* For jiffies_till_first_fqs and */
 					/*  and jiffies_till_next_fqs. */
