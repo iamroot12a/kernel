@@ -535,6 +535,11 @@ static void rcu_preempt_check_callbacks(void)
 {
 	struct task_struct *t = current;
 
+
+/* IAMROOT-12:
+ * -------------
+ * rcu read critical section이 아닌 경우 rcu_preempt_qs() 호출
+ */
 	if (t->rcu_read_lock_nesting == 0) {
 		rcu_preempt_qs();
 		return;
@@ -1786,6 +1791,11 @@ static void increment_cpu_stall_ticks(void)
 {
 	struct rcu_state *rsp;
 
+/* IAMROOT-12:
+ * -------------
+ * 등록된 rcu_state 들(2~3개)을 순회하며 현재 cpu의 ticks_this_gp를 1 증가
+ * 시킨다.
+ */
 	for_each_rcu_flavor(rsp)
 		raw_cpu_inc(rsp->rda->ticks_this_gp);
 }

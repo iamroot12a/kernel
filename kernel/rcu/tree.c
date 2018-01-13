@@ -177,6 +177,29 @@ unsigned long rcutorture_vernum;
  * permit this function to be invoked without holding the root rcu_node
  * structure's ->lock, but of course results can be subject to change.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * gpnum은 gp가 시작될 때 증가되는 숫자이다.
+ *      예) 100, 101, 102, 103, 104, ....
+ *
+ * completed는 gp가 끝날 때 gpnum과 같아진다.
+ *      예) gpnum에 뒤따라서 같이 증가한다.
+ *
+ * 두 개의 숫자 관계는 다음 두 개 중 하나이다.
+ * gpnum == completed 일 때도 있고, 
+ * gpnum == completed + 1일 때도 있다.
+ *
+ *
+ *           gp start       gp end	    gp start
+ * time  --------+-------------+---------------+----->
+ *               |             |               |
+ *               <----------------------------->
+ *                          gpnum=100  
+ *               <-------------<--------------->
+ *    completed:        99            100 
+ *
+ */
 static int rcu_gp_in_progress(struct rcu_state *rsp)
 {
 	return ACCESS_ONCE(rsp->completed) != ACCESS_ONCE(rsp->gpnum);
@@ -497,6 +520,14 @@ EXPORT_SYMBOL_GPL(rcu_sched_force_quiescent_state);
 static int
 cpu_has_callbacks_ready_to_invoke(struct rcu_data *rdp)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 콜백 엔트리가 하나라도 등록되면 아래 첫 번째 조건을 만족시킨다.
+ *
+ * rdp->nxttail[0]에 null이 들어있는 경우는 no-cb 커널 옵션을 사용하는 
+ * cpu이다. 이 경우 이것을 사용하지 않는다.
+ */
 	return &rdp->nxtlist != rdp->nxttail[RCU_DONE_TAIL] &&
 	       rdp->nxttail[RCU_DONE_TAIL] != NULL;
 }
@@ -516,7 +547,17 @@ static struct rcu_node *rcu_get_root(struct rcu_state *rsp)
  */
 static int rcu_future_needs_gp(struct rcu_state *rsp)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 루트노드에 need_future_gp 값이 설정되어 있는 경우 새로운 gp를 요청하는 것이다.
+ */
 	struct rcu_node *rnp = rcu_get_root(rsp);
+
+/* IAMROOT-12:
+ * -------------
+ * lockless하게 need_future_gp 값을 알아온다. (홀짝 인덱스를 사용)
+ */
 	int idx = (ACCESS_ONCE(rnp->completed) + 1) & 0x1;
 	int *fp = &rnp->need_future_gp[idx];
 
@@ -533,14 +574,41 @@ cpu_needs_another_gp(struct rcu_state *rsp, struct rcu_data *rdp)
 {
 	int i;
 
+/* IAMROOT-12:
+ * -------------
+ * gp가 이미 진행중인 경우 0을 반환한다.
+ */
 	if (rcu_gp_in_progress(rsp))
 		return 0;  /* No, a grace period is already in progress. */
+
+/* IAMROOT-12:
+ * -------------
+ * no-cb를 사용하는 cpu가 새로운 gp가 필요한지 여부를 알아온다.
+ */
 	if (rcu_future_needs_gp(rsp))
 		return 1;  /* Yes, a no-CBs CPU needs one. */
+
+/* IAMROOT-12:
+ * -------------
+ * no-cb를 사용하는 경우이면 0으로 반환하고 더 이상 아래 루틴으로 가지 않는다.
+ */
 	if (!rdp->nxttail[RCU_NEXT_TAIL])
 		return 0;  /* No, this is a no-CBs (or offline) CPU. */
+
+/* IAMROOT-12:
+ * -------------
+ * next 구간에 등록되어 있는 콜백이 있는 경우 1을 반환한다.
+ */
 	if (*rdp->nxttail[RCU_NEXT_READY_TAIL])
 		return 1;  /* Yes, this CPU has newly registered callbacks. */
+
+/* IAMROOT-12:
+ * -------------
+ * wait 또는 next_ready 두 구간을 순회한다. 
+ *    각 구간에 콜백이 있으면서 rsp->completed < rdp->nxtcompleted[i]
+ * (다음 또는 다다음 gp 완료 후 처리할 콜백이 있는 경우 1을 반환한다.)
+ *                                   100                     100            101
+ */
 	for (i = RCU_WAIT_TAIL; i < RCU_NEXT_TAIL; i++)
 		if (rdp->nxttail[i - 1] != rdp->nxttail[i] &&
 		    ULONG_CMP_LT(ACCESS_ONCE(rsp->completed),
@@ -2524,7 +2592,25 @@ static void rcu_do_batch(struct rcu_state *rsp, struct rcu_data *rdp)
 void rcu_check_callbacks(int user)
 {
 	trace_rcu_utilization(TPS("Start scheduler-tick"));
+
+/* IAMROOT-12:
+ * -------------
+ * 등록된 rcu_state 들(2~3개)을 순회하며 현재 cpu의 ticks_this_gp를 1 증가
+ * 시킨다.
+ */
 	increment_cpu_stall_ticks();
+
+/* IAMROOT-12:
+ * -------------
+ * quiesecent state가 pass되는 3가지 조건이 있다.
+ *
+ * 1) user 태스크가 수행되는 중에 스케쥴(인터럽트) tick이 진입된 경우 
+ *    user=1이 된다.
+ *
+ * 2) cpu가 nohz idle 상태에서 인터럽트 처음(not-nest) 발생한 경우 
+ *
+ * 3) 세번째 case는 rcu_note_context_switch() 함수에서 발생한다.
+ */
 	if (user || rcu_is_cpu_rrupt_from_idle()) {
 
 		/*
@@ -2553,9 +2639,25 @@ void rcu_check_callbacks(int user)
 
 		rcu_bh_qs();
 	}
+
+/* IAMROOT-12:
+ * -------------
+ * rcu_preempt_qs()와 관련된다.
+ */
 	rcu_preempt_check_callbacks();
+
+/* IAMROOT-12:
+ * -------------
+ * rcu에 처리 할 일이 있는 경우 rcu core 루틴으로 이동한다.
+ */
 	if (rcu_pending())
 		invoke_rcu_core();
+
+/* IAMROOT-12:
+ * -------------
+ * user 태스크 수행 중 진입한 경우 rcu_all_qs() 함수를 호출하여 rcu_qs_ctr을 
+ * 증가시킨다.
+ */
 	if (user)
 		rcu_note_voluntary_context_switch(current);
 	trace_rcu_utilization(TPS("End scheduler-tick"));
@@ -3241,6 +3343,13 @@ static int __rcu_pending(struct rcu_state *rsp, struct rcu_data *rdp)
 	rdp->n_rcu_pending++;
 
 	/* Check for CPU stalls, if enabled. */
+
+/* IAMROOT-12:
+ * -------------
+ * gp가 오랫동안 완료되지 않은 경우에 한해 체크한다.
+ * cpu stall 상태가 체크되면 warning 메시지를 출력한다. 
+ *	(CONFIG_RCU_STALL_COMMON 커널 옵션을 사용한다.)
+ */
 	check_cpu_stall(rsp, rdp);
 
 	/* Is this CPU a NO_HZ_FULL CPU that should ignore RCU? */
@@ -3248,6 +3357,13 @@ static int __rcu_pending(struct rcu_state *rsp, struct rcu_data *rdp)
 		return 0;
 
 	/* Is the RCU core waiting for a quiescent state from this CPU? */
+
+/* IAMROOT-12:
+ * -------------
+ * 1) 현재 cpu에 대한 QS 보고 
+ *
+ * 현재 cpu가 qs를 보고해야할 타이밍이라면 1을 반환한다.
+ */
 	if (rcu_scheduler_fully_active &&
 	    rdp->qs_pending && !rdp->passed_quiesce &&
 	    rdp->rcu_qs_ctr_snap == __this_cpu_read(rcu_qs_ctr)) {
@@ -3260,6 +3376,13 @@ static int __rcu_pending(struct rcu_state *rsp, struct rcu_data *rdp)
 	}
 
 	/* Does this CPU have callbacks ready to invoke? */
+
+/* IAMROOT-12:
+ * -------------
+ * 2) 현재 cpu에 처리할 콜백이 있는 경우 
+ *
+ * RCU no-cb가 아니고 콜백 엔트리가 하나라도 등록되어 있는 경우 1을 반환한다.
+ */
 	if (cpu_has_callbacks_ready_to_invoke(rdp)) {
 		rdp->n_rp_cb_ready++;
 		return 1;

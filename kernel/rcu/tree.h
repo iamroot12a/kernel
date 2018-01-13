@@ -255,6 +255,11 @@ struct rcu_node {
 	     (rnp) < &(rsp)->node[rcu_num_nodes]; (rnp)++)
 
 /* Index values for nxttail array in struct rcu_data. */
+
+/* IAMROOT-12:
+ * -------------
+ * rcu 콜백이 4개의 구역으로 한 개의 리스트에서 관리된다.
+ */
 #define RCU_DONE_TAIL		0	/* Also RCU_WAIT head. */
 #define RCU_WAIT_TAIL		1	/* Also RCU_NEXT_READY head. */
 #define RCU_NEXT_READY_TAIL	2	/* Also RCU_NEXT head. */
@@ -306,6 +311,26 @@ struct rcu_data {
 	 *	Note that the value of *nxttail[RCU_NEXT_TAIL] will
 	 *	always be NULL, as this is the end of the list.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 콜백들은 4개의 구간으로 관리된다.
+ *
+ * 1) done 구간:
+ *      - 콜백들이 completed 번호보다 작거나 같다.
+ *      - rcu_process_callbacks()에서 처리될 구간이다. 처리가 되면 비어있게 
+ *        되는데, blimit에 의해 콜백들이 다 처리되지 못하고 일시적으로 남아
+ *        있을 수 있다.
+ *
+ * 2) wait 구간: 
+ *      - gp가 끝나길 기다리는 콜백들이 있는 구간이다.
+ *
+ * 3) next-ready 구간:
+ *      - 현재 gp가 진행중에 진입된 콜백들은 이 gp가 끝나고, 다음 gp까지 
+ *        끝나야 처리될 수 있는 콜백들이다.
+ * 4) next 구간: 
+ *      - gp가 끝난 후에 진입한 콜백들이 있는 구간 
+ */
 	struct rcu_head *nxtlist;
 	struct rcu_head **nxttail[RCU_NEXT_SIZE];
 	unsigned long	nxtcompleted[RCU_NEXT_SIZE];
