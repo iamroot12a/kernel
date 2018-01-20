@@ -210,6 +210,11 @@ static void __rcu_process_callbacks(struct rcu_ctrlblk *rcp)
 				      false));
 }
 
+
+/* IAMROOT-12:
+ * -------------
+ * RCU_SOFTIRQ의 시작 함수이다.
+ */
 static void rcu_process_callbacks(struct softirq_action *unused)
 {
 	__rcu_process_callbacks(&rcu_sched_ctrlblk);

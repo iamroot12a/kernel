@@ -544,10 +544,20 @@ struct rcu_state {
 };
 
 /* Values for rcu_state structure's gp_flags field. */
+
+/* IAMROOT-12:
+ * -------------
+ * gp 시작 요청과 & gp 강제 종료 요청
+ */
 #define RCU_GP_FLAG_INIT 0x1	/* Need grace-period initialization. */
 #define RCU_GP_FLAG_FQS  0x2	/* Need grace-period quiescent-state forcing. */
 
 /* Values for rcu_state structure's gp_flags field. */
+
+/* IAMROOT-12:
+ * -------------
+ * gp 커널 스레드의 현재 gp 상태 (gp_state)
+ */
 #define RCU_GP_WAIT_INIT 0	/* Initial state. */
 #define RCU_GP_WAIT_GPS  1	/* Wait for grace-period start. */
 #define RCU_GP_WAIT_FQS  2	/* Wait for force-quiescent-state time. */

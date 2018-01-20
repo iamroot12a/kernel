@@ -523,7 +523,7 @@ cpu_has_callbacks_ready_to_invoke(struct rcu_data *rdp)
 
 /* IAMROOT-12:
  * -------------
- * 콜백 엔트리가 하나라도 등록되면 아래 첫 번째 조건을 만족시킨다.
+ * done 구간에 콜백들이 있으면 true를 반환한다.
  *
  * rdp->nxttail[0]에 null이 들어있는 경우는 no-cb 커널 옵션을 사용하는 
  * cpu이다. 이 경우 이것을 사용하지 않는다.
@@ -597,7 +597,7 @@ cpu_needs_another_gp(struct rcu_state *rsp, struct rcu_data *rdp)
 
 /* IAMROOT-12:
  * -------------
- * next 구간에 등록되어 있는 콜백이 있는 경우 1을 반환한다.
+ * next 구간에 등록되어 있는 신규 콜백이 있는 경우 1을 반환한다.
  */
 	if (*rdp->nxttail[RCU_NEXT_READY_TAIL])
 		return 1;  /* Yes, this CPU has newly registered callbacks. */
@@ -1428,6 +1428,12 @@ static unsigned long rcu_cbs_completed(struct rcu_state *rsp,
 	 * period might have started, but just not yet gotten around
 	 * to initializing the current non-root rcu_node structure.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 신규 콜백들이 등록되는 next 구간에 발급되는 nxtcompleted 번호는 
+ * rnp->completed+1 또는 +2로 부여한다.
+ */
 	if (rcu_get_root(rsp) == rnp && rnp->gpnum == rnp->completed)
 		return rnp->completed + 1;
 
@@ -1473,6 +1479,11 @@ rcu_start_future_gp(struct rcu_node *rnp, struct rcu_data *rdp,
 	 */
 	c = rcu_cbs_completed(rdp->rsp, rnp);
 	trace_rcu_future_gp(rnp, rdp, c, TPS("Startleaf"));
+
+/* IAMROOT-12:
+ * -------------
+ * 이미 gp 요청을 한 경우 빠져나간다.
+ */
 	if (rnp->need_future_gp[c & 0x1]) {
 		trace_rcu_future_gp(rnp, rdp, c, TPS("Prestartleaf"));
 		goto out;
@@ -1491,6 +1502,11 @@ rcu_start_future_gp(struct rcu_node *rnp, struct rcu_data *rdp,
 	 * incremented.  But that is OK, as it will just result in our
 	 * doing some extra useless work.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 이미 gp가 동작중에 있는 경우 빠져나간다.
+ */
 	if (rnp->gpnum != rnp->completed ||
 	    ACCESS_ONCE(rnp_root->gpnum) != ACCESS_ONCE(rnp_root->completed)) {
 		rnp->need_future_gp[c & 0x1]++;
@@ -1536,6 +1552,11 @@ rcu_start_future_gp(struct rcu_node *rnp, struct rcu_data *rdp,
 		trace_rcu_future_gp(rnp, rdp, c, TPS("Startedleafroot"));
 	} else {
 		trace_rcu_future_gp(rnp, rdp, c, TPS("Startedroot"));
+
+/* IAMROOT-12:
+ * -------------
+ * gp 시작을 gp 커널 스레드에 요청한다.
+ */
 		ret = rcu_start_gp_advanced(rdp->rsp, rnp_root, rdp);
 	}
 unlock_out:
@@ -1602,7 +1623,43 @@ static bool rcu_accelerate_cbs(struct rcu_state *rsp, struct rcu_node *rnp,
 	int i;
 	bool ret;
 
+/* IAMROOT-12:
+ * -------------
+ * 새로 진입한 콜백들을 가능하면 wait 구간 또는 next-ready 구간으로 
+ * 묶어 더 빠르게 accelation 한다.
+ *
+ * 예) c=102
+ *
+ *	done       wait         next-ready        next 
+ *
+ * 1)	----------CB-------------CB---------------CB    accelation(X)
+ *                A(100)         A(101)         
+ *
+ * 2)	----------CB-------------CB(102)----------CB    accelation(o)
+ *                A(101)         U(102)         
+ *
+ *     -->        CB-------------CB+CB--------------
+ *                A(101)         U(102)
+ *
+ * 3)   ----------CB------------------------------CB    accelation(o)
+ *                U(102)         U(102)         
+ *
+ *     -->        CB+CB-----------------------------
+ *                U(102)         U(102)          
+ *
+ * 4)   ------------------------------------------CB    accelation(o)
+ *                U(102)         U(102)
+ *
+ *     -->        CB--------------------------------
+ *                U(102)         U(102)
+ */
+
 	/* If the CPU has no callbacks, nothing to do. */
+
+/* IAMROOT-12:
+ * -------------
+ * NO-CB 설정된 cpu이거나 대기중인 콜백이 없는 경우 false를 반환한다.
+ */
 	if (!rdp->nxttail[RCU_NEXT_TAIL] || !*rdp->nxttail[RCU_DONE_TAIL])
 		return false;
 
@@ -1620,7 +1677,24 @@ static bool rcu_accelerate_cbs(struct rcu_state *rsp, struct rcu_node *rnp,
 	 * grouped into a single sublist, whether or not they have already
 	 * been assigned a ->completed number.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 신규 콜백들이 등록되는 next 구간에 발급되는 nxtcompleted 번호는 
+ * rnp->completed+1 또는 +2로 부여한다.
+ */
 	c = rcu_cbs_completed(rsp, rnp);
+
+/* IAMROOT-12:
+ * -------------
+ * next_ready(2) ~ wait(1) 구간까지 역순회하며 그 구간이 이미 할당된 경우 
+ * break 한다.
+ *
+ * 할당(assign): 
+ *	콜백이 있고 1 completed 구간이 지나간 값(c보다 작은 값)
+ * 비할당(unassign):
+ *	콜백이 없거나, 있어도 1 completed 구간내에 있는 값(c와 동일한 값)
+ */
 	for (i = RCU_NEXT_TAIL - 1; i > RCU_DONE_TAIL; i--)
 		if (rdp->nxttail[i] != rdp->nxttail[i - 1] &&
 		    !ULONG_CMP_GE(rdp->nxtcompleted[i], c))
@@ -1632,6 +1706,12 @@ static bool rcu_accelerate_cbs(struct rcu_state *rsp, struct rcu_node *rnp,
 	 * index into the sublist where all the remaining callbacks should
 	 * be grouped into.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * next_ready(2)구간이 이미 할당되었으면 accelation 할 수 없으므로 
+ * 빠져나간다.
+ */
 	if (++i >= RCU_NEXT_TAIL)
 		return false;
 
@@ -1640,6 +1720,11 @@ static bool rcu_accelerate_cbs(struct rcu_state *rsp, struct rcu_node *rnp,
 	 * full grace period and group them all in the sublist initially
 	 * indexed by "i".
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * unassign 구간 모두에 새로 발급받은 c를 부여한다.
+ */
 	for (; i <= RCU_NEXT_TAIL; i++) {
 		rdp->nxttail[i] = rdp->nxttail[RCU_NEXT_TAIL];
 		rdp->nxtcompleted[i] = c;
@@ -1671,6 +1756,11 @@ static bool rcu_advance_cbs(struct rcu_state *rsp, struct rcu_node *rnp,
 	int i, j;
 
 	/* If the CPU has no callbacks, nothing to do. */
+
+/* IAMROOT-12:
+ * -------------
+ * NO-CB 설정된 cpu이거나 대기중인 콜백이 없는 경우 false를 반환한다.
+ */
 	if (!rdp->nxttail[RCU_NEXT_TAIL] || !*rdp->nxttail[RCU_DONE_TAIL])
 		return false;
 
@@ -1678,6 +1768,17 @@ static bool rcu_advance_cbs(struct rcu_state *rsp, struct rcu_node *rnp,
 	 * Find all callbacks whose ->completed numbers indicate that they
 	 * are ready to invoke, and put them into the RCU_DONE_TAIL sublist.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 1) 만료된 콜백들을 done 구간으로 옮긴다.
+ *
+ * 이미 처리가 되었어야할 콜백이 wait 또는 next-ready 구간에 남아있을 수
+ * 있다. 이러한 구간은 done 구간으로 강제 편입시킨다.
+ *
+ * wait(1) ~ next-ready(2) 구간에 미처리된 콜백들이 있으면 done 구간으로 
+ * 옮긴다.
+ */
 	for (i = RCU_WAIT_TAIL; i < RCU_NEXT_TAIL; i++) {
 		if (ULONG_CMP_LT(rnp->completed, rdp->nxtcompleted[i]))
 			break;
@@ -1687,6 +1788,13 @@ static bool rcu_advance_cbs(struct rcu_state *rsp, struct rcu_node *rnp,
 	for (j = RCU_WAIT_TAIL; j < i; j++)
 		rdp->nxttail[j] = rdp->nxttail[RCU_DONE_TAIL];
 
+/* IAMROOT-12:
+ * -------------
+ * 2) cascade 처리 (wait(empty) <- next-ready)
+ *
+ * next-ready(2) 구간의 콜백을 바로 앞 구간이 비어 있으면 
+ * 한 단계 앞으로 전진시킨다.
+ */
 	/* Copy down callbacks to fill in empty sublists. */
 	for (j = RCU_WAIT_TAIL; i < RCU_NEXT_TAIL; i++, j++) {
 		if (rdp->nxttail[j] == rdp->nxttail[RCU_NEXT_TAIL])
@@ -1714,10 +1822,20 @@ static bool __note_gp_changes(struct rcu_state *rsp, struct rcu_node *rnp,
 	if (rdp->completed == rnp->completed &&
 	    !unlikely(ACCESS_ONCE(rdp->gpwrap))) {
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 cpu에 대해 completed가 적용된 상태이다.
+ */
+
 		/* No grace period end, so just accelerate recent callbacks. */
 		ret = rcu_accelerate_cbs(rsp, rnp, rdp);
 
 	} else {
+
+/* IAMROOT-12:
+ * -------------
+ * 현재 cpu에대해 completed 변화가 필요한 경우이다.
+ */
 
 		/* Advance callbacks. */
 		ret = rcu_advance_cbs(rsp, rnp, rdp);
@@ -2071,6 +2189,11 @@ rcu_start_gp_advanced(struct rcu_state *rsp, struct rcu_node *rnp,
 		 */
 		return false;
 	}
+
+/* IAMROOT-12:
+ * -------------
+ * gp 시작 요청한다. (gp 커널 스레드에서 gp 상태를 바꾸는 작업을 한다)
+ */
 	ACCESS_ONCE(rsp->gp_flags) = RCU_GP_FLAG_INIT;
 	trace_rcu_grace_period(rsp->name, ACCESS_ONCE(rsp->gpnum),
 			       TPS("newreq"));
@@ -2769,6 +2892,10 @@ __rcu_process_callbacks(struct rcu_state *rsp)
 
 	WARN_ON_ONCE(rdp->beenonline == 0);
 
+/* IAMROOT-12:
+ * -------------
+ * 1) qs 보고
+ */
 	/* Update RCU state based on any recent quiescent states. */
 	rcu_check_quiescent_state(rsp, rdp);
 
@@ -3389,17 +3516,31 @@ static int __rcu_pending(struct rcu_state *rsp, struct rcu_data *rdp)
 	}
 
 	/* Has RCU gone idle with this CPU needing another grace period? */
+
+/* IAMROOT-12:
+ * -------------
+ * 대기중인 콜백들이 gp의 시작을 필요로 하는 경우 1을 반환한다.
+ */
 	if (cpu_needs_another_gp(rsp, rdp)) {
 		rdp->n_rp_cpu_needs_gp++;
 		return 1;
 	}
 
 	/* Has another RCU grace period completed?  */
+
+/* IAMROOT-12:
+ * -------------
+ * gp가 끝난 것을 per-cpu가 인지하였다. 
+ */
 	if (ACCESS_ONCE(rnp->completed) != rdp->completed) { /* outside lock */
 		rdp->n_rp_gp_completed++;
 		return 1;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * gp가 시작한 것을 per-cpu가 인지하였다. 
+ */
 	/* Has a new RCU grace period started? */
 	if (ACCESS_ONCE(rnp->gpnum) != rdp->gpnum ||
 	    unlikely(ACCESS_ONCE(rdp->gpwrap))) { /* outside lock */
@@ -3408,6 +3549,11 @@ static int __rcu_pending(struct rcu_state *rsp, struct rcu_data *rdp)
 	}
 
 	/* Does this CPU need a deferred NOCB wakeup? */
+
+/* IAMROOT-12:
+ * -------------
+ * no-cb 스레드의 wakeup을 유예시킬지 여부를 판단한다.
+ */
 	if (rcu_nocb_need_deferred_wakeup(rdp)) {
 		rdp->n_rp_nocb_defer_wakeup++;
 		return 1;
