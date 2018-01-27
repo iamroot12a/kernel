@@ -137,6 +137,23 @@ struct rcu_dynticks {
 /*
  * Definition for node within the RCU grace-period-detection hierarchy.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * qsmask:
+ *      노드가 관리하고 있는 하위 노드 또는 rcu_data가 있는 경우 해당 
+ *      비트들이 설정된다. 
+ *      (gp가 시작할 때 마다 rnp->qsmaskinit의 사본으로 설정된다.)
+ *      qs가 보고된 이후 관련 비트가 제거된다.
+ *
+ *      예) 루트 노드에 0x0f -> 4개의 cpu(rcu_data)
+ *                         또는 4개의 하위 노드(rcu_node)
+ *
+ * grpmask:
+ *      상위 노드에 소속된 qsmask 중 한 비트를 나타낸다.
+ *      예) 현재 노드에 0x4 -> 상위 노드의 qsmask중 bit2에 해당한다.
+ */
+
 struct rcu_node {
 	raw_spinlock_t lock;	/* Root rcu_node's lock protects some */
 				/*  rcu_state fields as well as following. */
@@ -231,6 +248,11 @@ struct rcu_node {
  * Do a full breadth-first scan of the rcu_node structures for the
  * specified rcu_state structure.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * 루트노드부터 마지막 노드까지
+ */
 #define rcu_for_each_node_breadth_first(rsp, rnp) \
 	for ((rnp) = &(rsp)->node[0]; \
 	     (rnp) < &(rsp)->node[rcu_num_nodes]; (rnp)++)
@@ -239,6 +261,11 @@ struct rcu_node {
  * Do a breadth-first scan of the non-leaf rcu_node structures for the
  * specified rcu_state structure.  Note that if there is a singleton
  * rcu_node tree with but one rcu_node structure, this loop is a no-op.
+ */
+
+/* IAMROOT-12:
+ * -------------
+ * 루트 노드부터 leaf 전 노드까지
  */
 #define rcu_for_each_nonleaf_node_breadth_first(rsp, rnp) \
 	for ((rnp) = &(rsp)->node[0]; \
@@ -249,6 +276,11 @@ struct rcu_node {
  * structure.  Note that if there is a singleton rcu_node tree with but
  * one rcu_node structure, this loop -will- visit the rcu_node structure.
  * It is still a leaf node, even if it is also the root node.
+ */
+
+/* IAMROOT-12:
+ * -------------
+ * leaf 노드들만
  */
 #define rcu_for_each_leaf_node(rsp, rnp) \
 	for ((rnp) = (rsp)->level[rcu_num_lvls - 1]; \
@@ -267,6 +299,22 @@ struct rcu_node {
 #define RCU_NEXT_SIZE		4
 
 /* Per-CPU data for read-copy update. */
+
+/* IAMROOT-12:
+ * -------------
+ * completed:
+ *      완료된 gp 번호 (rsp->completed -> rnp->completed -> rdp->completed)
+ * gpnum:
+ *      시작된 gp 번호 (rsp->gpnum -> rnp->gpnum -> rdp->gpnum)
+ * rcu_qs_ctr_snap:
+ *      전역 per-cpu인 rcq_qs_ctr의 임시 사본 
+ *      유저 태스크에서 진입한 경우 rcu_all_qs()을 호출하여 rcq_qs_ctr이 
+ *      증가되면 이 사본과 값이 달라진다.
+ * passed_quiesce:
+ *      qs가 감지된 경우 1로 설정된다.
+ *      (qs: 유저, idle, context-switch)
+ */
+
 struct rcu_data {
 	/* 1) quiescent-state and grace-period handling : */
 	unsigned long	completed;	/* Track rsp->completed gp number */

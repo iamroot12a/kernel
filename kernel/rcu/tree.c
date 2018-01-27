@@ -1824,9 +1824,9 @@ static bool __note_gp_changes(struct rcu_state *rsp, struct rcu_node *rnp,
 
 /* IAMROOT-12:
  * -------------
- * 현재 cpu에 대해 completed가 적용된 상태이다.
+ * rdp->completed가 이미 갱신이 된 상태이다.
+ * 이 경우에는 신규 콜백들에 대한 이동(cascade) 처리만 수행한다.
  */
-
 		/* No grace period end, so just accelerate recent callbacks. */
 		ret = rcu_accelerate_cbs(rsp, rnp, rdp);
 
@@ -1834,9 +1834,9 @@ static bool __note_gp_changes(struct rcu_state *rsp, struct rcu_node *rnp,
 
 /* IAMROOT-12:
  * -------------
- * 현재 cpu에대해 completed 변화가 필요한 경우이다.
+ * rdp->complted가 처음 갱신이 필요한 상태이다.
+ * 이 경우에는 기존 콜백 구간의 cascade를 완료 시키고 신규 콜백들까지 이동시킨다. 
  */
-
 		/* Advance callbacks. */
 		ret = rcu_advance_cbs(rsp, rnp, rdp);
 
@@ -1845,6 +1845,12 @@ static bool __note_gp_changes(struct rcu_state *rsp, struct rcu_node *rnp,
 		trace_rcu_grace_period(rsp->name, rdp->gpnum, TPS("cpuend"));
 	}
 
+
+/* IAMROOT-12:
+ * -------------
+ * rdp->gpnum의 갱신이 필요할 때 rcu_data 입장에서 
+ * 새로운 gp가 시작되어 초기화를 한다.
+ */
 	if (rdp->gpnum != rnp->gpnum || unlikely(ACCESS_ONCE(rdp->gpwrap))) {
 		/*
 		 * If the current grace period is waiting for this CPU,
@@ -1878,6 +1884,12 @@ static void note_gp_changes(struct rcu_state *rsp, struct rcu_data *rdp)
 		return;
 	}
 	smp_mb__after_unlock_lock();
+
+/* IAMROOT-12:
+ * -------------
+ * 콜백들의 cascade 처리를 수행한 후,
+ * gp 상태 변경이 필요한 경우 gp kthread를 깨운다. (이 때 새로운 gp 시작요청)
+ */
 	needwake = __note_gp_changes(rsp, rnp, rdp);
 	raw_spin_unlock_irqrestore(&rnp->lock, flags);
 	if (needwake)
@@ -1893,6 +1905,11 @@ static int rcu_gp_init(struct rcu_state *rsp)
 	struct rcu_node *rnp = rcu_get_root(rsp);
 
 	ACCESS_ONCE(rsp->gp_activity) = jiffies;
+
+/* IAMROOT-12:
+ * -------------
+ * gp kthread를 timekeeping cpu에서 동작하게 bind한다.
+ */
 	rcu_bind_gp_kthread();
 	raw_spin_lock_irq(&rnp->lock);
 	smp_mb__after_unlock_lock();
@@ -1913,8 +1930,19 @@ static int rcu_gp_init(struct rcu_state *rsp)
 	}
 
 	/* Advance to a new grace period and initialize state. */
+
+/* IAMROOT-12:
+ * -------------
+ * gp 시작시간을 기록한다. (for gp stall, 장시간 gp가 지속되는 경우를 
+ * 체크한다. RCU_STALL_COMMON 커널 옵션 사용)
+ */
 	record_gp_stall_check_time(rsp);
 	/* Record GP times before starting GP, hence smp_store_release(). */
+
+/* IAMROOT-12:
+ * -------------
+ * gp 번호를 증가시킨다.
+ */
 	smp_store_release(&rsp->gpnum, rsp->gpnum + 1);
 	trace_rcu_grace_period(rsp->name, rsp->gpnum, TPS("start"));
 	raw_spin_unlock_irq(&rnp->lock);
@@ -1936,6 +1964,11 @@ static int rcu_gp_init(struct rcu_state *rsp)
 	 * The grace period cannot complete until the initialization
 	 * process finishes, because this kthread handles both.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 루트 노드부터 마지막 노드에 대해 gpnum, completed, qsmask 등을 갱신한다.
+ */
 	rcu_for_each_node_breadth_first(rsp, rnp) {
 		raw_spin_lock_irq(&rnp->lock);
 		smp_mb__after_unlock_lock();
@@ -2009,10 +2042,19 @@ static void rcu_gp_cleanup(struct rcu_state *rsp)
 	struct rcu_data *rdp;
 	struct rcu_node *rnp = rcu_get_root(rsp);
 
+/* IAMROOT-12:
+ * -------------
+ * gp 동작에 관련한 최종 시간을 기록한다.
+ */
 	ACCESS_ONCE(rsp->gp_activity) = jiffies;
 	raw_spin_lock_irq(&rnp->lock);
 	smp_mb__after_unlock_lock();
 	gp_duration = jiffies - rsp->gp_start;
+
+/* IAMROOT-12:
+ * -------------
+ * gp duration에 대한 최장 시간을 기록한다.
+ */
 	if (gp_duration > rsp->gp_max)
 		rsp->gp_max = gp_duration;
 
@@ -2035,6 +2077,11 @@ static void rcu_gp_cleanup(struct rcu_state *rsp)
 	 * all of the rcu_node structures before the beginning of the next
 	 * grace period is recorded in any of the rcu_node structures.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 모든 노드의 completed를 rsp->gpnum으로 갱신한다.
+ */
 	rcu_for_each_node_breadth_first(rsp, rnp) {
 		raw_spin_lock_irq(&rnp->lock);
 		smp_mb__after_unlock_lock();
@@ -2054,6 +2101,11 @@ static void rcu_gp_cleanup(struct rcu_state *rsp)
 	rcu_nocb_gp_set(rnp, nocb);
 
 	/* Declare grace period done. */
+
+/* IAMROOT-12:
+ * -------------
+ * 최종적으로 rsp->completed도 rsp->gpnum으로 갱신한다.
+ */
 	ACCESS_ONCE(rsp->completed) = rsp->gpnum;
 	trace_rcu_grace_period(rsp->name, rsp->completed, TPS("end"));
 	rsp->fqs_state = RCU_GP_IDLE;
@@ -2084,6 +2136,12 @@ static int __noreturn rcu_gp_kthread(void *arg)
 	for (;;) {
 
 		/* Handle grace-period start. */
+
+/* IAMROOT-12:
+ * -------------
+ * gp 상태를 RCU_GP_WAIT_GPS로 변경한 상태에서 RCU_GP_FLAG_INIT 요청을 
+ * 기다린다.(block) 깨어나면 gp 시작을 한다.
+ */
 		for (;;) {
 			trace_rcu_grace_period(rsp->name,
 					       ACCESS_ONCE(rsp->gpnum),
@@ -2104,6 +2162,11 @@ static int __noreturn rcu_gp_kthread(void *arg)
 		}
 
 		/* Handle quiescent-state forcing. */
+
+/* IAMROOT-12:
+ * -------------
+ * fqs를 위해서 최대 1초에 해당하는 틱수로한다.
+ */
 		fqs_state = RCU_SAVE_DYNTICK;
 		j = jiffies_till_first_fqs;
 		if (j > HZ) {
@@ -2111,6 +2174,15 @@ static int __noreturn rcu_gp_kthread(void *arg)
 			jiffies_till_first_fqs = HZ;
 		}
 		ret = 0;
+
+/* IAMROOT-12:
+ * -------------
+ * gp 종료를 위해 RCU_GP_WAIT_FQS 상태에서 대기한다.(block) RCU_GP_FLAG_FQS 
+ * 요청이 오거나 모든 cpu의 qs 패스가 완료되었거나 타임아웃(j 기간)에 의해 
+ * 깨어난다. 깨어났을 때 모든 cpu의 qs가 패스되었으면 break하여 gp 종료를  
+ * 처리한다.
+ */
+
 		for (;;) {
 			if (!ret)
 				rsp->jiffies_force_qs = jiffies + j;
@@ -2130,6 +2202,10 @@ static int __noreturn rcu_gp_kthread(void *arg)
 			    !rcu_preempt_blocked_readers_cgp(rnp))
 				break;
 			/* If time for quiescent-state forcing, do it. */
+/* IAMROOT-12:
+ * -------------
+ * FQS요청 또는 FQS 타임아웃시 FQS에 대한 처리를 수행한다.
+ */
 			if (ULONG_CMP_GE(jiffies, rsp->jiffies_force_qs) ||
 			    (gf & RCU_GP_FLAG_FQS)) {
 				trace_rcu_grace_period(rsp->name,
@@ -2246,6 +2322,11 @@ static void rcu_report_qs_rsp(struct rcu_state *rsp, unsigned long flags)
 {
 	WARN_ON_ONCE(!rcu_gp_in_progress(rsp));
 	raw_spin_unlock_irqrestore(&rcu_get_root(rsp)->lock, flags);
+
+/* IAMROOT-12:
+ * -------------
+ * gp 커널스레드를 깨워서 gp 종료를 진행하게 한다.
+ */
 	rcu_gp_kthread_wake(rsp);
 }
 
@@ -2264,25 +2345,53 @@ rcu_report_qs_rnp(unsigned long mask, struct rcu_state *rsp,
 {
 	struct rcu_node *rnp_c;
 
+/* IAMROOT-12:
+ * -------------
+ * 노드에 대한 qs 상태를 기록하고, 상위 노드로 보고한다.
+ * 만일 최상위 루트 노드까지 보고되면 rcu_state에 보고하여 gp 종료를 
+ * 요청한다.
+ */
+
 	/* Walk up the rcu_node hierarchy. */
 	for (;;) {
+
+/* IAMROOT-12:
+ * -------------
+ * 이미 한 번 보고된 경우 함수를 빠져나간다.
+ */
 		if (!(rnp->qsmask & mask)) {
 
 			/* Our bit has already been cleared, so done. */
 			raw_spin_unlock_irqrestore(&rnp->lock, flags);
 			return;
 		}
+
+/* IAMROOT-12:
+ * -------------
+ * 해당 노드에서 qs 관련 비트를 제거한다.
+ */
 		rnp->qsmask &= ~mask;
 		trace_rcu_quiescent_state_report(rsp->name, rnp->gpnum,
 						 mask, rnp->qsmask, rnp->level,
 						 rnp->grplo, rnp->grphi,
 						 !!rnp->gp_tasks);
+
+/* IAMROOT-12:
+ * -------------
+ * 보고한 노드에 아직 qs를 처리하는 비트가 남아있으면 함수를 빠져나간다.
+ */
 		if (rnp->qsmask != 0 || rcu_preempt_blocked_readers_cgp(rnp)) {
 
 			/* Other bits still set at this level, so done. */
 			raw_spin_unlock_irqrestore(&rnp->lock, flags);
 			return;
 		}
+
+/* IAMROOT-12:
+ * -------------
+ * 해당 노드의 qs가 모두 보고된 경우 상위 노드로 보고한다.
+ * 최상위 루트 노드까지 보고가 완료되면 break하여 루프를 벗어난다.
+ */
 		mask = rnp->grpmask;
 		if (rnp->parent == NULL) {
 
@@ -2303,6 +2412,11 @@ rcu_report_qs_rnp(unsigned long mask, struct rcu_state *rsp,
 	 * state for this grace period.  Invoke rcu_report_qs_rsp()
 	 * to clean up and start the next grace period if one is needed.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 루트노드까지 qs가 완료하였기 때문에 gp 완료를 위해 rcu_state에 보고한다.
+ */
 	rcu_report_qs_rsp(rsp, flags); /* releases rnp->lock. */
 }
 
@@ -2326,6 +2440,15 @@ rcu_report_qs_rdp(int cpu, struct rcu_state *rsp, struct rcu_data *rdp)
 	rnp = rdp->mynode;
 	raw_spin_lock_irqsave(&rnp->lock, flags);
 	smp_mb__after_unlock_lock();
+
+/* IAMROOT-12:
+ * -------------
+ * qs 패스 상태가 아니면서 rcu_data에 처음 gp가 시작된 이후로 rcu_qs_ctr이 
+ * 변화가 없거나(유저에서 진입한 경우 변경된다),
+ * 또 다른 새로운 gp가 시작되었거나,
+ * gp가 완료된 경우
+ * qs를 보고할 필요가 없기 때문에 함수를 빠져나간다.
+ */
 	if ((rdp->passed_quiesce == 0 &&
 	     rdp->rcu_qs_ctr_snap == __this_cpu_read(rcu_qs_ctr)) ||
 	    rdp->gpnum != rnp->gpnum || rnp->completed == rnp->gpnum ||
@@ -2342,10 +2465,20 @@ rcu_report_qs_rdp(int cpu, struct rcu_state *rsp, struct rcu_data *rdp)
 		raw_spin_unlock_irqrestore(&rnp->lock, flags);
 		return;
 	}
+
+/* IAMROOT-12:
+ * -------------
+ * 이미 보고된 qs인 경우 함수를 빠져나간다.
+ */
 	mask = rdp->grpmask;
 	if ((rnp->qsmask & mask) == 0) {
 		raw_spin_unlock_irqrestore(&rnp->lock, flags);
 	} else {
+
+/* IAMROOT-12:
+ * -------------
+ * rdp를 업데이트하고 자기 노드(rnp)에 보고한다.
+ */
 		rdp->qs_pending = 0;
 
 		/*
@@ -2370,12 +2503,22 @@ static void
 rcu_check_quiescent_state(struct rcu_state *rsp, struct rcu_data *rdp)
 {
 	/* Check for grace-period ends and beginnings. */
+
+/* IAMROOT-12:
+ * -------------
+ * 콜백들의 cascade 처리와 새 gp 변경을 체크한다.
+ */
 	note_gp_changes(rsp, rdp);
 
 	/*
 	 * Does this CPU still need to do its part for current grace period?
 	 * If no, return and let the other CPUs do their part as well.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * qs 체크가 필요한 cpu의 경우 1로 설정된다. 이미 보고를 한 경우 0이다.
+ */
 	if (!rdp->qs_pending)
 		return;
 
@@ -2383,6 +2526,12 @@ rcu_check_quiescent_state(struct rcu_state *rsp, struct rcu_data *rdp)
 	 * Was there a quiescent state since the beginning of the grace
 	 * period? If no, then exit and wait for the next call.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * gp가 완료되고 시작되지 않았으면 빠져나간다.
+ * (qs가 패스되지 않았으면서 user 진입이 없었던 경우)
+ */
 	if (!rdp->passed_quiesce &&
 	    rdp->rcu_qs_ctr_snap == __this_cpu_read(rcu_qs_ctr))
 		return;
@@ -2623,6 +2772,11 @@ static void rcu_do_batch(struct rcu_state *rsp, struct rcu_data *rdp)
 	int i;
 
 	/* If no callbacks are ready, just return. */
+
+/* IAMROOT-12:
+ * -------------
+ * 호출이 콜백이 없으면 빠져나간다.
+ */
 	if (!cpu_has_callbacks_ready_to_invoke(rdp)) {
 		trace_rcu_batch_start(rsp->name, rdp->qlen_lazy, rdp->qlen, 0);
 		trace_rcu_batch_end(rsp->name, 0, !!ACCESS_ONCE(rdp->nxtlist),
@@ -2639,21 +2793,41 @@ static void rcu_do_batch(struct rcu_state *rsp, struct rcu_data *rdp)
 	WARN_ON_ONCE(cpu_is_offline(smp_processor_id()));
 	bl = rdp->blimit;
 	trace_rcu_batch_start(rsp->name, rdp->qlen_lazy, rdp->qlen, bl);
+
+/* IAMROOT-12:
+ * -------------
+ * done 구간의 rcu를 list에 옮긴다.
+ */
 	list = rdp->nxtlist;
 	rdp->nxtlist = *rdp->nxttail[RCU_DONE_TAIL];
 	*rdp->nxttail[RCU_DONE_TAIL] = NULL;
 	tail = rdp->nxttail[RCU_DONE_TAIL];
+
+/* IAMROOT-12:
+ * -------------
+ * 빈 구간은 rdp->nxtlist를 가리키게 한다.
+ */
 	for (i = RCU_NEXT_SIZE - 1; i >= 0; i--)
 		if (rdp->nxttail[i] == rdp->nxttail[RCU_DONE_TAIL])
 			rdp->nxttail[i] = &rdp->nxtlist;
 	local_irq_restore(flags);
 
 	/* Invoke callbacks. */
+
+/* IAMROOT-12:
+ * -------------
+ * blimit를 초과하지 않는 한에서 콜백들을 처리한다.
+ */
 	count = count_lazy = 0;
 	while (list) {
 		next = list->next;
 		prefetch(next);
 		debug_rcu_head_unqueue(list);
+
+/* IAMROOT-12:
+ * -------------
+ * kfree를 호출하는 lazy case와 함수를 호출하는 non-lazy case로 나뉜다.
+ */
 		if (__rcu_reclaim(rsp->name, list))
 			count_lazy++;
 		list = next;
@@ -2670,6 +2844,12 @@ static void rcu_do_batch(struct rcu_state *rsp, struct rcu_data *rdp)
 			    rcu_is_callbacks_kthread());
 
 	/* Update count, and requeue any remaining callbacks. */
+
+/* IAMROOT-12:
+ * -------------
+ * blimit에 의해 처리되지 못하고 남은 콜백들은 다시 done 구간으로 옮긴다.
+ */
+
 	if (list != NULL) {
 		*tail = rdp->nxtlist;
 		rdp->nxtlist = list;
@@ -2804,6 +2984,12 @@ static void force_qs_rnp(struct rcu_state *rsp,
 	unsigned long mask;
 	struct rcu_node *rnp;
 
+
+/* IAMROOT-12:
+ * -------------
+ * 모든 leaf 노드가 관리하는 cpu에서 qs가 패스되지 않은 cpu들을 대상으로 
+ * 해당 leaf 노드에 모두 qs 완료를 보고하게 한다.
+ */
 	rcu_for_each_leaf_node(rsp, rnp) {
 		cond_resched_rcu_qs();
 		mask = 0;
@@ -2827,6 +3013,12 @@ static void force_qs_rnp(struct rcu_state *rsp,
 					mask |= bit;
 			}
 		}
+
+/* IAMROOT-12:
+ * -------------
+ * 아직 qs 처리되지 않은 cpu에 대한 비트마크크가 존재하면 해당 노드의 qs가 
+ * 모두 완료되었다고 보고한다.
+ */
 		if (mask != 0) {
 
 			/* rcu_report_qs_rnp() releases rnp->lock. */
@@ -2894,6 +3086,8 @@ __rcu_process_callbacks(struct rcu_state *rsp)
 
 /* IAMROOT-12:
  * -------------
+ * RCU core 처리를 수행한다. (softirq)
+ *
  * 1) qs 보고
  */
 	/* Update RCU state based on any recent quiescent states. */
@@ -2912,6 +3106,11 @@ __rcu_process_callbacks(struct rcu_state *rsp)
 	}
 
 	/* If there are callbacks ready, invoke them. */
+
+/* IAMROOT-12:
+ * -------------
+ * done 구간에 콜백들이 있으면 호출한다.
+ */
 	if (cpu_has_callbacks_ready_to_invoke(rdp))
 		invoke_rcu_callbacks(rsp, rdp);
 
@@ -2943,8 +3142,20 @@ static void rcu_process_callbacks(struct softirq_action *unused)
  */
 static void invoke_rcu_callbacks(struct rcu_state *rsp, struct rcu_data *rdp)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 0->1로 변경될 때까지는 rcu 콜백을 처리하지 않는다.
+ *
+ * early_initcall()에서 0->1로 변경시킨다.
+ */
 	if (unlikely(!ACCESS_ONCE(rcu_scheduler_fully_active)))
 		return;
+
+/* IAMROOT-12:
+ * -------------
+ * rcu boost 기능을 사용하지 않는 경우에 콜백을 호출한다.
+ */
 	if (likely(!rsp->boost)) {
 		rcu_do_batch(rsp, rdp);
 		return;

@@ -1139,6 +1139,12 @@ static inline notrace void rcu_read_unlock_sched_notrace(void)
  * The BUILD_BUG_ON check must not involve any function calls, hence the
  * checks are done in macros here.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * 4096보다 작게 산출되는 offset을 이용하여 삭제하고자 하는 메모리의
+ * 주소를 찾아 lazy free 하게 한다. (rcu를 사용하여 lazy 처리)
+ */
 #define kfree_rcu(ptr, rcu_head)					\
 	__kfree_rcu(&((ptr)->rcu_head), offsetof(typeof(*(ptr)), rcu_head))
 

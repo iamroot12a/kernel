@@ -103,6 +103,11 @@ void kfree(const void *);
  * Reclaim the specified callback, either by invoking it (non-lazy case)
  * or freeing it directly (lazy case).  Return true if lazy, false otherwise.
  */
+
+/* IAMROOT-12:
+ * -------------
+ * lazy free: kfree_rcu()는 rcu를 이용한 lazy free 방법을 사용한다.
+ */
 static inline bool __rcu_reclaim(const char *rn, struct rcu_head *head)
 {
 	unsigned long offset = (unsigned long)head->func;
