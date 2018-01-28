@@ -637,3 +637,8 @@ page_address_init()
 ### 144주차
 - 2018.01.20, 강남 Cmax 스터디 (7명, 김민호, 김종철, 문영일, 윤창호, 정재준, 조현철, 최영민)
 - rcu_check_callbacks() ~
+
+### 145주차
+- 2018.01.27, 강남 Cmax 스터디 (5명, 김종철, 문영일, 윤창호, 조현철, 최영민)
+- rcu_check_callbacks()
+- rcu_gp_kthread()
