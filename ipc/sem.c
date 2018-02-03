@@ -2029,6 +2029,10 @@ int copy_semundo(unsigned long clone_flags, struct task_struct *tsk)
 	struct sem_undo_list *undo_list;
 	int error;
 
+/* IAMROOT-12:
+ * -------------
+ * pthread_create()로 진입한 경우 CLONE_SYSVSEM 플래그가 요청된다
+ */
 	if (clone_flags & CLONE_SYSVSEM) {
 		error = get_undo_list(&undo_list);
 		if (error)

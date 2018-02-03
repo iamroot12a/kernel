@@ -17,6 +17,11 @@
 #include <asm/page.h>
 
 #define THREAD_SIZE_ORDER	1
+
+/* IAMROOT-12:
+ * -------------
+ * arm: 커널 스택은 8K이다.
+ */
 #define THREAD_SIZE		(PAGE_SIZE << THREAD_SIZE_ORDER)
 #define THREAD_START_SP		(THREAD_SIZE - 8)
 

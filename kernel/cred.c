@@ -316,6 +316,12 @@ int copy_creds(struct task_struct *p, unsigned long clone_flags)
 	struct cred *new;
 	int ret;
 
+/* IAMROOT-12:
+ * -------------
+ * pthread_create()함수는 CLONE_THREAD 플래그가 설정되어 진입된다.
+ * 이러한 경우 credentials를 공유하고, 그렇지 않은 경우는 새로운 
+ * credentials를 할당하여 사용한다.
+ */
 	if (
 #ifdef CONFIG_KEYS
 		!p->cred->thread_keyring &&

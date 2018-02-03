@@ -2239,6 +2239,10 @@ int sched_fork(unsigned long clone_flags, struct task_struct *p)
 	unsigned long flags;
 	int cpu = get_cpu();
 
+/* IAMROOT-12:
+ * -------------
+ * 스케줄러에 등록할 스케줄 엔티티에 대한 정보를 초기화한다.
+ */
 	__sched_fork(clone_flags, p);
 	/*
 	 * We mark the process as running here. This guarantees that
@@ -2250,6 +2254,12 @@ int sched_fork(unsigned long clone_flags, struct task_struct *p)
 	/*
 	 * Make sure we do not leak PI boosting priority to the child.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 부모 태스크가 pi boost된 상태에서 자식 태스크를 생성하였을 때에는
+ * 원래 prio로 되돌려 놔야 한다.
+ */
 	p->prio = current->normal_prio;
 
 	/*
@@ -2273,6 +2283,10 @@ int sched_fork(unsigned long clone_flags, struct task_struct *p)
 		p->sched_reset_on_fork = 0;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * dl 태스크에서는 자식 태스크를 만들 수 없다.
+ */
 	if (dl_prio(p->prio)) {
 		put_cpu();
 		return -EAGAIN;
@@ -2282,6 +2296,12 @@ int sched_fork(unsigned long clone_flags, struct task_struct *p)
 		p->sched_class = &fair_sched_class;
 	}
 
+
+/* IAMROOT-12:
+ * -------------
+ * 스케줄러의 task_fork() 후크 함수를 호출한다.
+ * 예) task_fork_fair()
+ */
 	if (p->sched_class->task_fork)
 		p->sched_class->task_fork(p);
 
@@ -2300,6 +2320,11 @@ int sched_fork(unsigned long clone_flags, struct task_struct *p)
 	if (likely(sched_info_on()))
 		memset(&p->sched_info, 0, sizeof(p->sched_info));
 #endif
+
+/* IAMROOT-12:
+ * -------------
+ * 아직 런큐에 들어가지 않은 상태이다.
+ */
 #if defined(CONFIG_SMP)
 	p->on_cpu = 0;
 #endif

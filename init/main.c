@@ -582,6 +582,15 @@ void __init __weak smp_setup_processor_id(void)
 # if THREAD_SIZE >= PAGE_SIZE
 void __init __weak thread_info_cache_init(void)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * rpi2: 커널 스택을 포함한 thread_info 사이즈가 페이지 사이즈를 초과하는
+ *       경우에는 별도의 kmem cache를 사용할 필요가 없다. 
+ *
+ *       arm64등에서 64K 페이지등을 사용하는 경우에는 메모리 낭비를 줄이기 
+ *       위해 kmem cache를 사용할 필요가 있다.
+ */
 }
 #endif
 

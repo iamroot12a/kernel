@@ -2874,6 +2874,11 @@ static inline void threadgroup_unlock(struct task_struct *tsk) {}
 
 static inline void setup_thread_stack(struct task_struct *p, struct task_struct *org)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * thread_info를 복사한다.
+ */
 	*task_thread_info(p) = *task_thread_info(org);
 	task_thread_info(p)->task = p;
 }

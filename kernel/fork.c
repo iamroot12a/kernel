@@ -150,6 +150,10 @@ void __weak arch_release_thread_info(struct thread_info *ti)
 static struct thread_info *alloc_thread_info_node(struct task_struct *tsk,
 						  int node)
 {
+/* IAMROOT-12:
+ * -------------
+ * rpi2: 2 페이지의 커널 스택을 할당받아온다.
+ */
 	struct page *page = alloc_kmem_pages_node(node, THREADINFO_GFP,
 						  THREAD_SIZE_ORDER);
 
@@ -260,12 +264,23 @@ void __init fork_init(unsigned long mempages)
 #define ARCH_MIN_TASKALIGN	L1_CACHE_BYTES
 #endif
 	/* create a slab on which task_structs can be allocated */
+
+/* IAMROOT-12:
+ * -------------
+ * task 디스크립터를 위한 kmem 캐시를 준비한다.
+ */
+
 	task_struct_cachep =
 		kmem_cache_create("task_struct", sizeof(struct task_struct),
 			ARCH_MIN_TASKALIGN, SLAB_PANIC | SLAB_NOTRACK, NULL);
 #endif
 
 	/* do the arch specific task caches init */
+
+/* IAMROOT-12:
+ * -------------
+ * arm & arm64는 사용하지 않는다.
+ */
 	arch_task_cache_init();
 
 	/*
@@ -273,6 +288,11 @@ void __init fork_init(unsigned long mempages)
 	 * value: the thread structures can take up at most half
 	 * of memory.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * arm(4K 페이지 기준): 페이지 수 / 16
+ */
 	max_threads = mempages / (8 * THREAD_SIZE / PAGE_SIZE);
 
 	/*
@@ -315,18 +335,34 @@ static struct task_struct *dup_task_struct(struct task_struct *orig)
 	int node = tsk_fork_get_node(orig);
 	int err;
 
+/* IAMROOT-12:
+ * -------------
+ * 빈 태스크 디스크립터를 할당 받는다.
+ */
 	tsk = alloc_task_struct_node(node);
 	if (!tsk)
 		return NULL;
 
+/* IAMROOT-12:
+ * -------------
+ * 할당 받은 커널 스택의 가장 아래 주소에 thread_info가 있다.
+ */
 	ti = alloc_thread_info_node(tsk, node);
 	if (!ti)
 		goto free_tsk;
 
+/* IAMROOT-12:
+ * -------------
+ * 부모 태스크 디스크립터를 생성된 자식 태스크 디스크립터로 복사한다.
+ */
 	err = arch_dup_task_struct(tsk, orig);
 	if (err)
 		goto free_ti;
 
+/* IAMROOT-12:
+ * -------------
+ * 태스크의 스택 주소에 ti를 대입한다.
+ */
 	tsk->stack = ti;
 #ifdef CONFIG_SECCOMP
 	/*
@@ -338,9 +374,24 @@ static struct task_struct *dup_task_struct(struct task_struct *orig)
 	tsk->seccomp.filter = NULL;
 #endif
 
+/* IAMROOT-12:
+ * -------------
+ * 부모 thread_info를 자식 thread_info로 복사한다.
+ */
 	setup_thread_stack(tsk, orig);
+
+/* IAMROOT-12:
+ * -------------
+ * 새로 생성된 태스크에 대한 user_return notifier 및 리스케줄 요청 플래그 
+ * 등을 제거한다.
+ */
 	clear_user_return_notifier(tsk);
 	clear_tsk_need_resched(tsk);
+
+/* IAMROOT-12:
+ * -------------
+ * 생성된 스택 마지막(thread_info 바로 위)에 magic 넘버를 기록해둔다.
+ */
 	set_task_stack_end_magic(tsk);
 
 #ifdef CONFIG_CC_STACKPROTECTOR
@@ -358,6 +409,10 @@ static struct task_struct *dup_task_struct(struct task_struct *orig)
 	tsk->splice_pipe = NULL;
 	tsk->task_frag.page = NULL;
 
+/* IAMROOT-12:
+ * -------------
+ * 사용된 커널 스택 개수를 1 증가시킨다.
+ */
 	account_kernel_stack(ti, 1);
 
 	return tsk;
@@ -946,6 +1001,12 @@ fail_nomem:
 static int copy_fs(unsigned long clone_flags, struct task_struct *tsk)
 {
 	struct fs_struct *fs = current->fs;
+
+/* IAMROOT-12:
+ * -------------
+ * pthread_create() 요청한 경우 부모 태스크의 루트 패스와 현재 패스(pwd)
+ * 정보를 공유한다. 그외의 경우는 정보를 복사하여 구성한다.
+ */
 	if (clone_flags & CLONE_FS) {
 		/* tsk->fs is already what we want */
 		spin_lock(&fs->lock);
@@ -975,6 +1036,12 @@ static int copy_files(unsigned long clone_flags, struct task_struct *tsk)
 	if (!oldf)
 		goto out;
 
+/* IAMROOT-12:
+ * -------------
+ * pthread_create()로 진입한 경우 부모 태스크의 파일 디스크립터를 공유한다.
+ * kernel_thread()도 CLONE_FILES를 전달하지만 실제 대부분의 커널 스레드에서
+ * 파일 디스크립터를 open한 것이 보이지 않는다.
+ */
 	if (clone_flags & CLONE_FILES) {
 		atomic_inc(&oldf->count);
 		goto out;
@@ -1217,6 +1284,11 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	 * Thread groups must share signals as well, and detached threads
 	 * can only be started up within the thread group.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 스레드들은 시그널을 공유해야한다.
+ */
 	if ((clone_flags & CLONE_THREAD) && !(clone_flags & CLONE_SIGHAND))
 		return ERR_PTR(-EINVAL);
 
@@ -1250,11 +1322,21 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 			return ERR_PTR(-EINVAL);
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * Linux Security Module에 등록된 태스크 생성에 대한 후크 함수를 호출하여 
+ * 생성관련한 사전 체크를 수행하게 한다.
+ */
 	retval = security_task_create(clone_flags);
 	if (retval)
 		goto fork_out;
 
 	retval = -ENOMEM;
+
+/* IAMROOT-12:
+ * -------------
+ * 부모 태스크 디스크립터를 복사한다. (thread_info 포함, 커널 스택은 새로 생성)
+ */
 	p = dup_task_struct(current);
 	if (!p)
 		goto fork_out;
@@ -1286,6 +1368,11 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	 * to stop root fork bombs.
 	 */
 	retval = -EAGAIN;
+
+/* IAMROOT-12:
+ * -------------
+ * 현재 생성된 스레드 수가 max_threads 이상인 경우 함수를 빠져나간다.
+ */
 	if (nr_threads >= max_threads)
 		goto bad_fork_cleanup_count;
 
@@ -1293,8 +1380,19 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 		goto bad_fork_cleanup_count;
 
 	delayacct_tsk_init(p);	/* Must remain after dup_task_struct() */
+
+/* IAMROOT-12:
+ * -------------
+ * 부모 태스크에서 복사해온 flags들 중  super권한 및 워커 플래그는 제거되어야 
+ * 한다. 그런 후 fork만 하고 exec는 되지 않도록 제한한다.
+ */
 	p->flags &= ~(PF_SUPERPRIV | PF_WQ_WORKER);
 	p->flags |= PF_FORKNOEXEC;
+
+/* IAMROOT-12:
+ * -------------
+ * 자식 및 형제 태스크들을 담을 리스트를 초기화한다.
+ */
 	INIT_LIST_HEAD(&p->children);
 	INIT_LIST_HEAD(&p->sibling);
 	rcu_copy_process(p);
@@ -1303,6 +1401,10 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 
 	init_sigpending(&p->pending);
 
+/* IAMROOT-12:
+ * -------------
+ * 유저 타임, 시스템 타임 등을 초기화한다.
+ */
 	p->utime = p->stime = p->gtime = 0;
 	p->utimescaled = p->stimescaled = 0;
 #ifndef CONFIG_VIRT_CPU_ACCOUNTING_NATIVE
@@ -1314,6 +1416,10 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	p->vtime_snap_whence = VTIME_SLEEPING;
 #endif
 
+/* IAMROOT-12:
+ * -------------
+ * 3가지 mm 카운터를 초기화한다.
+ */
 #if defined(SPLIT_RSS_COUNTING)
 	memset(&p->rss_stat, 0, sizeof(p->rss_stat));
 #endif
@@ -1323,6 +1429,10 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	task_io_accounting_init(&p->ioac);
 	acct_clear_integrals(p);
 
+/* IAMROOT-12:
+ * -------------
+ * posix 타이머를 클리어한다.
+ */
 	posix_cpu_timers_init(p);
 
 	p->start_time = ktime_get_ns();
@@ -1332,6 +1442,11 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	if (clone_flags & CLONE_THREAD)
 		threadgroup_change_begin(current);
 	cgroup_fork(p);
+
+/* IAMROOT-12:
+ * -------------
+ * 부모가 사용하던 NUMA policy를 그래도 복사하여 사용한다.
+ */
 #ifdef CONFIG_NUMA
 	p->mempolicy = mpol_dup(p->mempolicy);
 	if (IS_ERR(p->mempolicy)) {
@@ -1386,13 +1501,30 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	if (retval)
 		goto bad_fork_cleanup_perf;
 	/* copy all the process information */
+
+/* IAMROOT-12:
+ * -------------
+ * POSIX V shared memory 연결을 초기화한다.
+ */
 	shm_init_task(p);
 	retval = copy_semundo(clone_flags, p);
 	if (retval)
 		goto bad_fork_cleanup_audit;
+
+/* IAMROOT-12:
+ * -------------
+ * open된 파일 디스크립터를 공유하거나(스레드인 경우) 부모 태스크가 사용한 
+ * 파일을 복사한다.
+ */
 	retval = copy_files(clone_flags, p);
 	if (retval)
 		goto bad_fork_cleanup_semundo;
+
+/* IAMROOT-12:
+ * -------------
+ * pthread_create() 요청한 경우 부모 태스크의 루트 패스와 현재 패스(pwd)
+ * 정보를 공유한다. 그외의 경우는 정보를 복사하여 구성한다.
+ */
 	retval = copy_fs(clone_flags, p);
 	if (retval)
 		goto bad_fork_cleanup_files;
@@ -1654,6 +1786,12 @@ long do_fork(unsigned long clone_flags,
 	 * requested, no event is reported; otherwise, report if the event
 	 * for the type of forking is enabled.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 커널 스레드를 만들 때에는 ptrace event를 리포트하지 않게 한다.
+ * (ptrace가 enable된 경우에만)
+ */
 	if (!(clone_flags & CLONE_UNTRACED)) {
 		if (clone_flags & CLONE_VFORK)
 			trace = PTRACE_EVENT_VFORK;
@@ -1678,6 +1816,10 @@ long do_fork(unsigned long clone_flags,
 
 		trace_sched_process_fork(current, p);
 
+/* IAMROOT-12:
+ * -------------
+ * 얻어온 pid 디스크립터에 대한 참조 카운터를 1 증가시킨다.
+ */
 		pid = get_task_pid(p, PIDTYPE_PID);
 		nr = pid_vnr(pid);
 
@@ -1701,6 +1843,10 @@ long do_fork(unsigned long clone_flags,
 				ptrace_event_pid(PTRACE_EVENT_VFORK_DONE, pid);
 		}
 
+/* IAMROOT-12:
+ * -------------
+ * pid 디스크립터에 대한 참조 카운터를 1 감소시킨다.
+ */
 		put_pid(pid);
 	} else {
 

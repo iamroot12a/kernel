@@ -49,6 +49,11 @@ int pid_max = PID_MAX_DEFAULT;
 
 #define RESERVED_PIDS		300
 
+/* IAMROOT-12:
+ * -------------
+ * pid_max 범위(초기값) arm:   301 ~ 32K
+ *                      arm64: 301 ~ 4M
+ */
 int pid_max_min = RESERVED_PIDS + 1;
 int pid_max_max = PID_MAX_LIMIT;
 
@@ -66,6 +71,19 @@ static inline int mk_pid(struct pid_namespace *pid_ns,
  * first use and are never deallocated. This way a low pid_max
  * value does not cause lots of bitmaps to be allocated, but
  * the scheme scales to up to 4 million PIDs, runtime.
+ */
+
+/* IAMROOT-12:
+ * -------------
+ * pidmap[]:
+ *	32bit: 1개 페이지(4K 페이지 기준)로 구성된다. (max_pid 수: 32K)
+ *		pidmap[0].nr_free = (페이지 당 pid 수: 32K)
+ *	64bit: 128개 페이지(4K 페이지 기준)로 구성된다. (max_pid 수: 4M)
+ *		pidmap[0].nr_free = (페이지 당 pid 수: 32K)
+ * last_pid:
+ *	마지막 할당된 pid 번호 
+ * level:
+ *	네임스페이스 레벨(init 네임스페이스는 0)
  */
 struct pid_namespace init_pid_ns = {
 	.kref = {
@@ -238,6 +256,11 @@ void put_pid(struct pid *pid)
 {
 	struct pid_namespace *ns;
 
+/* IAMROOT-12:
+ * -------------
+ * pid 디스크립터에 대한 참조 카운터를 1 감소시킨다.
+ * 마지막에는 pid 디스크립터를 삭제한다.
+ */
 	if (!pid)
 		return;
 
@@ -598,14 +621,34 @@ void __init pidmap_init(void)
 	BUILD_BUG_ON(PID_MAX_LIMIT >= PIDNS_HASH_ADDING);
 
 	/* bump default and minimum pid_max based on number of cpus */
+
+/* IAMROOT-12:
+ * -------------
+ * pid_max: 
+ *	32bit: 32K 고정 
+ *	64bit: 32K(최소) <= possible cpu * 1024 <= 4M(최대)
+ *			    32개의 cpu 수
+ * pid_max_min:
+ *	301(최소) <= possible cpu * 8
+ */
 	pid_max = min(pid_max_max, max_t(int, pid_max,
 				PIDS_PER_CPU_DEFAULT * num_possible_cpus()));
 	pid_max_min = max_t(int, pid_max_min,
 				PIDS_PER_CPU_MIN * num_possible_cpus());
 	pr_info("pid_max: default: %u minimum: %u\n", pid_max, pid_max_min);
 
+/* IAMROOT-12:
+ * -------------
+ * 각 페이지마다 pid가 관리되는데 초기에는 첫 페이지만 할당한다.
+ */
 	init_pid_ns.pidmap[0].page = kzalloc(PAGE_SIZE, GFP_KERNEL);
 	/* Reserve PID 0. We never call free_pidmap(0) */
+
+/* IAMROOT-12:
+ * -------------
+ * init(추후 idle) 태스크가 사용하도록 pid 0번을 할당한다.
+ * -> init 태스크는 do_fork()에서 만들어지지 않고, 컴파일 타임에 생성된다.
+ */
 	set_bit(0, init_pid_ns.pidmap[0].page);
 	atomic_dec(&init_pid_ns.pidmap[0].nr_free);
 
