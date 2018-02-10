@@ -325,12 +325,25 @@ struct pid *alloc_pid(struct pid_namespace *ns)
 	struct pid_namespace *tmp;
 	struct upid *upid;
 
+/* IAMROOT-12:
+ * -------------
+ * pid 구조체를 할당해온다.
+ */
 	pid = kmem_cache_alloc(ns->pid_cachep, GFP_KERNEL);
 	if (!pid)
 		goto out;
 
 	tmp = ns;
 	pid->level = ns->level;
+
+/* IAMROOT-12:
+ * -------------
+ * 레벨 수 만큼(예: namespace가 하나 더 존재하는 경우 ns->level=1)
+ *
+ * init_pid_ns에서 level=0부터 시작한다.
+ *
+ * 해당 namespace에 있는 pidmap에서 pid 번호를 할당해와서 연결한다.
+ */
 	for (i = ns->level; i >= 0; i--) {
 		nr = alloc_pidmap(tmp);
 		if (nr < 0)
@@ -355,6 +368,12 @@ struct pid *alloc_pid(struct pid_namespace *ns)
 	spin_lock_irq(&pidmap_lock);
 	if (!(ns->nr_hashed & PIDNS_HASH_ADDING))
 		goto out_unlock;
+
+/* IAMROOT-12:
+ * -------------
+ * pid_hash에 할당받은 pid 번호들을 연결한다.
+ * 키(namespace + pid vnr)
+ */
 	for ( ; upid >= pid->numbers; --upid) {
 		hlist_add_head_rcu(&upid->pid_chain,
 				&pid_hash[pid_hashfn(upid->nr, upid->ns)]);

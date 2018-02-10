@@ -1679,6 +1679,10 @@ asmlinkage int vprintk_emit(int facility, int level,
 		in_sched = true;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * printk마다 커널에 delay(ms)가 주어진 경우 쉰다.
+ */
 	boot_delay_msec(level);
 	printk_delay();
 

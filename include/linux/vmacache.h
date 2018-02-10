@@ -12,6 +12,13 @@
 
 static inline void vmacache_flush(struct task_struct *tsk)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * vmacache[4] = { null, }
+ *
+ * 4개는 해시로 사용한다.
+ */
 	memset(tsk->vmacache, 0, sizeof(tsk->vmacache));
 }
 

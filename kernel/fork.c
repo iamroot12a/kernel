@@ -473,6 +473,11 @@ static int dup_mmap(struct mm_struct *mm, struct mm_struct *oldmm)
 				goto fail_nomem;
 			charge = len;
 		}
+
+/* IAMROOT-12:
+ * -------------
+ * 새로 할당 받은 vm_area에 부모가 관리하는 vm_area를 복사한다.
+ */
 		tmp = kmem_cache_alloc(vm_area_cachep, GFP_KERNEL);
 		if (!tmp)
 			goto fail_nomem;
@@ -487,6 +492,11 @@ static int dup_mmap(struct mm_struct *mm, struct mm_struct *oldmm)
 		tmp->vm_flags &= ~VM_LOCKED;
 		tmp->vm_next = tmp->vm_prev = NULL;
 		file = tmp->vm_file;
+
+/* IAMROOT-12:
+ * -------------
+ * file 매핑된 vm인 경우 연결된 inode를 복사한다.
+ */
 		if (file) {
 			struct inode *inode = file_inode(file);
 			struct address_space *mapping = file->f_mapping;
@@ -639,6 +649,10 @@ static struct mm_struct *mm_init(struct mm_struct *mm, struct task_struct *p)
 		mm->def_flags = 0;
 	}
 
+/* IAMROOT-12:
+ * -------------
+ * pgd를 할당받는다. (모두 null 엔트리)
+ */
 	if (mm_alloc_pgd(mm))
 		goto fail_nopgd;
 
@@ -920,12 +934,24 @@ static struct mm_struct *dup_mm(struct task_struct *tsk)
 	struct mm_struct *mm, *oldmm = current->mm;
 	int err;
 
+/* IAMROOT-12:
+ * -------------
+ * kmem 캐시에서 mm 구조체를 하나 할당해온다.
+ */
 	mm = allocate_mm();
 	if (!mm)
 		goto fail_nomem;
 
+/* IAMROOT-12:
+ * -------------
+ * 부모 mm 디스크립터의 내용을 모두 복사한다.
+ */
 	memcpy(mm, oldmm, sizeof(*mm));
 
+/* IAMROOT-12:
+ * -------------
+ * 자식 태스크가 사용할 mm의 일부를 초기화한다.
+ */
 	if (!mm_init(mm, tsk))
 		goto fail_nomem;
 
@@ -963,7 +989,16 @@ static int copy_mm(unsigned long clone_flags, struct task_struct *tsk)
 	tsk->last_switch_count = tsk->nvcsw + tsk->nivcsw;
 #endif
 
+/* IAMROOT-12:
+ * -------------
+ * 태스크에 mm이 지정되지 않는다는 것은 커널 스레드를 의미한다.
+ */
 	tsk->mm = NULL;
+
+/* IAMROOT-12:
+ * -------------
+ * active_mm: 마지막에 사용한 유저 mm이 담긴다.
+ */
 	tsk->active_mm = NULL;
 
 	/*
@@ -971,6 +1006,12 @@ static int copy_mm(unsigned long clone_flags, struct task_struct *tsk)
 	 *
 	 * We need to steal a active VM for that..
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 커널 스레드는 mm을 만들지 않는다. 따라서 커널 스레드의 자식 스레드도 
+ * mm을 만들 필요가 없다.
+ */
 	oldmm = current->mm;
 	if (!oldmm)
 		return 0;
@@ -978,12 +1019,26 @@ static int copy_mm(unsigned long clone_flags, struct task_struct *tsk)
 	/* initialize the new vmacache entries */
 	vmacache_flush(tsk);
 
+
+/* IAMROOT-12:
+ * -------------
+ * pthread, vfork, kernel_thread 요청으로 만들어진 태스크인 경우 CLONE_VM 
+ * 플래그가 사용된다. 이 때에는 자신의 vm을 만들지 않고 부모 vm을 그대로 
+ * 공유한다.
+ */
 	if (clone_flags & CLONE_VM) {
 		atomic_inc(&oldmm->mm_users);
 		mm = oldmm;
 		goto good_mm;
 	}
 
+
+/* IAMROOT-12:
+ * -------------
+ * fork & clone (프로세스) 생성 시 mm을 준비한다. 
+ *	- 부모 vm을 그대로 복제한다. (vma 엔트리들 정보)
+ *	- pgd 엔트리들은 새로 할당 받고 모두 null 엔트리
+ */
 	retval = -ENOMEM;
 	mm = dup_mm(tsk);
 	if (!mm)
@@ -1087,6 +1142,14 @@ static int copy_sighand(unsigned long clone_flags, struct task_struct *tsk)
 {
 	struct sighand_struct *sig;
 
+/* IAMROOT-12:
+ * -------------
+ * CLONE_SIGHAND 플래그를 사용한(pthread_create()) 경우 부모 시그널 핸들러를 
+ * 공유한다.
+ *
+ * 플래그를 사용하지 않은 경우 부모 태스크가 사용하던 64개의 시그널 핸들러
+ * 들을 복사하여 사용한다.(상속)
+ */
 	if (clone_flags & CLONE_SIGHAND) {
 		atomic_inc(&current->sighand->count);
 		return 0;
@@ -1138,9 +1201,19 @@ static int copy_signal(unsigned long clone_flags, struct task_struct *tsk)
 {
 	struct signal_struct *sig;
 
+/* IAMROOT-12:
+ * -------------
+ * CLONE_THREAD 플래그가 있는 경우 함수를 빠져나간다. (pthread_create)
+ */
 	if (clone_flags & CLONE_THREAD)
 		return 0;
 
+/* IAMROOT-12:
+ * -------------
+ * 현재 태스크가 사용할 시그널 관련 구조체를 할당하고 초기화한다.
+ * (몇 가지 값들은 부모 태스크에서 사용하던 값들을 상속하여 사용한다.
+ *  ex) signal->rlim, signal->oom_score
+ */
 	sig = kmem_cache_zalloc(signal_cachep, GFP_KERNEL);
 	tsk->signal = sig;
 	if (!sig)
@@ -1528,12 +1601,33 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	retval = copy_fs(clone_flags, p);
 	if (retval)
 		goto bad_fork_cleanup_files;
+
+/* IAMROOT-12:
+ * -------------
+ * 부모 태스크가 사용하던 64개의 시그널 핸들러를 상속하여 사용한다.
+ * (CLONE_SIGHAND 플래그를 사용한(pthread_create()) 경우 새로 만들지 않고 
+ * 참조 카운터만 증가시켜 공유하여 사용한다.)
+ */
 	retval = copy_sighand(clone_flags, p);
 	if (retval)
 		goto bad_fork_cleanup_fs;
+
+/* IAMROOT-12:
+ * -------------
+ * pthread가 아닌 프로세스가 생성된 경우 현재 태스크가 사용할 시그널 관련 
+ * 구조체를 할당하고 초기화한다.
+ */
 	retval = copy_signal(clone_flags, p);
 	if (retval)
 		goto bad_fork_cleanup_sighand;
+
+/* IAMROOT-12:
+ * -------------
+ * 커널스레드는 아무일도 하지 않는다.
+ * pthread와 vfork는 mm을 만들지 않고 부모의 mm을 공유한다.
+ * 유저 프로세스(fork & clone) 생성 시에는 자신의 vm을 만들되 부모의 mm 정보를 
+ * 상속받아 사용한다. 이 때 pgd는 null 엔트리들로 시작한다. (fault 후 COW 동작)
+ */
 	retval = copy_mm(clone_flags, p);
 	if (retval)
 		goto bad_fork_cleanup_signal;
@@ -1543,10 +1637,20 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	retval = copy_io(clone_flags, p);
 	if (retval)
 		goto bad_fork_cleanup_namespaces;
+
+/* IAMROOT-12:
+ * -------------
+ * 아키텍처에 따른 레지스터 정보들도 복사한다.
+ */
 	retval = copy_thread(clone_flags, stack_start, stack_size, p);
 	if (retval)
 		goto bad_fork_cleanup_io;
 
+/* IAMROOT-12:
+ * -------------
+ * secondary cpu들에 대해서 idle용 태스크를 생성할 때를 제외한 일반적인  
+ * 경우에 아래 alloc_pid()를 호출하여 pid를 생성한다.
+ */
 	if (pid != &init_struct_pid) {
 		retval = -ENOMEM;
 		pid = alloc_pid(p->nsproxy->pid_ns_for_children);
@@ -1641,6 +1745,11 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	 * A fatal signal pending means that current will exit, so the new
 	 * thread can't slip out of an OOM kill (or normal SIGKILL).
 	*/
+
+/* IAMROOT-12:
+ * -------------
+ * 주요한 시그널 pending 플래그가 있는 경우 task를 생성하지 않고 빠져나간다.
+ */
 	recalc_sigpending();
 	if (signal_pending(current)) {
 		spin_unlock(&current->sighand->siglock);
@@ -1654,6 +1763,12 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 
 		init_task_pid(p, PIDTYPE_PID, pid);
 		if (thread_group_leader(p)) {
+
+/* IAMROOT-12:
+ * -------------
+ * 프로세스인 경우 대표 프로세스 그룹 및 대표 세션에 해당하는 PID에 연결한다.
+ */
+
 			init_task_pid(p, PIDTYPE_PGID, task_pgrp(current));
 			init_task_pid(p, PIDTYPE_SID, task_session(current));
 
@@ -1670,6 +1785,11 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 			attach_pid(p, PIDTYPE_SID);
 			__this_cpu_inc(process_counts);
 		} else {
+
+/* IAMROOT-12:
+ * -------------
+ * 스레드의 경우 각 스레드는 p->thread_group에 연결한다.
+ */
 			current->signal->nr_threads++;
 			atomic_inc(&current->signal->live);
 			atomic_inc(&current->signal->sigcnt);
@@ -1688,6 +1808,11 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	write_unlock_irq(&tasklist_lock);
 
 	proc_fork_connector(p);
+
+/* IAMROOT-12:
+ * -------------
+ * cgroup 후속 처리
+ */
 	cgroup_post_fork(p);
 	if (clone_flags & CLONE_THREAD)
 		threadgroup_change_end(current);
