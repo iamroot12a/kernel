@@ -536,6 +536,11 @@ static int dup_mmap(struct mm_struct *mm, struct mm_struct *oldmm)
 		rb_parent = &tmp->vm_rb;
 
 		mm->map_count++;
+
+/* IAMROOT-12A:
+ * ------------
+ * 여기에서 부모가 사용하는 페이지 테이블 엔트리를 복사한다.
+ */
 		retval = copy_page_range(mm, oldmm, mpnt);
 
 		if (tmp->vm_ops && tmp->vm_ops->open)
@@ -957,6 +962,10 @@ static struct mm_struct *dup_mm(struct task_struct *tsk)
 
 	dup_mm_exe_file(oldmm, mm);
 
+/* IAMROOT-12A:
+ * ------------
+ * 부모 태스크의 vma 정보와 페이지 테이블 엔트리들을 복사한다.
+ */
 	err = dup_mmap(mm, oldmm);
 	if (err)
 		goto free_pt;
@@ -1037,7 +1046,7 @@ static int copy_mm(unsigned long clone_flags, struct task_struct *tsk)
  * -------------
  * fork & clone (프로세스) 생성 시 mm을 준비한다. 
  *	- 부모 vm을 그대로 복제한다. (vma 엔트리들 정보)
- *	- pgd 엔트리들은 새로 할당 받고 모두 null 엔트리
+ *	- pgd 엔트리들은 새로 할당 받고 부모 페이지 테이블을 모두 복사
  */
 	retval = -ENOMEM;
 	mm = dup_mm(tsk);
@@ -1626,7 +1635,8 @@ static struct task_struct *copy_process(unsigned long clone_flags,
  * 커널스레드는 아무일도 하지 않는다.
  * pthread와 vfork는 mm을 만들지 않고 부모의 mm을 공유한다.
  * 유저 프로세스(fork & clone) 생성 시에는 자신의 vm을 만들되 부모의 mm 정보를 
- * 상속받아 사용한다. 이 때 pgd는 null 엔트리들로 시작한다. (fault 후 COW 동작)
+ * 상속받아 사용한다. 이 때 pgd도 부모 페이지 테이블 엔트리들을 복사하여 사용한다.
+ * (fault 후 COW 동작)
  */
 	retval = copy_mm(clone_flags, p);
 	if (retval)

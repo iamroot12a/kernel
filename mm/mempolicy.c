@@ -152,8 +152,7 @@ struct mempolicy *get_task_policy(struct task_struct *p)
 
 /* IAMROOT-12:
  * -------------
- 
-static* cpu에 노드id가 부여되지 않는 케이스도 있나???
+ * cpu에 노드id가 부여되지 않는 케이스도 있나???
  */
 	if (node != NUMA_NO_NODE) {
 		pol = &preferred_node_policy[node];
