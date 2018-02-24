@@ -965,6 +965,11 @@ int __init_or_module do_one_initcall(initcall_t fn)
 	if (initcall_blacklisted(fn))
 		return -EPERM;
 
+
+/* IAMROOT-12:
+ * -------------
+ * "initcall_debug" 커널 파라메터가 설정된 경우 호출하는 함수 정보를 출력한다.
+ */
 	if (initcall_debug)
 		ret = do_one_initcall_debug(fn);
 	else
@@ -1068,6 +1073,28 @@ static void __init do_pre_smp_initcalls(void)
 {
 	initcall_t *fn;
 
+/* IAMROOT-12:
+ * -------------
+ * early_initcall() 매크로로 만들어진 함수들을 호출한다.
+ *	(.initcall.init 섹션에 등록된다.)
+ *
+ *	- cpu_stop_init()
+ *	- init_events()
+ *	- init_workqueues()
+ *	- migration_init()
+ *	- jump_label_init_module()
+ *	- relay_init()
+ *	- check_cpu_stall_init()
+ *	- rcu_register_oom_notifier()
+ *	- rcu_spawn_gp_kthread()
+ *	- spawn_ksoftirqd()
+ *	- cpu_suspend_alloc_sp() - arm
+ *	- init_static_idmap() - arm
+ *	- dynamic_debug_init()
+ *	- rand_initialize()
+ *	- dummy_timer_register()
+ *	- cci_init() - arm
+ */
 	for (fn = __initcall_start; fn < __initcall0_start; fn++)
 		do_one_initcall(*fn);
 }
@@ -1157,6 +1184,11 @@ static noinline void __init kernel_init_freeable(void)
 	/*
 	 * Wait until kthreadd is all set-up.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * rest_init()이 끝난 후 진입하도록 동기화한다.
+ */
 	wait_for_completion(&kthreadd_done);
 
 	/* Now the scheduler is fully set up and can do blocking allocations */
@@ -1165,14 +1197,30 @@ static noinline void __init kernel_init_freeable(void)
 	/*
 	 * init can allocate pages on any node
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * kthread_init이 사용할 수 있는 노드를 모든 메모리 노드로 설정한다.
+ */
 	set_mems_allowed(node_states[N_MEMORY]);
 	/*
 	 * init can run on any cpu.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * kthread_init이 모든 cpu에서 동작할 수 있도록 설정한다.
+ */
 	set_cpus_allowed_ptr(current, cpu_all_mask);
 
 	cad_pid = task_pid(current);
 
+
+/* IAMROOT-12:
+ * -------------
+ * "maxcpus=" 커널 파라메터로 제한된 cpu 수 
+ *	- 최초 커널 컴파일 시에는 NR_CPUS 값을 사용한다.
+ */
 	smp_prepare_cpus(setup_max_cpus);
 
 	do_pre_smp_initcalls();

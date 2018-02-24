@@ -328,6 +328,10 @@ static void smp_store_cpu_info(unsigned int cpuid)
 	cpu_info->loops_per_jiffy = loops_per_jiffy;
 	cpu_info->cpuid = read_cpuid_id();
 
+/* IAMROOT-12:
+ * -------------
+ * cpu 토플로지를 구성하게한다.
+ */
 	store_cpu_topology(cpuid);
 }
 
@@ -448,6 +452,12 @@ void __init smp_prepare_cpus(unsigned int max_cpus)
 		 * Initialise the SCU if there are more than one CPU
 		 * and let them know where to start.
 		 */
+
+/* IAMROOT-12:
+ * -------------
+ * smp 오퍼레이션에 등록된 smp_prepare_cpus() 후크 함수를 호출한다.
+ * 예) rpi2: bcm2709_smp_prepare_cpus() 함수를 호출하지만 printk만 출력한다.
+ */
 		if (smp_ops.smp_prepare_cpus)
 			smp_ops.smp_prepare_cpus(max_cpus);
 	}
