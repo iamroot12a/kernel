@@ -41,11 +41,20 @@ pgd_t *pgd_alloc(struct mm_struct *mm)
 	if (!new_pgd)
 		goto no_pgd;
 
+/* IAMROOT-12:
+ * -------------
+ * 유저쪽 엔트리들을 모두 0으로 초기화한다.
+ */
 	memset(new_pgd, 0, USER_PTRS_PER_PGD * sizeof(pgd_t));
 
 	/*
 	 * Copy over the kernel and IO PGD entries
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * init_mm->pgd(=swapper_pgd)에 있는 커널쪽 엔트리만 복사한다. 
+ */
 	init_pgd = pgd_offset_k(0);
 	memcpy(new_pgd + USER_PTRS_PER_PGD, init_pgd + USER_PTRS_PER_PGD,
 		       (PTRS_PER_PGD - USER_PTRS_PER_PGD) * sizeof(pgd_t));

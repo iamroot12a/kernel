@@ -100,10 +100,24 @@ extern char  __idmap_text_start[], __idmap_text_end[];
 
 static int __init init_static_idmap(void)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * 커널에서 사용하는 pgd 테이블을 복사한다. (유저 엔트리들을 제외하고
+ * 커널 엔트리들은 모두 복사해온다)
+ */
 	idmap_pgd = pgd_alloc(&init_mm);
 	if (!idmap_pgd)
 		return -ENOMEM;
 
+/* IAMROOT-12:
+ * -------------
+ * 1:1 identity 매핑을 추가한다.(__idmap_text_start ~ __idmap_text_end 까지)
+ *
+ * arm:
+ *	세컨더리 cpu들이 MMU를 켜기 위해 사용하는 함수인 __turn_mmu_on() 함수를
+ *	 호출하기 위해 해당 함수가 1:1 identity 매핑이 되어 있어야 한다.
+ */
 	identity_mapping_add(idmap_pgd, __idmap_text_start,
 			     __idmap_text_end, 0);
 

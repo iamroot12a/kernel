@@ -630,6 +630,11 @@ void __init smp_init(void)
 {
 	unsigned int cpu;
 
+/* IAMROOT-12:
+ * -------------
+ * 부트 cpu를 제외하고 나머지 모든 possible cpu에 대해 idle 태스크를 
+ * 생성하고 초기화한다.
+ */
 	idle_threads_init();
 
 	/* FIXME: This should be done in userspace --RR */

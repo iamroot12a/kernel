@@ -490,6 +490,17 @@ static int _cpu_up(unsigned int cpu, int tasks_frozen)
 	if (ret)
 		goto out;
 
+/* IAMROOT-12:
+ * -------------
+ * cpu가 on될 때 호출되는 함수들: (register_cpu_notifier() 함수로 등록)
+ *	- timer_cpu_notify()
+ *	- slab_cpuup_callback()
+ *	- cpuup_callback()
+ *	- arch_timer_cpu_notify()
+ *	- bcm2836_arm_irqchip_cpu_notify()
+ *	- cpu_callback()
+ *	- hrtimer_cpu_notify()
+ */
 	ret = __cpu_notify(CPU_UP_PREPARE | mod, hcpu, -1, &nr_calls);
 	if (ret) {
 		nr_calls--;

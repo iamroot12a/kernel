@@ -104,6 +104,10 @@ int __cpu_up(unsigned int cpu, struct task_struct *idle)
 {
 	int ret;
 
+/* IAMROOT-12:
+ * -------------
+ * smp_ops에 등록된 smp_boot_secondary 후크 함수가 없으면 함수를 빠져나간다.
+ */
 	if (!smp_ops.smp_boot_secondary)
 		return -ENOSYS;
 
@@ -125,6 +129,11 @@ int __cpu_up(unsigned int cpu, struct task_struct *idle)
 	/*
 	 * Now bring the CPU into our world.
 	 */
+/* IAMROOT-12:
+ * -------------
+ * smp_ops에 등록된 smp_boot_secondary 후크 함수를 호출한다.
+ *	rpi2: bcm2709_boot_secondary()
+ */
 	ret = smp_ops.smp_boot_secondary(cpu, idle);
 	if (ret == 0) {
 		/*

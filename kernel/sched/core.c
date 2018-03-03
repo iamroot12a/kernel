@@ -5222,6 +5222,11 @@ void init_idle(struct task_struct *idle, int cpu)
 	idle->state = TASK_RUNNING;
 	idle->se.exec_start = sched_clock();
 
+
+/* IAMROOT-12:
+ * -------------
+ * 자신의 cpu로 제한한다.
+ */
 	do_set_cpus_allowed(idle, cpumask_of(cpu));
 	/*
 	 * We're having a chicken and egg problem, even though we are
@@ -5250,6 +5255,11 @@ void init_idle(struct task_struct *idle, int cpu)
 	/*
 	 * The idle tasks have their own, simple scheduling class:
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 스케줄러를 idle_sched_class로 설정한다.
+ */
 	idle->sched_class = &idle_sched_class;
 	ftrace_graph_init_idle_task(idle, cpu);
 	vtime_init_idle(idle, cpu);
@@ -7994,6 +8004,11 @@ void __init sched_init_smp(void)
 	 * happen.
 	 */
 	mutex_lock(&sched_domains_mutex);
+
+/* IAMROOT-12:
+ * -------------
+ * active된 cpu들을 대상으로 다시 스케줄 도메인을 재구성한다.
+ */
 	init_sched_domains(cpu_active_mask);
 	cpumask_andnot(non_isolated_cpus, cpu_possible_mask, cpu_isolated_map);
 	if (cpumask_empty(non_isolated_cpus))

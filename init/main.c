@@ -157,7 +157,16 @@ static char *static_command_line;
 /* Command line for per-initcall parameter parsing */
 static char *initcall_command_line;
 
+/* IAMROOT-12:
+ * -------------
+ * "init=" 지정된 문자열
+ */
 static char *execute_command;
+
+/* IAMROOT-12:
+ * -------------
+ * "rdinit=" 지정된 문자열
+ */
 static char *ramdisk_execute_command;
 
 /*
@@ -441,6 +450,11 @@ static noinline void __init_refok rest_init(void)
 	 * The boot idle thread must execute schedule()
 	 * at least once to get things moving:
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 부트업 cpu의 현재 init 태스크의 스케줄러를 idle로 교체한다.
+ */
 	init_idle_bootup_task(current);
 	schedule_preempt_disabled();
 	/* Call into cpu_idle with preempt disabled */
@@ -863,6 +877,12 @@ asmlinkage __visible void __init start_kernel(void)
 /* Call all constructor functions linked into the kernel. */
 static void __init do_ctors(void)
 {
+
+/* IAMROOT-12:
+ * -------------
+ * CONFIG_CONSTRUCTORS 커널 설정이 동작되는 경우 커널 모듈의 constructor를
+ * 호출한다. (gcc가 만드는 constructor)
+ */
 #ifdef CONFIG_CONSTRUCTORS
 	ctor_fn_t *fn = (ctor_fn_t *) __ctors_start;
 
@@ -1045,6 +1065,27 @@ static void __init do_initcalls(void)
 {
 	int level;
 
+/* IAMROOT-12:
+ * -------------
+ * 0레벨 부터 7레벨 까지로 등록한 함수들을 차례로 호출한다.
+ *
+ * pure_initcall(fn)		- 0레벨 
+ * core_initcall(fn)            - 1레벨   
+ * core_initcall_sync(fn)          
+ * postcore_initcall(fn)           
+ * postcore_initcall_sync(fn)      
+ * arch_initcall(fn)               
+ * arch_initcall_sync(fn)          
+ * subsys_initcall(fn)             
+ * subsys_initcall_sync(fn)        
+ * fs_initcall(fn)                 
+ * fs_initcall_sync(fn)            
+ * rootfs_initcall(fn)             
+ * device_initcall(fn)             
+ * device_initcall_sync(fn)        
+ * late_initcall(fn)		- 7레벨          
+ * late_initcall_sync(fn)       - "   
+ */
 	for (level = 0; level < ARRAY_SIZE(initcall_levels) - 1; level++)
 		do_initcall_level(level);
 }
@@ -1059,12 +1100,28 @@ static void __init do_initcalls(void)
 static void __init do_basic_setup(void)
 {
 	cpuset_init_smp();
+
+/* IAMROOT-12:
+ * -------------
+ * khelper 워크큐를 준비한다.
+ */
+
 	usermodehelper_init();
 	shmem_init();
 	driver_init();
 	init_irq_proc();
+
+/* IAMROOT-12:
+ * -------------
+ * 각 커널 모듈의 constructor를 호출한다.
+ */
 	do_ctors();
 	usermodehelper_enable();
+
+/* IAMROOT-12:
+ * -------------
+ * 0레벨부터 7레벨까지의 *_initcall 함수들을 차례로 호출한다.
+ */
 	do_initcalls();
 	random_int_secret_init();
 }
@@ -1138,16 +1195,39 @@ static int __ref kernel_init(void *unused)
 {
 	int ret;
 
+/* IAMROOT-12:
+ * -------------
+ * smp 관련 초기화 함수, early_initcall, 0~7레벨의 initcall 함수들을 호출한다.
+ */
 	kernel_init_freeable();
 	/* need to finish all async __init code before freeing the memory */
 	async_synchronize_full();
+
+/* IAMROOT-12:
+ * -------------
+ * 더 이상 사용하지 않는 init 섹션의 커널 코드와 데이터를 제거한다.
+ */
 	free_initmem();
+
+/* IAMROOT-12:
+ * -------------
+ * CONFIG_DEBUG_RODATA 커널 옵션을 사용시 사용한다.
+ */
 	mark_rodata_ro();
+
+/* IAMROOT-12:
+ * -------------
+ * 부팅 상태 변경
+ */
 	system_state = SYSTEM_RUNNING;
 	numa_default_policy();
 
 	flush_delayed_fput();
 
+/* IAMROOT-12:
+ * -------------
+ * 1) "rdinit=" 지정된 문자열이 있는 경우
+ */
 	if (ramdisk_execute_command) {
 		ret = run_init_process(ramdisk_execute_command);
 		if (!ret)
@@ -1162,6 +1242,12 @@ static int __ref kernel_init(void *unused)
 	 * The Bourne shell can be used instead of init if we are
 	 * trying to recover a really broken machine.
 	 */
+
+/* IAMROOT-12:
+ * -------------
+ * 2) "init=" 지정된 문자열이 있는 경우
+ */
+
 	if (execute_command) {
 		ret = run_init_process(execute_command);
 		if (!ret)
@@ -1169,6 +1255,11 @@ static int __ref kernel_init(void *unused)
 		panic("Requested init %s failed (error %d).",
 		      execute_command, ret);
 	}
+
+/* IAMROOT-12:
+ * -------------
+ * 3) 그 외 아래 디렉토리 순서대로 init 태스크를 호출한다.
+ */
 	if (!try_to_run_init_process("/sbin/init") ||
 	    !try_to_run_init_process("/etc/init") ||
 	    !try_to_run_init_process("/bin/init") ||
@@ -1223,12 +1314,25 @@ static noinline void __init kernel_init_freeable(void)
  */
 	smp_prepare_cpus(setup_max_cpus);
 
+/* IAMROOT-12:
+ * -------------
+ * early_initcall() 매크로로 등록한 함수들을 모두 호출한다.
+ */
 	do_pre_smp_initcalls();
 	lockup_detector_init();
 
 	smp_init();
+
+/* IAMROOT-12:
+ * -------------
+ * 스케줄러와 관련된 smp 초기화
+ */
 	sched_init_smp();
 
+/* IAMROOT-12:
+ * -------------
+ * 0레벨부터 7레벨까지의 *_initcall 함수들을 차례로 호출한다.
+ */
 	do_basic_setup();
 
 	/* Open the /dev/console on the rootfs, this should never fail */

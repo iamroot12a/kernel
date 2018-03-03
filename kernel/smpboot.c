@@ -49,6 +49,10 @@ static inline void idle_init(unsigned int cpu)
 {
 	struct task_struct *tsk = per_cpu(idle_threads, cpu);
 
+/* IAMROOT-12:
+ * -------------
+ * idle 태스크를 생성하고 초기화한다.
+ */
 	if (!tsk) {
 		tsk = fork_idle(cpu);
 		if (IS_ERR(tsk))
@@ -67,6 +71,11 @@ void __init idle_threads_init(void)
 
 	boot_cpu = smp_processor_id();
 
+/* IAMROOT-12:
+ * -------------
+ * 부트 cpu를 제외하고 나머지 모든 possible cpu에 대해 idle 태스크를 
+ * 생성하고 초기화한다.
+ */
 	for_each_possible_cpu(cpu) {
 		if (cpu != boot_cpu)
 			idle_init(cpu);

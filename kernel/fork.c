@@ -1890,6 +1890,12 @@ static inline void init_idle_pids(struct pid_link *links)
 struct task_struct *fork_idle(int cpu)
 {
 	struct task_struct *task;
+
+/* IAMROOT-12:
+ * -------------
+ * idle 태스크를 fork하고 초기화한다.
+ * (모든 cpu에서 idle 태스크가 사용하는 pid 번호는 0번을 공유하여 사용한다)
+ */
 	task = copy_process(CLONE_VM, 0, 0, NULL, &init_struct_pid, 0);
 	if (!IS_ERR(task)) {
 		init_idle_pids(task->pids);

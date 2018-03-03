@@ -70,6 +70,10 @@ extern struct nsproxy init_nsproxy;
 
 extern struct group_info init_groups;
 
+/* IAMROOT-12:
+ * -------------
+ * 모든 cpu의 ilde 태스크가 사용하는 pid (nr 값이 0이다)
+ */
 #define INIT_STRUCT_PID {						\
 	.count 		= ATOMIC_INIT(1),				\
 	.tasks		= {						\
@@ -156,6 +160,11 @@ extern struct task_group root_task_group;
 # define INIT_VTIME(tsk)
 #endif
 
+
+/* IAMROOT-12:
+ * -------------
+ * idle 태스크의 명칭으로 swapper/<cpu>
+ */
 #define INIT_TASK_COMM "swapper"
 
 #ifdef CONFIG_RT_MUTEXES

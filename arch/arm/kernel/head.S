@@ -565,6 +565,11 @@ ENTRY(secondary_startup_arm)
  THUMB(	bx	r9		)	@ If this is a Thumb-2 kernel,
  THUMB(	.thumb			)	@ switch to Thumb now.
  THUMB(1:			)
+
+/* IAMROOT-12:
+ * -------------
+ * 세컨더리 cpu 시작 루틴
+ */
 ENTRY(secondary_startup)
 	/*
 	 * Common entry point for secondary CPUs.
@@ -599,6 +604,7 @@ ENTRY(secondary_startup)
 	ldr	r8, [r7, lr]			@ get secondary_data.swapper_pg_dir
 	adr	lr, BSYM(__enable_mmu)		@ return address
 	mov	r13, r12			@ __secondary_switched address
+
  ARM(	add	pc, r10, #PROCINFO_INITFUNC	) @ initialise processor
 						  @ (return control reg)
  THUMB(	add	r12, r10, #PROCINFO_INITFUNC	)

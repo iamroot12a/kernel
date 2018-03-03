@@ -43,6 +43,11 @@
 	hash_long((unsigned long)nr + (unsigned long)ns, pidhash_shift)
 static struct hlist_head *pid_hash;
 static unsigned int pidhash_shift = 4;
+
+/* IAMROOT-12:
+ * -------------
+ * 모든 cpu의 ilde 태스크가 사용하는 pid
+ */
 struct pid init_struct_pid = INIT_STRUCT_PID;
 
 int pid_max = PID_MAX_DEFAULT;

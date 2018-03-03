@@ -1247,6 +1247,10 @@ int __cpuinit bcm2709_boot_secondary(unsigned int cpu, struct task_struct *idle)
     BUG_ON(readl(mbox_clr) != 0);
     writel(secondary_boot, mbox_set);
 
+/* IAMROOT-12:
+ * -------------
+ * 지정된 시간(timeout)만큼 spin하며 대기한다.
+ */
     while (--timeout > 0) {
 	t = readl(mbox_clr);
 	if (t == 0) break;
